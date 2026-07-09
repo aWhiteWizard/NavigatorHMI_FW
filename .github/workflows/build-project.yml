@@ -1,10 +1,6 @@
 name: Build NavigatorHMI_FW (ARM)
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
   workflow_dispatch:
     inputs:
       build_type:
