@@ -1,0 +1,53 @@
+# 使用 Ubuntu 22.04 LTS 作为基础镜像
+FROM ubuntu:22.04
+
+# 设置环境变量，避免 apt-get 安装过程中的交互式提示
+ENV DEBIAN_FRONTEND=noninteractive
+
+# === 第一步：更换软件源为国内镜像（加速下载） ===
+RUN sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+
+# === 第二步：安装基础工具和依赖 ===
+RUN apt-get update && apt-get install -y \
+    # 基础编译工具
+    build-essential \
+    make \
+    cmake \
+    git \
+    wget \
+    curl \
+    vim \
+    # 交叉编译工具链（核心）
+    gcc-arm-linux-gnueabihf \
+    g++-arm-linux-gnueabihf \
+    binutils-arm-linux-gnueabihf \
+    # 调试和性能分析工具
+    gdb-multiarch \
+    valgrind \
+    # 其他常用工具
+    file \
+    tree \
+    htop \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# === 第三步：配置环境变量（方便编译时调用） ===
+ENV ARCH=arm
+ENV CROSS_COMPILE=arm-linux-gnueabihf-
+ENV CC=${CROSS_COMPILE}gcc
+ENV CXX=${CROSS_COMPILE}g++
+
+# === 第四步：设置工作目录 ===
+WORKDIR /workspace
+
+# === 第五步：创建一个简单的编译测试脚本（可选） ===
+RUN echo '#!/bin/bash\n\
+echo "=== i.MX6ULL Cross Compile Environment ==="\n\
+echo "CROSS_COMPILE: ${CROSS_COMPILE}"\n\
+${CROSS_COMPILE}gcc --version | head -n 1\n\
+echo "========================================="\n\
+' > /usr/local/bin/check-env.sh && chmod +x /usr/local/bin/check-env.sh
+
+# 重置 DEBIAN_FRONTEND
+ENV DEBIAN_FRONTEND=

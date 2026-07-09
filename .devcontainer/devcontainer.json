@@ -1,0 +1,17 @@
+{
+    "name": "FW Development Environment",
+    "image": "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.vscode-serial-monitor",
+                "twxs.cmake",
+                "ms-vscode.cmake-tools"
+            ]
+        }
+    },
+    // 如果需要访问 USB 串口设备，启用以下配置
+    "runArgs": ["--privileged"],
+    "remoteUser": "root"
+}
