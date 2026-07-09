@@ -1,0 +1,65 @@
+name: Build NavigatorHMI_FW (ARM)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Debug or Release'
+        required: true
+        default: 'Debug'
+        type: choice
+        options:
+          - Debug
+          - Release
+
+env:
+  BUILDER_IMAGE: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Huawei SWR (pull builder image)
+        uses: huaweicloud/swr-login@v1
+        with:
+          region: 'cn-southwest-2'
+          access-key-id: ${{ secrets.AK }}
+          access-key-secret: ${{ secrets.SK }}
+
+      - name: Pull builder image
+        run: docker pull ${{ env.BUILDER_IMAGE }}
+
+      - name: CMake Configure
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            ${{ env.BUILDER_IMAGE }} \
+            /bin/bash -c "mkdir -p /workspace/build && cd /workspace/build && cmake .. -DCMAKE_TOOLCHAIN_FILE=/workspace/cmake/arm-linux-gnueabihf-toolchain.cmake -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type || 'Debug' }}"
+
+      - name: Build
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            ${{ env.BUILDER_IMAGE }} \
+            /bin/bash -c "cd /workspace/build && make -j$(nproc)"
+
+      - name: Check compiled artifact
+        run: |
+          echo "=== 编译产物 ==="
+          ls -lh build/bin/
+          file build/bin/*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NavigatorHMI_FW-${{ github.event.inputs.build_type || 'Debug' }}
+          path: build/bin/
