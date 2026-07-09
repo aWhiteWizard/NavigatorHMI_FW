@@ -16,6 +16,7 @@ on:
         type: string
 
 env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
   REGISTRY: swr.cn-southwest-2.myhuaweicloud.com
   ORGANIZATION: image-linuxenv
   IMAGE_NAME: fw-builder-env
