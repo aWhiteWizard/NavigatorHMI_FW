@@ -37,6 +37,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
 
       - name: Login to Huawei SWR
         uses: huaweicloud/swr-login@v1
@@ -46,7 +48,7 @@ jobs:
           access-key-secret: ${{ secrets.SK }}
 
       - name: Build and push multi-arch images
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./.devcontainer/dockerfile          # 确保 Dockerfile 在仓库根目录，否则修改路径
