@@ -71,7 +71,8 @@ if (-not $NoRebuild) {
     Write-Host "  Step 1/2: CMake 配置 (${BuildType})"      -ForegroundColor Cyan
     Write-Host "============================================" -ForegroundColor Cyan
 
-    $CmakeConfigCmd = "mkdir -p /workspace/build && cd /workspace/build && cmake .. -DCMAKE_TOOLCHAIN_FILE=/workspace/cmake/arm-linux-gnueabihf-toolchain.cmake -DCMAKE_BUILD_TYPE=${BuildType}"
+    # 清除可能存在的陈旧 CMakeCache.txt（来自 Windows 本机构建），避免路径冲突
+    $CmakeConfigCmd = "rm -f /workspace/build/CMakeCache.txt && mkdir -p /workspace/build && cd /workspace/build && cmake .. -DCMAKE_TOOLCHAIN_FILE=/workspace/cmake/arm-linux-gnueabihf-toolchain.cmake -DCMAKE_BUILD_TYPE=${BuildType}"
 
     docker run --rm -v "${ProjectRoot}:/workspace" `
         -w /workspace `
