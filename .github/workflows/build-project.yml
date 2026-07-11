@@ -11,6 +11,17 @@ on:
         options:
           - Debug
           - Release
+      target:
+        description: 'Build target'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - linux
+          - uboot
+          - app
+          - linux+app
 
 env:
   BUILDER_IMAGE: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0
@@ -32,30 +43,40 @@ jobs:
       - name: Pull builder image
         run: docker pull ${{ env.BUILDER_IMAGE }}
 
-      - name: CMake Configure
+      - name: Build all (Linux Kernel + U-Boot + App)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             ${{ env.BUILDER_IMAGE }} \
-            /bin/bash -c "mkdir -p /workspace/build && cd /workspace/build && cmake .. -DCMAKE_TOOLCHAIN_FILE=/workspace/cmake/arm-linux-gnueabihf-toolchain.cmake -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type || 'Debug' }}"
+            /bin/bash /workspace/build-linux-uboot.sh $(nproc) ${{ github.event.inputs.target || 'all' }}
 
-      - name: Build
+      - name: Check compiled artifacts
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            ${{ env.BUILDER_IMAGE }} \
-            /bin/bash -c "cd /workspace/build && make -j$(nproc)"
+          echo "=== 编译产物 (${{ github.event.inputs.target || 'all' }}) ==="
+          echo ""
+          echo "--- Linux Kernel ---"
+          ls -lh build/linux/zImage 2>/dev/null || echo "(none)"
+          echo ""
+          echo "--- Device Tree ---"
+          ls build/linux/*.dtb 2>/dev/null | head -5 || echo "(none)"
+          echo ""
+          echo "--- App ---"
+          ls -lh build/linux/bin/ 2>/dev/null || echo "(none)"
+          echo ""
+          echo "--- U-Boot ---"
+          ls -lh build/uboot/ 2>/dev/null || echo "(none)"
 
-      - name: Check compiled artifact
-        run: |
-          echo "=== 编译产物 ==="
-          ls -lh build/bin/
-          file build/bin/*
-
-      - name: Upload artifact
+      - name: Upload Linux artifacts
+        if: ${{ github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'linux' || github.event.inputs.target == 'linux+app' }}
         uses: actions/upload-artifact@v4
         with:
-          name: NavigatorHMI_FW-${{ github.event.inputs.build_type || 'Debug' }}
-          path: build/bin/
+          name: linux-${{ github.event.inputs.build_type || 'Debug' }}
+          path: build/linux/
+
+      - name: Upload U-Boot artifacts
+        if: ${{ github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'uboot' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: uboot-${{ github.event.inputs.build_type || 'Debug' }}
+          path: build/uboot/
