@@ -10,8 +10,12 @@ NavigatorHMI_FW/
 │   ├── linux-5.4.234.tar.gz      # Linux Kernel 源码压缩包
 │   └── u-boot-2020.04.tar.bz2 # U-Boot 源码压缩包
 ├── hwt/
-│   ├── linux/                    # Linux 补丁/配置/设备树覆盖
-│   └── uboot/                    # U-Boot 补丁/配置覆盖
+│   ├── linux/
+│   │   ├── arch/arm/configs/        # Linux 内核配置（menuconfig 导出）
+│   │   └── arch/arm/boot/dts/       # 自定义 dts（任意层级，自动扫描编译）
+│   └── uboot/
+│       ├── configs/                 # U-Boot 配置（menuconfig 导出）
+│       └── arch/arm/dts/            # 自定义 dts（编译时覆盖）
 ├── src/                          # NavigatorHMI_FW 应用源码
 ├── cmake/
 │   └── arm-linux-gnueabihf-toolchain.cmake
@@ -68,7 +72,7 @@ NavigatorHMI_FW/
 # 8 线程并行编译
 .\docker-build.ps1 -Jobs 8
 
-# 跳过 SWR 登录（如果已登录）
+# 跳过 SWR 登录
 .\docker-build.ps1 -SkipLogin
 ```
 

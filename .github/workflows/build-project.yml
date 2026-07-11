@@ -22,6 +22,7 @@ on:
           - uboot
           - app
           - linux+app
+          - rootfs
 
 env:
   BUILDER_IMAGE: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0
@@ -47,6 +48,7 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -e FORCE_UNSAFE_CONFIGURE=1 \
             -w /workspace \
             ${{ env.BUILDER_IMAGE }} \
             /bin/bash /workspace/build-linux-uboot.sh $(nproc) ${{ github.event.inputs.target || 'all' }}
@@ -80,3 +82,10 @@ jobs:
         with:
           name: uboot-${{ github.event.inputs.build_type || 'Debug' }}
           path: build/uboot/
+
+      - name: Upload Rootfs artifacts
+        if: ${{ github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'rootfs' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-${{ github.event.inputs.build_type || 'Debug' }}
+          path: build/rootfs/

@@ -1,14 +1,14 @@
 # 使用 Ubuntu 22.04 LTS 作为基础镜像
-FROM docker.m.daocloud.io/ubuntu:22.04
+FROM ubuntu:22.04
 
 # 设置环境变量，避免 apt-get 安装过程中的交互式提示
 ENV DEBIAN_FRONTEND=noninteractive
 
 # === 第一步：更换软件源为国内镜像（加速下载） ===
-RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+RUN sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
 
-# === 第二步：安装基础工具和依赖 ===
+# === 第一步：安装基础工具和依赖 ===
 RUN apt-get update && apt-get install -y \
     # 基础编译工具
     build-essential \
@@ -29,6 +29,10 @@ RUN apt-get update && apt-get install -y \
     bc \
     lzop \
     libncurses-dev \
+    # Buildroot 编译所需工具
+    cpio \
+    unzip \
+    rsync \
     # 调试和性能分析工具
     gdb-multiarch \
     valgrind \
@@ -48,11 +52,12 @@ ENV CXX=${CROSS_COMPILE}g++
 # === 第四步：设置工作目录 ===
 WORKDIR /workspace
 
-# === 第五步：创建 /root/source 目录并复制内核/U-Boot 源码压缩包 ===
+# === 第五步：创建 /root/source 目录并复制各类源码压缩包 ===
 # 压缩包从外部 context "sources" 获取，构建时需指定 --build-context sources=路径
 RUN mkdir -p /root/source
 COPY --from=sources /linux-5.4.234.tar.gz /root/source/
 COPY --from=sources /u-boot-2020.04.tar.bz2 /root/source/
+COPY --from=sources /buildroot-2025.05.tar.gz /root/source/
 
 # 重置 DEBIAN_FRONTEND
 ENV DEBIAN_FRONTEND=

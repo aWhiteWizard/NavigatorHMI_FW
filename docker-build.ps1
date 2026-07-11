@@ -9,7 +9,7 @@
 .PARAMETER BuildType
     构建类型: Debug 或 Release (默认: Debug)
 .PARAMETER Target
-    编译目标: all (默认), linux, uboot, app, linux+app
+    编译目标: all (默认), linux, uboot, app, linux+app, rootfs
 .PARAMETER Clean
     清理构建目录后重新编译
 .PARAMETER DockerImage
@@ -24,7 +24,7 @@
     跳过华为云 SWR 登录（已登录时使用）
 .EXAMPLE
     .\docker-build.ps1
-    全部编译（Linux + U-Boot + 应用）
+    全部编译（Linux + U-Boot + 应用 + Rootfs）
 
     .\docker-build.ps1 -Target linux
     只编译 Linux Kernel
@@ -37,6 +37,10 @@
 
     .\docker-build.ps1 -Target linux+app
     编译 Linux + 应用（跳过 U-Boot）
+
+    .\docker-build.ps1 -Target rootfs
+    只编译 Rootfs（需先编出应用）
+
 
     .\docker-build.ps1 -Menuconfig linux
     进入 Linux Kernel menuconfig（交互式配置）
@@ -96,7 +100,7 @@ if ($Help) {
 # ============================================================
 # 参数验证
 # ============================================================
-$ValidTargets = @("all", "linux", "uboot", "app", "linux+app")
+$ValidTargets = @("all", "linux", "uboot", "app", "linux+app", "rootfs")
 $ValidMenuconfigs = @("", "linux", "uboot")
 
 if ($Target -and ($ValidTargets -notcontains $Target)) {
@@ -169,7 +173,7 @@ if (-not (Test-Path $BuildDir)) {
 if ($Menuconfig) {
     Write-Host "============================================" -ForegroundColor Cyan
     Write-Host "  Step: Menuconfig ($Menuconfig)"            -ForegroundColor Cyan
-    Write-Host "  退出时将自动保存配置到 hwt/$Menuconfig/config/" -ForegroundColor Cyan
+    Write-Host "  退出时将自动保存配置到 hwt/$Menuconfig/arch/arm/configs/" -ForegroundColor Cyan
     Write-Host "============================================" -ForegroundColor Cyan
 
     # 确保 hwt/config 目录存在
@@ -188,19 +192,29 @@ if ($Menuconfig) {
         exit $LASTEXITCODE
     }
 
-    Write-Host ">>> 配置已保存到 hwt/$Menuconfig/config/" -ForegroundColor Green
+    Write-Host ">>> 配置已保存到 hwt/$Menuconfig/arch/arm/configs/" -ForegroundColor Green
     exit 0
 }
 
 # ============================================================
-# Step 4: 编译全部（Linux Kernel + U-Boot + 应用）
+# Step 4: 编译全部（Linux Kernel + U-Boot + 应用 + Rootfs）
 # ============================================================
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Step 1/1: 编译 Linux Kernel + U-Boot + 应用" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 
-# 编译脚本挂载到容器内执行，hwt/ 通过 -v 挂载到 /workspace/hwt
+# 创建 Buildroot 下载缓存目录
+$BrDlDir = Join-Path $BuildDir "buildroot\dl"
+if (-not (Test-Path $BrDlDir)) {
+    New-Item -ItemType Directory -Path $BrDlDir -Force | Out-Null
+}
+
+# 编译脚本挂载到容器内执行
+# BR2_DL_DIR 告诉 Buildroot 使用宿主机缓存的下载包，避免每次重新下载
+# FORCE_UNSAFE_CONFIGURE=1 允许以 root 用户运行 Buildroot
 docker run --rm -v "${ProjectRoot}:/workspace" `
+    -e BR2_DL_DIR="/workspace/build/buildroot/dl" `
+    -e FORCE_UNSAFE_CONFIGURE=1 `
     -w /workspace `
     $DockerImage `
     /bin/bash /workspace/build-linux-uboot.sh $Jobs $Target

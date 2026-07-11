@@ -25,8 +25,12 @@ NavigatorHMI_FW/
 │   ├── linux-5.4.234.tar.gz
 │   └── u-boot-2020.04.tar.bz2
 ├── hwt/
-│   ├── linux/                  # Linux 补丁/配置/设备树（编译时覆盖到源码）
-│   └── uboot/                  # U-Boot 补丁/配置（编译时覆盖到源码）
+│   ├── linux/
+│   │   ├── arch/arm/configs/        # Linux 内核配置（menuconfig 导出）
+│   │   └── arch/arm/boot/dts/       # 自定义 dts（任意目录层级，自动扫描）
+│   └── uboot/
+│       ├── configs/                 # U-Boot 配置（menuconfig 导出）
+│       └── arch/arm/dts/            # 自定义 dts（编译时覆盖）
 ├── src/                        # NavigatorHMI_FW 应用源码
 ├── cmake/
 │   └── arm-linux-gnueabihf-toolchain.cmake
@@ -61,6 +65,8 @@ NavigatorHMI_FW/
 .\docker-build.ps1 -Target app         # 只编译应用
 .\docker-build.ps1 -Target linux+app   # 编译 Linux + 应用（跳过 U-Boot）
 ```
+
+> dts 文件放在 `hwt/linux/arch/arm/boot/dts/` 下，编译时自动只编这些 dtb。
 
 ### 其他选项
 

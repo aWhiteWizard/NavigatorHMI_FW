@@ -4,7 +4,7 @@ set -e
 ARCH=arm
 CROSS_COMPILE=arm-linux-gnueabihf-
 JOBS=${1:-4}         # 并行线程数，默认 4
-TARGET=${2:-all}     # 编译目标: all, linux, uboot, app
+TARGET=${2:-all}     # 编译目标: all, linux, uboot, app, rootfs
 
 echo "========================================="
 echo "  编译目标: ${TARGET}"
@@ -33,9 +33,9 @@ if [ -d /workspace/hwt/linux ] && [ "$(ls -A /workspace/hwt/linux 2>/dev/null)" 
     cp -rf /workspace/hwt/linux/* ${KERNEL_SRC}/
 fi
 
-# 如果 hwt/linux/config 下有自定义配置，覆盖到内核
-if [ -f /workspace/hwt/linux/config/linux_hwt_defconfig ]; then
-    cp /workspace/hwt/linux/config/linux_hwt_defconfig ${KERNEL_SRC}/arch/arm/configs/linux_hwt_defconfig
+# 如果 hwt/linux/arch/arm/configs 下有自定义配置，覆盖到内核
+if [ -f /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig ]; then
+    cp /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig ${KERNEL_SRC}/arch/arm/configs/linux_hwt_defconfig
 fi
 
 # 配置并编译内核
@@ -51,14 +51,30 @@ else
 fi
 
 # 如果已经有 .config 配置，直接使用（来自 menuconfig 保存的）
-if [ -f /workspace/hwt/linux/config/.config ]; then
-    echo ">>> 应用 hwt/linux/config/.config ..."
-    cp /workspace/hwt/linux/config/.config ${KERNEL_SRC}/.config
+if [ -f /workspace/hwt/linux/arch/arm/configs/.config ]; then
+    echo ">>> 应用 hwt/linux/arch/arm/configs/.config ..."
+    cp /workspace/hwt/linux/arch/arm/configs/.config ${KERNEL_SRC}/.config
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} olddefconfig
 fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} zImage
-make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} dtbs
+
+# 编译设备树：如果 hwt 下有自定义 dts 则只编这些，否则编全部
+HWT_DTS_DIR=/workspace/hwt/linux/arch/arm/boot/dts
+DTS_FILES=$(find ${HWT_DTS_DIR} -name "*.dts" 2>/dev/null)
+if [ -n "${DTS_FILES}" ]; then
+    echo ">>> 编译 hwt 中自定义的 dtb ..."
+    for dts_file in ${DTS_FILES}; do
+        dtb_name=$(basename "${dts_file}" .dts).dtb
+        echo "    ${dtb_name}"
+        make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} ${dtb_name}
+        cp arch/arm/boot/dts/${dtb_name} /workspace/build/linux/ 2>/dev/null || true
+    done
+else
+    # 没有自定义 dts，编全部
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} dtbs
+fi
+
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} modules
 
 # 内核产物暂存到 /workspace/build/linux
@@ -91,9 +107,9 @@ if [ -d /workspace/hwt/uboot ] && [ "$(ls -A /workspace/hwt/uboot 2>/dev/null)" 
     cp -rf /workspace/hwt/uboot/* ${UBOOT_SRC}/
 fi
 
-# 如果 hwt/uboot/config 下有自定义配置，复制到 U-Boot 的 configs 目录
-if [ -f /workspace/hwt/uboot/config/uboot_hwt_defconfig ]; then
-    cp /workspace/hwt/uboot/config/uboot_hwt_defconfig ${UBOOT_SRC}/configs/uboot_hwt_defconfig
+# 如果 hwt/uboot/configs 下有自定义配置，复制到 U-Boot 的 configs 目录
+if [ -f /workspace/hwt/uboot/configs/uboot_hwt_defconfig ]; then
+    cp /workspace/hwt/uboot/configs/uboot_hwt_defconfig ${UBOOT_SRC}/configs/uboot_hwt_defconfig
 fi
 
 cd ${UBOOT_SRC}
@@ -109,9 +125,9 @@ else
 fi
 
 # 如果已经有 .config 配置，直接使用
-if [ -f /workspace/hwt/uboot/config/.config ]; then
-    echo ">>> 应用 hwt/uboot/config/.config ..."
-    cp /workspace/hwt/uboot/config/.config ${UBOOT_SRC}/.config
+if [ -f /workspace/hwt/uboot/configs/.config ]; then
+    echo ">>> 应用 hwt/uboot/configs/.config ..."
+    cp /workspace/hwt/uboot/configs/.config ${UBOOT_SRC}/.config
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} olddefconfig
 fi
 
@@ -120,7 +136,7 @@ make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS}
 # 将 U-Boot 编译产物输出
 mkdir -p /workspace/build/uboot
 cp u-boot.bin /workspace/build/uboot/ 2>/dev/null || true
-cp u-boot.imx /workspace/build/uboot/ 2>/dev/null || true
+cp u-boot-dtb.imx /workspace/build/uboot/ 2>/dev/null || true
 cp SPL /workspace/build/uboot/ 2>/dev/null || true
 echo ">>> U-Boot 编译完成: /workspace/build/uboot/"
 }
@@ -179,16 +195,16 @@ fi
 
 echo "========================================="
 echo "  进入 Linux Kernel menuconfig ..."
-echo "  退出时将自动保存配置到 hwt/linux/config/"
+echo "  退出时将自动保存配置到 hwt/linux/arch/arm/configs/"
 echo "========================================="
 make ARCH=${ARCH} menuconfig
 
-# 保存配置到挂载的 hwt/linux/config 目录
-mkdir -p /workspace/hwt/linux/config
-cp .config /workspace/hwt/linux/config/.config
+# 保存配置到挂载的 hwt/linux/arch/arm/configs 目录
+mkdir -p /workspace/hwt/linux/arch/arm/configs
+cp .config /workspace/hwt/linux/arch/arm/configs/.config
 make ARCH=${ARCH} savedefconfig
-cp defconfig /workspace/hwt/linux/config/linux_hwt_defconfig 2>/dev/null || true
-echo ">>> Linux 配置已保存到 /workspace/hwt/linux/config/linux_hwt_defconfig"
+cp defconfig /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig 2>/dev/null || true
+echo ">>> Linux 配置已保存到 /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig"
 }
 
 # ===========================================
@@ -223,16 +239,16 @@ fi
 
 echo "========================================="
 echo "  进入 U-Boot menuconfig ..."
-echo "  退出时将自动保存配置到 hwt/uboot/config/"
+echo "  退出时将自动保存配置到 hwt/uboot/configs/"
 echo "========================================="
 make ARCH=${ARCH} menuconfig
 
-# 保存配置到挂载的 hwt/uboot/config 目录
-mkdir -p /workspace/hwt/uboot/config
-cp .config /workspace/hwt/uboot/config/.config
+# 保存配置到挂载的 hwt/uboot/configs 目录
+mkdir -p /workspace/hwt/uboot/configs
+cp .config /workspace/hwt/uboot/configs/.config
 make ARCH=${ARCH} savedefconfig
-cp defconfig /workspace/hwt/uboot/config/uboot_hwt_defconfig 2>/dev/null || true
-echo ">>> U-Boot 配置已保存到 /workspace/hwt/uboot/config/uboot_hwt_defconfig"
+cp defconfig /workspace/hwt/uboot/configs/uboot_hwt_defconfig 2>/dev/null || true
+echo ">>> U-Boot 配置已保存到 /workspace/hwt/uboot/configs/uboot_hwt_defconfig"
 }
 
 # ===========================================
@@ -259,6 +275,112 @@ fi
 }
 
 # ===========================================
+# 4. 编译 Buildroot Rootfs
+# ===========================================
+build_rootfs() {
+echo "========================================="
+echo "  [4/4] 编译 Buildroot Rootfs ..."
+echo "========================================="
+
+BR_VERSION=2025.05
+BR_DIR=/tmp/buildroot-${BR_VERSION}
+BR_BUILD_DIR=/workspace/build/buildroot
+
+# 解压 Buildroot 源码（首次运行解压，之后可复用）
+if [ ! -d ${BR_DIR} ]; then
+    mkdir -p /tmp
+    echo ">>> 解压 Buildroot 源码 ..."
+    tar -xzf /root/source/buildroot-${BR_VERSION}.tar.gz -C /tmp
+fi
+
+# 创建外部构建目录
+mkdir -p ${BR_BUILD_DIR}
+
+cd ${BR_DIR}
+
+# 如果工程中有自定义 Buildroot 配置，使用它
+BR_CONFIG_SRC=/workspace/buildroot
+if [ -f ${BR_CONFIG_SRC}/config ] || [ -f ${BR_CONFIG_SRC}/.config ]; then
+    echo ">>> 使用工程中的自定义 Buildroot 配置 ..."
+    if [ -f ${BR_CONFIG_SRC}/.config ]; then
+        cp ${BR_CONFIG_SRC}/.config ${BR_BUILD_DIR}/.config
+    else
+        make O=${BR_BUILD_DIR} imx6ullevk_defconfig
+    fi
+else
+    echo ">>> 使用 Buildroot 默认 i.MX6ULL 配置 (imx6ullevk_defconfig) ..."
+    make O=${BR_BUILD_DIR} imx6ullevk_defconfig
+fi
+
+# ========== 配置 Buildroot 使用本地源码 ==========
+# 使用 Docker 镜像内的 Linux 内核源码，避免重复下载
+make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
+
+# 启用自定义内核 tarball 模式
+sed -i 's/BR2_LINUX_KERNEL_CUSTOM_VERSION=y/BR2_LINUX_KERNEL_CUSTOM_VERSION=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+sed -i 's/# BR2_LINUX_KERNEL_CUSTOM_TARBALL is not set/BR2_LINUX_KERNEL_CUSTOM_TARBALL=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+echo "BR2_LINUX_KERNEL_CUSTOM_TARBALL=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
+
+# 设置内核源码路径
+if grep -q "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION" ${BR_BUILD_DIR}/.config 2>/dev/null; then
+    sed -i "s|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=.*|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"/root/source/linux-5.4.234.tar.gz\"|" ${BR_BUILD_DIR}/.config
+else
+    echo "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"/root/source/linux-5.4.234.tar.gz\"" >> ${BR_BUILD_DIR}/.config
+fi
+
+# 同样，使用 Docker 镜像内的 U-Boot 源码
+sed -i 's/BR2_TARGET_UBOOT_CUSTOM_VERSION=y/BR2_TARGET_UBOOT_CUSTOM_VERSION=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+sed -i 's/# BR2_TARGET_UBOOT_CUSTOM_TARBALL is not set/BR2_TARGET_UBOOT_CUSTOM_TARBALL=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+echo "BR2_TARGET_UBOOT_CUSTOM_TARBALL=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
+
+if grep -q "BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION" ${BR_BUILD_DIR}/.config 2>/dev/null; then
+    sed -i "s|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=.*|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"/root/source/u-boot-2020.04.tar.bz2\"|" ${BR_BUILD_DIR}/.config
+else
+    echo "BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"/root/source/u-boot-2020.04.tar.bz2\"" >> ${BR_BUILD_DIR}/.config
+fi
+
+# 再次 olddefconfig 使配置生效
+make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
+
+# 如果设置了 BR2_DL_DIR 环境变量（下载缓存目录），配置它
+if [ -n "${BR2_DL_DIR}" ]; then
+    echo ">>> 使用外部下载缓存: ${BR2_DL_DIR}"
+    echo "BR2_DL_DIR=\"${BR2_DL_DIR}\"" >> ${BR_BUILD_DIR}/.config
+fi
+
+# 复制工程中的 rootfs-overlay
+if [ -d ${BR_CONFIG_SRC}/rootfs-overlay ]; then
+    echo ">>> 使用工程中的 rootfs-overlay ..."
+    mkdir -p ${BR_BUILD_DIR}/rootfs-overlay
+    cp -rf ${BR_CONFIG_SRC}/rootfs-overlay/* ${BR_BUILD_DIR}/rootfs-overlay/ 2>/dev/null || true
+    # 将 overlay 路径写入配置
+    echo "BR2_ROOTFS_OVERLAY=\"${BR_BUILD_DIR}/rootfs-overlay\"" >> ${BR_BUILD_DIR}/.config
+fi
+
+# 如果编译了应用，把应用放入 rootfs-overlay
+if [ -f /workspace/build/bin/NavigatorHMI_FW ]; then
+    echo ">>> 将 NavigatorHMI_FW 应用加入 rootfs ..."
+    mkdir -p ${BR_BUILD_DIR}/rootfs-overlay/usr/bin
+    cp /workspace/build/bin/NavigatorHMI_FW ${BR_BUILD_DIR}/rootfs-overlay/usr/bin/
+fi
+
+# 编译 Buildroot
+echo ">>> 开始编译 Buildroot (首次需下载源码包，耗时较长)..."
+make O=${BR_BUILD_DIR} -j${JOBS}
+
+# 输出产物
+echo ""
+echo ">>> Buildroot 编译完成!"
+ls -lh ${BR_BUILD_DIR}/images/ 2>/dev/null || true
+
+# 复制产物到 /workspace/build/rootfs
+mkdir -p /workspace/build/rootfs
+cp ${BR_BUILD_DIR}/images/rootfs.tar /workspace/build/rootfs/ 2>/dev/null || true
+cp ${BR_BUILD_DIR}/images/zImage /workspace/build/linux/ 2>/dev/null || true
+echo ">>> Rootfs 已输出到 /workspace/build/rootfs/"
+}
+
+# ===========================================
 # 主调度
 # ===========================================
 case "${TARGET}" in
@@ -267,6 +389,7 @@ case "${TARGET}" in
         build_uboot
         build_app
         collect_artifacts
+        build_rootfs
         ;;
     linux)
         build_linux
@@ -283,6 +406,9 @@ case "${TARGET}" in
         build_app
         collect_artifacts
         ;;
+    rootfs)
+        build_rootfs
+        ;;
     menuconfig_linux)
         menuconfig_linux
         ;;
@@ -292,7 +418,7 @@ case "${TARGET}" in
     *)
         echo "错误: 未知编译目标 '${TARGET}'"
         echo "用法: $0 [JOBS] [TARGET]"
-        echo "  TARGET: all (默认), linux, uboot, app, linux+app, menuconfig_linux, menuconfig_uboot"
+        echo "  TARGET: all (默认), linux, uboot, app, linux+app, rootfs, menuconfig_linux, menuconfig_uboot"
         exit 1
         ;;
 esac
