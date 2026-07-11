@@ -33,16 +33,28 @@ if [ -d /workspace/hwt/linux ] && [ "$(ls -A /workspace/hwt/linux 2>/dev/null)" 
     cp -rf /workspace/hwt/linux/* ${KERNEL_SRC}/
 fi
 
+# 如果 hwt/linux/config 下有自定义配置，覆盖到内核
+if [ -f /workspace/hwt/linux/config/linux_hwt_defconfig ]; then
+    cp /workspace/hwt/linux/config/linux_hwt_defconfig ${KERNEL_SRC}/arch/arm/configs/linux_hwt_defconfig
+fi
+
 # 配置并编译内核
 cd ${KERNEL_SRC}
 
 # 如果 hwt 提供了自定义 defconfig 则使用，否则用 imx 默认配置
-if [ -f arch/arm/configs/hwt_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} hwt_defconfig
+if [ -f arch/arm/configs/linux_hwt_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} linux_hwt_defconfig
 elif [ -f arch/arm/configs/imx_v6_v7_defconfig ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v6_v7_defconfig
 else
     echo "WARNING: 未找到 defconfig，跳过内核配置"
+fi
+
+# 如果已经有 .config 配置，直接使用（来自 menuconfig 保存的）
+if [ -f /workspace/hwt/linux/config/.config ]; then
+    echo ">>> 应用 hwt/linux/config/.config ..."
+    cp /workspace/hwt/linux/config/.config ${KERNEL_SRC}/.config
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} olddefconfig
 fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} zImage
@@ -79,16 +91,28 @@ if [ -d /workspace/hwt/uboot ] && [ "$(ls -A /workspace/hwt/uboot 2>/dev/null)" 
     cp -rf /workspace/hwt/uboot/* ${UBOOT_SRC}/
 fi
 
+# 如果 hwt/uboot/config 下有自定义配置，复制到 U-Boot 的 configs 目录
+if [ -f /workspace/hwt/uboot/config/uboot_hwt_defconfig ]; then
+    cp /workspace/hwt/uboot/config/uboot_hwt_defconfig ${UBOOT_SRC}/configs/uboot_hwt_defconfig
+fi
+
 cd ${UBOOT_SRC}
 
 # 如果 hwt 提供了自定义 defconfig 则使用，否则用 mx6ull 默认配置
-if [ -f configs/hwt_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} hwt_defconfig
+if [ -f configs/uboot_hwt_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} uboot_hwt_defconfig
 elif [ -f configs/mx6ull_14x14_evk_defconfig ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig
 else
     echo "WARNING: 未找到 U-Boot defconfig，尝试 mx6ull_14x14_evk_defconfig"
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig 2>/dev/null || true
+fi
+
+# 如果已经有 .config 配置，直接使用
+if [ -f /workspace/hwt/uboot/config/.config ]; then
+    echo ">>> 应用 hwt/uboot/config/.config ..."
+    cp /workspace/hwt/uboot/config/.config ${UBOOT_SRC}/.config
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} olddefconfig
 fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS}
@@ -155,16 +179,16 @@ fi
 
 echo "========================================="
 echo "  进入 Linux Kernel menuconfig ..."
-echo "  退出时将自动保存配置到 hwt/linux/"
+echo "  退出时将自动保存配置到 hwt/linux/config/"
 echo "========================================="
 make ARCH=${ARCH} menuconfig
 
-# 保存配置到挂载的 hwt 目录
-mkdir -p /workspace/hwt/linux
+# 保存配置到挂载的 hwt/linux/config 目录
+mkdir -p /workspace/hwt/linux/config
+cp .config /workspace/hwt/linux/config/.config
 make ARCH=${ARCH} savedefconfig
-cp defconfig /workspace/hwt/linux/hwt_defconfig
-cp .config /workspace/hwt/linux/.config 2>/dev/null || true
-echo ">>> Linux 配置已保存到 /workspace/hwt/linux/hwt_defconfig"
+cp defconfig /workspace/hwt/linux/config/linux_hwt_defconfig 2>/dev/null || true
+echo ">>> Linux 配置已保存到 /workspace/hwt/linux/config/linux_hwt_defconfig"
 }
 
 # ===========================================
@@ -199,16 +223,16 @@ fi
 
 echo "========================================="
 echo "  进入 U-Boot menuconfig ..."
-echo "  退出时将自动保存配置到 hwt/uboot/"
+echo "  退出时将自动保存配置到 hwt/uboot/config/"
 echo "========================================="
 make ARCH=${ARCH} menuconfig
 
-# 保存配置到挂载的 hwt 目录
-mkdir -p /workspace/hwt/uboot
+# 保存配置到挂载的 hwt/uboot/config 目录
+mkdir -p /workspace/hwt/uboot/config
+cp .config /workspace/hwt/uboot/config/.config
 make ARCH=${ARCH} savedefconfig
-cp defconfig /workspace/hwt/uboot/hwt_defconfig
-cp .config /workspace/hwt/uboot/.config 2>/dev/null || true
-echo ">>> U-Boot 配置已保存到 /workspace/hwt/uboot/hwt_defconfig"
+cp defconfig /workspace/hwt/uboot/config/uboot_hwt_defconfig 2>/dev/null || true
+echo ">>> U-Boot 配置已保存到 /workspace/hwt/uboot/config/uboot_hwt_defconfig"
 }
 
 # ===========================================

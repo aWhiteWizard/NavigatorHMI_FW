@@ -4,6 +4,8 @@
 .DESCRIPTION
     使用 fw-builder-env Docker 镜像，在容器内完成全部编译，
     无需打开 VS Code Dev Containers。
+.PARAMETER Help
+    显示此帮助信息
 .PARAMETER BuildType
     构建类型: Debug 或 Release (默认: Debug)
 .PARAMETER Target
@@ -18,6 +20,8 @@
     进入 Linux 或 U-Boot 的 menuconfig 交互式配置界面，
     退出时自动保存配置到 hwt/ 目录下。
     取值: linux, uboot
+.PARAMETER SkipLogin
+    跳过华为云 SWR 登录（已登录时使用）
 .EXAMPLE
     .\docker-build.ps1
     全部编译（Linux + U-Boot + 应用）
@@ -32,13 +36,13 @@
     只编译应用
 
     .\docker-build.ps1 -Target linux+app
+    编译 Linux + 应用（跳过 U-Boot）
 
     .\docker-build.ps1 -Menuconfig linux
-    进入 Linux Kernel menuconfig（交互式）
+    进入 Linux Kernel menuconfig（交互式配置）
 
     .\docker-build.ps1 -Menuconfig uboot
-    进入 U-Boot menuconfig（交互式）
-    编译 Linux Kernel + 应用（跳过 U-Boot）
+    进入 U-Boot menuconfig（交互式配置）
 
     .\docker-build.ps1 -BuildType Release
     Release 模式编译
@@ -48,13 +52,17 @@
 
     .\docker-build.ps1 -Jobs 8
     8 线程并行编译
+
+    .\docker-build.ps1 -Help
+    显示此帮助信息
 #>
 
 param(
+    [switch]$Help,
+
     [ValidateSet("Debug", "Release")]
     [string]$BuildType = "Debug",
 
-    [ValidateSet("all", "linux", "uboot", "app", "linux+app")]
     [string]$Target = "all",
 
     [switch]$Clean,
@@ -65,7 +73,6 @@ param(
 
     [switch]$SkipLogin,
 
-    [ValidateSet("", "linux", "uboot")]
     [string]$Menuconfig = ""
 )
 
@@ -77,6 +84,36 @@ $SWR_SK = "G6vlkEzbjeG4ZspOgK7pYJPm5G5E7DtbbBvBK5HM"
 $SWR_Region = "cn-southwest-2"
 $SWR_Domain = "swr.$SWR_Region.myhuaweicloud.com"
 $SWR_UserName = "$SWR_Region@$SWR_AK"
+
+# ============================================================
+# 处理 -Help 参数
+# ============================================================
+if ($Help) {
+    Get-Help $MyInvocation.MyCommand.Path -Detailed
+    exit 0
+}
+
+# ============================================================
+# 参数验证
+# ============================================================
+$ValidTargets = @("all", "linux", "uboot", "app", "linux+app")
+$ValidMenuconfigs = @("", "linux", "uboot")
+
+if ($Target -and ($ValidTargets -notcontains $Target)) {
+    Write-Host "错误: 无效的 -Target 参数 '$Target'" -ForegroundColor Red
+    Write-Host "有效值: $($ValidTargets -join ', ')" -ForegroundColor Yellow
+    Write-Host ""
+    Get-Help $MyInvocation.MyCommand.Path -Detailed
+    exit 1
+}
+
+if ($Menuconfig -and ($ValidMenuconfigs -notcontains $Menuconfig)) {
+    Write-Host "错误: 无效的 -Menuconfig 参数 '$Menuconfig'" -ForegroundColor Red
+    Write-Host "有效值: linux, uboot" -ForegroundColor Yellow
+    Write-Host ""
+    Get-Help $MyInvocation.MyCommand.Path -Detailed
+    exit 1
+}
 
 # ============================================================
 # 脚本位置与路径
@@ -132,13 +169,13 @@ if (-not (Test-Path $BuildDir)) {
 if ($Menuconfig) {
     Write-Host "============================================" -ForegroundColor Cyan
     Write-Host "  Step: Menuconfig ($Menuconfig)"            -ForegroundColor Cyan
-    Write-Host "  退出时将自动保存配置到 hwt/$Menuconfig/"    -ForegroundColor Cyan
+    Write-Host "  退出时将自动保存配置到 hwt/$Menuconfig/config/" -ForegroundColor Cyan
     Write-Host "============================================" -ForegroundColor Cyan
 
-    # 确保 hwt 目录存在
-    $HwtDir = Join-Path (Join-Path $ProjectRoot "hwt") "$Menuconfig"
-    if (-not (Test-Path $HwtDir)) {
-        New-Item -ItemType Directory -Path $HwtDir -Force | Out-Null
+    # 确保 hwt/config 目录存在
+    $HwtConfigDir = Join-Path (Join-Path (Join-Path $ProjectRoot "hwt") "$Menuconfig") "config"
+    if (-not (Test-Path $HwtConfigDir)) {
+        New-Item -ItemType Directory -Path $HwtConfigDir -Force | Out-Null
     }
 
     docker run --rm -it -v "${ProjectRoot}:/workspace" `
@@ -151,7 +188,7 @@ if ($Menuconfig) {
         exit $LASTEXITCODE
     }
 
-    Write-Host ">>> 配置已保存到 hwt/$Menuconfig/" -ForegroundColor Green
+    Write-Host ">>> 配置已保存到 hwt/$Menuconfig/config/" -ForegroundColor Green
     exit 0
 }
 

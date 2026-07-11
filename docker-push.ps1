@@ -5,6 +5,8 @@
     1. 构建包含源码压缩包的 Docker 镜像
     2. 推送到华为云 SWR 仓库
     3. 后续可用 docker-build.ps1 使用此镜像编译
+.PARAMETER Help
+    显示此帮助信息
 .PARAMETER ImageTag
     镜像标签 (默认: v1.0)
 .PARAMETER SkipPush
@@ -15,12 +17,38 @@
 
     .\docker-push.ps1 -ImageTag v1.1 -SkipPush
     构建 v1.1 标签的镜像，仅本地使用
+
+    .\docker-push.ps1 -Help
+    显示此帮助信息
 #>
 
 param(
+    [switch]$Help,
+
     [string]$ImageTag = "v1.0",
     [switch]$SkipPush
 )
+
+# ============================================================
+# 处理 -Help 参数
+# ============================================================
+if ($Help) {
+    Get-Help $MyInvocation.MyCommand.Path -Detailed
+    exit 0
+}
+
+# Simple tag validation
+if ($ImageTag -notmatch '^[\w.]+$') {
+    Write-Host "错误: 无效的镜像标签 '$ImageTag'" -ForegroundColor Red
+    Write-Host "标签只能包含字母、数字、下划线和点" -ForegroundColor Yellow
+    Get-Help $MyInvocation.MyCommand.Path -Detailed
+    exit 1
+}
+    Get-Help $MyInvocation.MyCommand.Path -Detailed
+    exit 0
+}
+
+$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -69,11 +97,15 @@ Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Step 2/3: 构建 Docker 镜像"               -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 
+# 源码压缩包路径
+$SourceDir = "D:\workspace\image_sources"
+
 # 使用 .devcontainer/Dockerfile 构建
-# 注意：需要将 build context 设为项目根目录，以便 COPY source/ 和 hwt/ 目录
 # --provenance=false 禁用 attestation（华为云 SWR 不支持新版 manifest 格式）
+# --build-context sources=... 将外部压缩包目录作为构建上下文传入
 docker build --provenance=false -t $FullImageTag `
     -f "${ProjectRoot}\.devcontainer\Dockerfile" `
+    --build-context "sources=${SourceDir}" `
     $ProjectRoot
 
 if ($LASTEXITCODE -ne 0) {
