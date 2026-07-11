@@ -8,21 +8,90 @@
 -->
 
 # NavigatorHMI_FW
-Embedded device code for NavigatorHMI
+Embedded device code for NavigatorHMI (i.MX6ULL ARM)
 
-# complie method
+## 环境要求
 
-## Debug 编译（默认）
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)（Windows）
+- PowerShell 5.1+
+
+## 项目结构
+
+```
+NavigatorHMI_FW/
+├── .devcontainer/
+│   └── Dockerfile              # 编译镜像定义（内含 Linux/U-Boot 源码压缩包）
+├── tarballs/                   # 内核/U-Boot 源码压缩包（已打包进镜像，.gitignore 忽略）
+│   ├── linux-5.4.234.tar.gz
+│   └── u-boot-2020.04.tar.bz2
+├── hwt/
+│   ├── linux/                  # Linux 补丁/配置/设备树（编译时覆盖到源码）
+│   └── uboot/                  # U-Boot 补丁/配置（编译时覆盖到源码）
+├── src/                        # NavigatorHMI_FW 应用源码
+├── cmake/
+│   └── arm-linux-gnueabihf-toolchain.cmake
+├── docker-push.ps1            # 构建镜像并推送到华为云 SWR
+├── docker-build.ps1           # 编译脚本
+├── build-linux-uboot.sh       # 容器内编译脚本（内核+uboot+应用）
+└── CMakeLists.txt
+```
+
+## 首次使用：构建镜像并推送到华为云 SWR
+
+```powershell
+.\docker-push.ps1
+```
+
+> 将 `tarballs/` 下的源码压缩包打包进 Docker 镜像，推送到华为云 SWR。
+> 后续编译直接使用该镜像，不再需要本地 `tarballs/` 目录。
+
+## 编译命令
+
+### 编译全部（Linux Kernel + U-Boot + 应用）
+
+```powershell
 .\docker-build.ps1
+```
 
-## Release 编译
-.\docker-build.ps1 -BuildType Release
+### 选择编译目标
 
-## 清理后重新编译
-.\docker-build.ps1 -Clean
+```powershell
+.\docker-build.ps1 -Target linux       # 只编译 Linux Kernel
+.\docker-build.ps1 -Target uboot       # 只编译 U-Boot
+.\docker-build.ps1 -Target app         # 只编译应用
+.\docker-build.ps1 -Target linux+app   # 编译 Linux + 应用（跳过 U-Boot）
+```
 
-## 跳过 CMake 配置，只重新 make
-.\docker-build.ps1 -NoRebuild
+### 其他选项
 
-## 指定并行线程数
-.\docker-build.ps1 -Jobs 8
+```powershell
+.\docker-build.ps1 -BuildType Release   # Release 模式
+.\docker-build.ps1 -Clean               # 清理后重新编译
+.\docker-build.ps1 -Jobs 8              # 8 线程并行编译
+.\docker-build.ps1 -SkipLogin           # 跳过 SWR 登录（已登录时使用）
+```
+
+## 编译产物
+
+```
+build/
+├── linux/
+│   ├── zImage                      # Linux 内核镜像
+│   ├── *.dtb                       # 设备树文件
+│   ├── lib/modules/                # 内核模块
+│   └── bin/
+│       └── NavigatorHMI_FW         # 应用可执行文件
+└── uboot/
+    ├── u-boot.bin                  # U-Boot 镜像
+    ├── u-boot.imx                  # U-Boot i.MX 格式（推荐使用）
+    └── SPL                         # SPL（如生成）
+```
+
+## 编译流程说明
+
+`build-linux-uboot.sh` 在容器内依次执行：
+
+1. **解压源码** — 从镜像内 `/root/source/` 解压 Linux/U-Boot 源码到 `/tmp/`
+2. **应用覆盖** — 从挂载的 `/workspace/hwt/` 将自定义配置/补丁覆盖到源码
+3. **交叉编译** — 使用 `arm-linux-gnueabihf-` 工具链编译
+4. **收集产物** — 应用自动部署到内核的 `bin/` 目录
