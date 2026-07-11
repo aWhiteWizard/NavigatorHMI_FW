@@ -125,6 +125,93 @@ echo ">>> NavigatorHMI_FW 应用编译完成"
 }
 
 # ===========================================
+# Menuconfig: Linux Kernel
+# ===========================================
+menuconfig_linux() {
+# 解压内核源码
+KERNEL_SRC=/tmp/linux-5.4.234
+if [ ! -d ${KERNEL_SRC} ]; then
+    mkdir -p /tmp
+    echo ">>> 解压 Linux 内核源码 ..."
+    tar -xzf /root/source/linux-5.4.234.tar.gz -C /tmp
+fi
+
+# 从挂载的 /workspace/hwt/linux 覆盖到内核源码
+if [ -d /workspace/hwt/linux ] && [ "$(ls -A /workspace/hwt/linux 2>/dev/null)" ]; then
+    echo ">>> 应用 hwt/linux 覆盖到内核源码 ..."
+    cp -rf /workspace/hwt/linux/* ${KERNEL_SRC}/
+fi
+
+cd ${KERNEL_SRC}
+
+# 如果已有 hwt_defconfig 则使用，否则用 imx 默认配置
+if [ -f arch/arm/configs/hwt_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} hwt_defconfig
+elif [ -f arch/arm/configs/imx_v6_v7_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v6_v7_defconfig
+else
+    echo "WARNING: 未找到 defconfig，跳过内核配置"
+fi
+
+echo "========================================="
+echo "  进入 Linux Kernel menuconfig ..."
+echo "  退出时将自动保存配置到 hwt/linux/"
+echo "========================================="
+make ARCH=${ARCH} menuconfig
+
+# 保存配置到挂载的 hwt 目录
+mkdir -p /workspace/hwt/linux
+make ARCH=${ARCH} savedefconfig
+cp defconfig /workspace/hwt/linux/hwt_defconfig
+cp .config /workspace/hwt/linux/.config 2>/dev/null || true
+echo ">>> Linux 配置已保存到 /workspace/hwt/linux/hwt_defconfig"
+}
+
+# ===========================================
+# Menuconfig: U-Boot
+# ===========================================
+menuconfig_uboot() {
+# 解压 U-Boot 源码
+UBOOT_SRC=/tmp/u-boot-2020.04
+if [ ! -d ${UBOOT_SRC} ]; then
+    mkdir -p /tmp
+    echo ">>> 解压 U-Boot 源码 ..."
+    tar -xjf /root/source/u-boot-2020.04.tar.bz2 -C /tmp
+fi
+
+# 从挂载的 /workspace/hwt/uboot 覆盖到 U-Boot 源码
+if [ -d /workspace/hwt/uboot ] && [ "$(ls -A /workspace/hwt/uboot 2>/dev/null)" ]; then
+    echo ">>> 应用 hwt/uboot 覆盖到 U-Boot 源码 ..."
+    cp -rf /workspace/hwt/uboot/* ${UBOOT_SRC}/
+fi
+
+cd ${UBOOT_SRC}
+
+# 如果已有 hwt_defconfig 则使用，否则用 mx6ull 默认配置
+if [ -f configs/hwt_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} hwt_defconfig
+elif [ -f configs/mx6ull_14x14_evk_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig
+else
+    echo "WARNING: 未找到 U-Boot defconfig，尝试 mx6ull_14x14_evk_defconfig"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig 2>/dev/null || true
+fi
+
+echo "========================================="
+echo "  进入 U-Boot menuconfig ..."
+echo "  退出时将自动保存配置到 hwt/uboot/"
+echo "========================================="
+make ARCH=${ARCH} menuconfig
+
+# 保存配置到挂载的 hwt 目录
+mkdir -p /workspace/hwt/uboot
+make ARCH=${ARCH} savedefconfig
+cp defconfig /workspace/hwt/uboot/hwt_defconfig
+cp .config /workspace/hwt/uboot/.config 2>/dev/null || true
+echo ">>> U-Boot 配置已保存到 /workspace/hwt/uboot/hwt_defconfig"
+}
+
+# ===========================================
 # 收集产物 —— 应用 bin 放到内核 /bin 目录
 # ===========================================
 collect_artifacts() {
@@ -172,10 +259,16 @@ case "${TARGET}" in
         build_app
         collect_artifacts
         ;;
+    menuconfig_linux)
+        menuconfig_linux
+        ;;
+    menuconfig_uboot)
+        menuconfig_uboot
+        ;;
     *)
         echo "错误: 未知编译目标 '${TARGET}'"
         echo "用法: $0 [JOBS] [TARGET]"
-        echo "  TARGET: all (默认), linux, uboot, app, linux+app"
+        echo "  TARGET: all (默认), linux, uboot, app, linux+app, menuconfig_linux, menuconfig_uboot"
         exit 1
         ;;
 esac

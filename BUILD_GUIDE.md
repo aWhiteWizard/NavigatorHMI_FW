@@ -72,6 +72,28 @@ NavigatorHMI_FW/
 .\docker-build.ps1 -SkipLogin
 ```
 
+### 3. 交互式配置（Menuconfig）
+
+进入 Linux 或 U-Boot 的 menuconfig 图形化配置界面：
+
+```powershell
+# Linux Kernel menuconfig（交互式）
+.\docker-build.ps1 -Menuconfig linux
+
+# U-Boot menuconfig（交互式）
+.\docker-build.ps1 -Menuconfig uboot
+```
+
+执行流程：
+1. 解压源码 → 应用 `hwt/` 补丁 → 加载现有配置
+2. 进入 menuconfig 界面供修改
+3. **退出时自动保存**：
+   - Linux 配置 → `hwt/linux/hwt_defconfig`
+   - U-Boot 配置 → `hwt/uboot/hwt_defconfig`
+4. 下次编译时脚本会优先检测并使用这些自定义配置
+
+> **注意**：Menuconfig 需要交互式终端，PowerShell 中直接运行即可。
+
 ---
 
 ## 编译产物

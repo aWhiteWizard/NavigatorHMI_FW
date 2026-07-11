@@ -14,6 +14,10 @@
     指定使用的 Docker 镜像 (默认: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0)
 .PARAMETER Jobs
     并行编译线程数 (默认: 4)
+.PARAMETER Menuconfig
+    进入 Linux 或 U-Boot 的 menuconfig 交互式配置界面，
+    退出时自动保存配置到 hwt/ 目录下。
+    取值: linux, uboot
 .EXAMPLE
     .\docker-build.ps1
     全部编译（Linux + U-Boot + 应用）
@@ -28,6 +32,12 @@
     只编译应用
 
     .\docker-build.ps1 -Target linux+app
+
+    .\docker-build.ps1 -Menuconfig linux
+    进入 Linux Kernel menuconfig（交互式）
+
+    .\docker-build.ps1 -Menuconfig uboot
+    进入 U-Boot menuconfig（交互式）
     编译 Linux Kernel + 应用（跳过 U-Boot）
 
     .\docker-build.ps1 -BuildType Release
@@ -53,7 +63,10 @@ param(
 
     [int]$Jobs = 4,
 
-    [switch]$SkipLogin
+    [switch]$SkipLogin,
+
+    [ValidateSet("", "linux", "uboot")]
+    [string]$Menuconfig = ""
 )
 
 # ============================================================
@@ -114,7 +127,36 @@ if (-not (Test-Path $BuildDir)) {
 }
 
 # ============================================================
-# Step 3: 编译全部（Linux Kernel + U-Boot + 应用）
+# Step 3: Menuconfig 交互式配置
+# ============================================================
+if ($Menuconfig) {
+    Write-Host "============================================" -ForegroundColor Cyan
+    Write-Host "  Step: Menuconfig ($Menuconfig)"            -ForegroundColor Cyan
+    Write-Host "  退出时将自动保存配置到 hwt/$Menuconfig/"    -ForegroundColor Cyan
+    Write-Host "============================================" -ForegroundColor Cyan
+
+    # 确保 hwt 目录存在
+    $HwtDir = Join-Path (Join-Path $ProjectRoot "hwt") "$Menuconfig"
+    if (-not (Test-Path $HwtDir)) {
+        New-Item -ItemType Directory -Path $HwtDir -Force | Out-Null
+    }
+
+    docker run --rm -it -v "${ProjectRoot}:/workspace" `
+        -w /workspace `
+        $DockerImage `
+        /bin/bash /workspace/build-linux-uboot.sh 4 menuconfig_${Menuconfig}
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ">>> Menuconfig 失败" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+
+    Write-Host ">>> 配置已保存到 hwt/$Menuconfig/" -ForegroundColor Green
+    exit 0
+}
+
+# ============================================================
+# Step 4: 编译全部（Linux Kernel + U-Boot + 应用）
 # ============================================================
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Step 1/1: 编译 Linux Kernel + U-Boot + 应用" -ForegroundColor Cyan
