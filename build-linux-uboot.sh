@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 set -e
 
 ARCH=arm
@@ -54,21 +54,19 @@ fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} zImage
 
-# 编译设备树：如果 hwt 下有自定义 dts 则只编这些，否则编全部
+# 编译设备树：只编译 hwt 下自定义的 dts 文件
 HWT_DTS_DIR=/workspace/hwt/linux/arch/arm/boot/dts
 DTS_FILES=$(find ${HWT_DTS_DIR} -name "*.dts" 2>/dev/null)
 if [ -n "${DTS_FILES}" ]; then
     echo ">>> 编译 hwt 中自定义的 dtb ..."
-    # 6.12 内核 DTS 可能在子目录，直接编译全部 dtbs
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} dtbs
     for dts_file in ${DTS_FILES}; do
         dtb_name=$(basename "${dts_file}" .dts).dtb
         echo "    ${dtb_name}"
+        make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} ${dtb_name}
         find arch/arm/boot/dts -name "${dtb_name}" -exec cp {} /workspace/build/linux/ \; 2>/dev/null || true
     done
 else
-    # 没有自定义 dts，编全部
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} dtbs
+    echo ">>> 没有自定义 dts，跳过 dtb 编译"
 fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} modules
@@ -76,10 +74,6 @@ make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} modules
 # 内核产物暂存到 /workspace/build/linux
 mkdir -p /workspace/build/linux
 cp arch/arm/boot/zImage /workspace/build/linux/
-# 6.12+ DTB 可能输出到子目录 (nxp/imx/ 等)
-cp arch/arm/boot/dts/*.dtb /workspace/build/linux/ 2>/dev/null || true
-cp arch/arm/boot/dts/*/*.dtb /workspace/build/linux/ 2>/dev/null || true
-cp arch/arm/boot/dts/*/*/*.dtb /workspace/build/linux/ 2>/dev/null || true
 echo ">>> Linux Kernel 编译完成: /workspace/build/linux/zImage"
 }
 
