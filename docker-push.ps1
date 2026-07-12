@@ -41,14 +41,8 @@ if ($Help) {
 if ($ImageTag -notmatch '^[\w.]+$') {
     Write-Host "错误: 无效的镜像标签 '$ImageTag'" -ForegroundColor Red
     Write-Host "标签只能包含字母、数字、下划线和点" -ForegroundColor Yellow
-    Get-Help $MyInvocation.MyCommand.Path -Detailed
     exit 1
 }
-    Get-Help $MyInvocation.MyCommand.Path -Detailed
-    exit 0
-}
-
-$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 

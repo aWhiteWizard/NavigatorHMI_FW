@@ -16,26 +16,21 @@ echo "========================================="
 # ===========================================
 build_linux() {
 echo "========================================="
-echo "  [1/3] 编译 Linux Kernel 5.4.234 ..."
+echo "  [1/3] 编译 Linux Kernel 6.6.144 ..."
 echo "========================================="
 
 # 解压内核源码（首次运行解压，之后可复用）
-KERNEL_SRC=/tmp/linux-5.4.234
+KERNEL_SRC=/tmp/linux-6.6.144
 if [ ! -d ${KERNEL_SRC} ]; then
     mkdir -p /tmp
     echo ">>> 解压 Linux 内核源码 ..."
-    tar -xzf /root/source/linux-5.4.234.tar.gz -C /tmp
+    tar -xJf /root/source/linux-6.6.144.tar.xz -C /tmp
 fi
 
 # 从挂载的 /workspace/hwt/linux 覆盖到内核源码
 if [ -d /workspace/hwt/linux ] && [ "$(ls -A /workspace/hwt/linux 2>/dev/null)" ]; then
     echo ">>> 应用 hwt/linux 覆盖到内核源码 ..."
     cp -rf /workspace/hwt/linux/* ${KERNEL_SRC}/
-fi
-
-# 如果 hwt/linux/arch/arm/configs 下有自定义配置，覆盖到内核
-if [ -f /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig ]; then
-    cp /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig ${KERNEL_SRC}/arch/arm/configs/linux_hwt_defconfig
 fi
 
 # 配置并编译内核
@@ -64,11 +59,12 @@ HWT_DTS_DIR=/workspace/hwt/linux/arch/arm/boot/dts
 DTS_FILES=$(find ${HWT_DTS_DIR} -name "*.dts" 2>/dev/null)
 if [ -n "${DTS_FILES}" ]; then
     echo ">>> 编译 hwt 中自定义的 dtb ..."
+    # 6.12 内核 DTS 可能在子目录，直接编译全部 dtbs
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} dtbs
     for dts_file in ${DTS_FILES}; do
         dtb_name=$(basename "${dts_file}" .dts).dtb
         echo "    ${dtb_name}"
-        make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} ${dtb_name}
-        cp arch/arm/boot/dts/${dtb_name} /workspace/build/linux/ 2>/dev/null || true
+        find arch/arm/boot/dts -name "${dtb_name}" -exec cp {} /workspace/build/linux/ \; 2>/dev/null || true
     done
 else
     # 没有自定义 dts，编全部
@@ -80,7 +76,10 @@ make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} modules
 # 内核产物暂存到 /workspace/build/linux
 mkdir -p /workspace/build/linux
 cp arch/arm/boot/zImage /workspace/build/linux/
+# 6.12+ DTB 可能输出到子目录 (nxp/imx/ 等)
 cp arch/arm/boot/dts/*.dtb /workspace/build/linux/ 2>/dev/null || true
+cp arch/arm/boot/dts/*/*.dtb /workspace/build/linux/ 2>/dev/null || true
+cp arch/arm/boot/dts/*/*/*.dtb /workspace/build/linux/ 2>/dev/null || true
 echo ">>> Linux Kernel 编译完成: /workspace/build/linux/zImage"
 }
 
@@ -169,11 +168,11 @@ echo ">>> NavigatorHMI_FW 应用编译完成"
 # ===========================================
 menuconfig_linux() {
 # 解压内核源码
-KERNEL_SRC=/tmp/linux-5.4.234
+KERNEL_SRC=/tmp/linux-6.6.144
 if [ ! -d ${KERNEL_SRC} ]; then
     mkdir -p /tmp
     echo ">>> 解压 Linux 内核源码 ..."
-    tar -xzf /root/source/linux-5.4.234.tar.gz -C /tmp
+    tar -xJf /root/source/linux-6.6.144.tar.xz -C /tmp
 fi
 
 # 从挂载的 /workspace/hwt/linux 覆盖到内核源码
@@ -284,7 +283,8 @@ echo "========================================="
 
 BR_VERSION=2025.05
 BR_DIR=/tmp/buildroot-${BR_VERSION}
-BR_BUILD_DIR=/workspace/build/buildroot
+BR_BUILD_DIR=/tmp/buildroot-${BR_VERSION}-build
+BR_OUTPUT_DIR=/workspace/build/rootfs
 
 # 解压 Buildroot 源码（首次运行解压，之后可复用）
 if [ ! -d ${BR_DIR} ]; then
@@ -323,9 +323,9 @@ echo "BR2_LINUX_KERNEL_CUSTOM_TARBALL=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
 
 # 设置内核源码路径
 if grep -q "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION" ${BR_BUILD_DIR}/.config 2>/dev/null; then
-    sed -i "s|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=.*|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"/root/source/linux-5.4.234.tar.gz\"|" ${BR_BUILD_DIR}/.config
+    sed -i "s|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=.*|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"file:///root/source/linux-6.6.144.tar.xz\"|" ${BR_BUILD_DIR}/.config
 else
-    echo "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"/root/source/linux-5.4.234.tar.gz\"" >> ${BR_BUILD_DIR}/.config
+    echo "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"file:///root/source/linux-6.6.144.tar.xz\"" >> ${BR_BUILD_DIR}/.config
 fi
 
 # 同样，使用 Docker 镜像内的 U-Boot 源码
@@ -334,26 +334,34 @@ sed -i 's/# BR2_TARGET_UBOOT_CUSTOM_TARBALL is not set/BR2_TARGET_UBOOT_CUSTOM_T
 echo "BR2_TARGET_UBOOT_CUSTOM_TARBALL=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
 
 if grep -q "BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION" ${BR_BUILD_DIR}/.config 2>/dev/null; then
-    sed -i "s|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=.*|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"/root/source/u-boot-2020.04.tar.bz2\"|" ${BR_BUILD_DIR}/.config
+    sed -i "s|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=.*|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"file:///root/source/u-boot-2020.04.tar.bz2\"|" ${BR_BUILD_DIR}/.config
 else
-    echo "BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"/root/source/u-boot-2020.04.tar.bz2\"" >> ${BR_BUILD_DIR}/.config
+    echo "BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"file:///root/source/u-boot-2020.04.tar.bz2\"" >> ${BR_BUILD_DIR}/.config
 fi
 
 # 再次 olddefconfig 使配置生效
 make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
 
-# 如果设置了 BR2_DL_DIR 环境变量（下载缓存目录），配置它
-if [ -n "${BR2_DL_DIR}" ]; then
-    echo ">>> 使用外部下载缓存: ${BR2_DL_DIR}"
-    echo "BR2_DL_DIR=\"${BR2_DL_DIR}\"" >> ${BR_BUILD_DIR}/.config
+# ========== 内核头文件版本由 Buildroot 默认决定 ==========
+# 使用 Linux 6.6 LTS，与 Buildroot 2025.05 默认头文件版本（6.6.x）匹配
+# 无需额外配置
+
+# 下载缓存目录（优先使用环境变量 BR2_DL_DIR）
+# 镜像内预缓存路径: /root/buildroot-dl（由 Dockerfile COPY 进去）
+if [ -z "${BR2_DL_DIR}" ] && [ -d /root/buildroot-dl ]; then
+    CACHE_DIR=/root/buildroot-dl
+else
+    CACHE_DIR=${BR2_DL_DIR:-/tmp/buildroot-dl}
 fi
+mkdir -p ${CACHE_DIR}
+echo ">>> 下载缓存: ${CACHE_DIR}"
+echo "BR2_DL_DIR=\"${CACHE_DIR}\"" >> ${BR_BUILD_DIR}/.config
 
 # 复制工程中的 rootfs-overlay
 if [ -d ${BR_CONFIG_SRC}/rootfs-overlay ]; then
     echo ">>> 使用工程中的 rootfs-overlay ..."
     mkdir -p ${BR_BUILD_DIR}/rootfs-overlay
     cp -rf ${BR_CONFIG_SRC}/rootfs-overlay/* ${BR_BUILD_DIR}/rootfs-overlay/ 2>/dev/null || true
-    # 将 overlay 路径写入配置
     echo "BR2_ROOTFS_OVERLAY=\"${BR_BUILD_DIR}/rootfs-overlay\"" >> ${BR_BUILD_DIR}/.config
 fi
 
@@ -366,7 +374,7 @@ fi
 
 # 编译 Buildroot
 echo ">>> 开始编译 Buildroot (首次需下载源码包，耗时较长)..."
-make O=${BR_BUILD_DIR} -j${JOBS}
+FORCE_UNSAFE_CONFIGURE=1 make O=${BR_BUILD_DIR} -j${JOBS}
 
 # 输出产物
 echo ""
@@ -374,10 +382,10 @@ echo ">>> Buildroot 编译完成!"
 ls -lh ${BR_BUILD_DIR}/images/ 2>/dev/null || true
 
 # 复制产物到 /workspace/build/rootfs
-mkdir -p /workspace/build/rootfs
-cp ${BR_BUILD_DIR}/images/rootfs.tar /workspace/build/rootfs/ 2>/dev/null || true
-cp ${BR_BUILD_DIR}/images/zImage /workspace/build/linux/ 2>/dev/null || true
-echo ">>> Rootfs 已输出到 /workspace/build/rootfs/"
+mkdir -p ${BR_OUTPUT_DIR}
+cp ${BR_BUILD_DIR}/images/rootfs.tar ${BR_OUTPUT_DIR}/ 2>/dev/null || true
+cp ${BR_BUILD_DIR}/images/zImage ${BR_OUTPUT_DIR}/ 2>/dev/null || true
+echo ">>> Rootfs 已输出到 ${BR_OUTPUT_DIR}/"
 }
 
 # ===========================================

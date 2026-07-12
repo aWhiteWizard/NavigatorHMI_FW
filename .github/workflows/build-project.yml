@@ -44,7 +44,7 @@ jobs:
       - name: Pull builder image
         run: docker pull ${{ env.BUILDER_IMAGE }}
 
-      - name: Build all (Linux Kernel + U-Boot + App)
+      - name: Build (Linux Kernel 6.6 + U-Boot + App + Rootfs)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \

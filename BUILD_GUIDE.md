@@ -7,8 +7,12 @@ NavigatorHMI_FW/
 ├── .devcontainer/
 │   └── Dockerfile              # Docker 编译镜像定义
 ├── tarballs/
-│   ├── linux-5.4.234.tar.gz      # Linux Kernel 源码压缩包
-│   └── u-boot-2020.04.tar.bz2 # U-Boot 源码压缩包
+│   ├── linux-6.6.144.tar.xz    # Linux Kernel 6.6 LTS 源码
+│   ├── u-boot-2020.04.tar.bz2 # U-Boot 2020.04 源码
+│   └── buildroot-2025.05.tar.gz# Buildroot 2025.05 源码
+├── build/
+│   └── buildroot/
+│       └── dl/                # Buildroot 下载缓存（持久化）
 ├── hwt/
 │   ├── linux/
 │   │   ├── arch/arm/configs/        # Linux 内核配置（menuconfig 导出）
@@ -19,14 +23,23 @@ NavigatorHMI_FW/
 ├── src/                          # NavigatorHMI_FW 应用源码
 ├── cmake/
 │   └── arm-linux-gnueabihf-toolchain.cmake
-├── docker-build.ps1            # 编译脚本（应用+内核+uboot）
+├── buildroot/                   # Buildroot 配置（可选）
+├── docker-build.ps1            # 编译脚本（应用+内核+uboot+rootfs）
 ├── docker-push.ps1             # 构建镜像并推送到华为云 SWR
+├── build-linux-uboot.sh        # 容器内编译脚本
 └── CMakeLists.txt
 ```
 
 ---
 
 ## 工作流程
+
+### 0. 准备工作
+
+将以下源码压缩包放到 `D:\workspace\image_sources\` 目录：
+- `linux-6.6.144.tar.xz`（Linux 6.6 LTS 内核）
+- `u-boot-2020.04.tar.bz2`（U-Boot 2020.04）
+- `buildroot-2025.05.tar.gz`（Buildroot 2025.05）
 
 ### 1. 首次使用：构建镜像并推送到华为云 SWR
 
@@ -37,13 +50,12 @@ NavigatorHMI_FW/
 该脚本会：
 1. 登录华为云 SWR
 2. 使用 `.devcontainer/Dockerfile` 构建镜像
-   - 将 `source/` 下的 Linux/U-Boot 压缩包复制到镜像内的 `/root/source/`
-   - 将 `hwt/linux` 和 `hwt/uboot` 复制到镜像内的 `/root/hwt/`
+   - 将源码压缩包复制到镜像内的 `/root/source/`
+   - 预填充 Buildroot 下载缓存到 `/root/buildroot-dl/`
    - 安装交叉编译工具链
-   - 创建 `/usr/local/bin/build-all.sh` 编译脚本
 3. 推送到华为云 SWR：`swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0`
 
-> **提示**：如果后续修改了 `source/` 或 `hwt/` 内容，需要重新执行 `docker-push.ps1` 更新镜像。
+> **提示**：如果修改了源码包或 `hwt/` 内容，需要重新执行 `docker-push.ps1` 更新镜像。
 
 ### 2. 日常编译
 
@@ -63,6 +75,9 @@ NavigatorHMI_FW/
 # 编译 Linux Kernel + 应用（跳过 U-Boot）
 .\docker-build.ps1 -Target linux+app
 
+# 编译 Buildroot Rootfs
+.\docker-build.ps1 -Target rootfs
+
 # Release 模式
 .\docker-build.ps1 -BuildType Release
 
@@ -74,6 +89,9 @@ NavigatorHMI_FW/
 
 # 跳过 SWR 登录
 .\docker-build.ps1 -SkipLogin
+
+# 查看帮助
+.\docker-build.ps1 -Help
 ```
 
 ### 3. 交互式配置（Menuconfig）
@@ -111,11 +129,15 @@ build/
 │   ├── *.dtb                  # 设备树文件
 │   ├── lib/modules/           # 内核模块
 │   └── bin/
-│       └── NavigatorHMI_FW    # 应用可执行文件（已部署到内核 /bin）
+│       └── NavigatorHMI_FW    # 应用可执行文件
 ├── uboot/
 │   ├── u-boot.bin             # U-Boot 镜像
 │   ├── u-boot.imx             # U-Boot i.MX 格式镜像
-│   └── SPL                    # SPL（如生成）
+│   └── u-boot-dtb.imx         # U-Boot + DTB 镜像
+├── rootfs/
+│   ├── rootfs.tar             # Rootfs 压缩包
+│   ├── rootfs.ext2/ext4       # Rootfs 镜像
+│   └── sdcard.img             # 完整 SD 卡镜像
 └── bin/                       # CMake 编译中间产物，可忽略
 ```
 
@@ -125,45 +147,27 @@ build/
 
 编译时（`docker-build.ps1`）的执行流程：
 
-所有编译在一个 `docker run` 内完成，顺序执行：
+所有编译在一个 `docker run` 内完成，顺序根据 `-Target` 参数决定：
 
-1. **编译 Linux Kernel 4.1.15**
-   - 解压镜像内 `/root/source/linux-imx-4.1.15.tar.bz2` 到 `/tmp/`
+1. **编译 Linux Kernel 6.6.144**（`-Target linux`）
+   - 从镜像内 `/root/source/linux-6.6.144.tar.xz` 解压到 `/tmp/linux-6.6.144/`
    - 从挂载的 `/workspace/hwt/linux/` 覆盖解压后的内核源码
-   - 配置并编译 `zImage` + `dtbs` + `modules`
-   - 产物暂存到 `/workspace/build/linux/`
+   - 使用 `linux_hwt_defconfig` 或 `imx_v6_v7_defconfig` 配置
+   - 编译 `zImage` + `dtbs` + `modules`
+   - 产物到 `/workspace/build/linux/`
 
-2. **编译 U-Boot 2016.03**
-   - 解压镜像内 `/root/source/uboot-imx-2016.03.tar.bz2` 到 `/tmp/`
+2. **编译 U-Boot 2020.04**（`-Target uboot`）
+   - 从镜像内 `/root/source/u-boot-2020.04.tar.bz2` 解压到 `/tmp/u-boot-2020.04/`
    - 从挂载的 `/workspace/hwt/uboot/` 覆盖解压后的 U-Boot 源码
-   - 配置并编译 U-Boot
-   - 产物输出到 `/workspace/build/uboot/`
+   - 使用 `uboot_hwt_defconfig` 配置
+   - 产物到 `/workspace/build/uboot/`
 
-3. **编译 NavigatorHMI_FW 应用**
+3. **编译 NavigatorHMI_FW 应用**（`-Target app`）
    - CMake 配置 + `make` 编译
-   - 可执行文件复制到内核的 `/bin` 目录
+   - 产物到 `/workspace/build/bin/`
 
-### 最终产物结构
-
-```
-build/linux/
-├── zImage                 # 内核镜像
-├── *.dtb                  # 设备树
-├── lib/modules/           # 内核模块
-└── bin/
-    └── NavigatorHMI_FW    # 应用可执行文件
-```
-
-1. **编译 Linux Kernel 4.1.15**
-   - 解压 `/root/source/linux-imx-4.1.15.tar.bz2` 到 `/tmp/`
-   - 将 `/root/hwt/linux/` 的内容覆盖到内核源码目录
-   - 使用 `hwt_defconfig` 或 `imx_v7_defconfig` 配置内核
-   - 编译 `zImage`、`dtbs`、`modules`
-   - 产物输出到 `/workspace/build/linux/`
-
-2. **编译 U-Boot 2016.03**
-   - 解压 `/root/source/uboot-imx-2016.03.tar.bz2` 到 `/tmp/`
-   - 将 `/root/hwt/uboot/` 的内容覆盖到 U-Boot 源码目录
-   - 使用 `hwt_defconfig` 或 `mx6ull_14x14_evk_defconfig` 配置
-   - 编译 U-Boot
-   - 产物输出到 `/workspace/build/uboot/`
+4. **编译 Buildroot Rootfs**（`-Target rootfs`）
+   - 使用 `imx6ullevk_defconfig` 为基础配置
+   - 自动使用本地内核/U-Boot 源码（避免重复下载）
+   - 使用镜像内预缓存的下载包（`/root/buildroot-dl/`）
+   - 产物到 `/workspace/build/rootfs/`（rootfs.tar, sdcard.img）

@@ -55,9 +55,12 @@ WORKDIR /workspace
 # === 第五步：创建 /root/source 目录并复制各类源码压缩包 ===
 # 压缩包从外部 context "sources" 获取，构建时需指定 --build-context sources=路径
 RUN mkdir -p /root/source
-COPY --from=sources /linux-5.4.234.tar.gz /root/source/
+COPY --from=sources /linux-6.6.144.tar.xz /root/source/
 COPY --from=sources /u-boot-2020.04.tar.bz2 /root/source/
 COPY --from=sources /buildroot-2025.05.tar.gz /root/source/
+
+# 预填充 Buildroot 下载缓存（避免 CI 上重复下载）
+COPY --from=sources /buildroot-dl/ /root/buildroot-dl/
 
 # 重置 DEBIAN_FRONTEND
 ENV DEBIAN_FRONTEND=
