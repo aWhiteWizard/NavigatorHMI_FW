@@ -62,8 +62,15 @@ if [ -n "${DTS_FILES}" ]; then
     for dts_file in ${DTS_FILES}; do
         dtb_name=$(basename "${dts_file}" .dts).dtb
         echo "    ${dtb_name}"
-        make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} ${dtb_name}
-        find arch/arm/boot/dts -name "${dtb_name}" -exec cp {} /workspace/build/linux/ \; 2>/dev/null || true
+        # 找到 dts 在内核中的相对路径，用完整路径编译
+        dts_rel=$(find ${KERNEL_SRC}/arch/arm/boot/dts -name "${dtb_name%.dtb}.dts" -not -path "*/overlays/*" 2>/dev/null | sed "s|${KERNEL_SRC}/arch/arm/boot/dts/||" | sed 's/\.dts$//')
+        if [ -n "${dts_rel}" ]; then
+            make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} ${dts_rel}.dtb
+            find arch/arm/boot/dts -name "${dtb_name}" -exec cp {} /workspace/build/linux/ \; 2>/dev/null || true
+        else
+            echo "    WARNING: 未找到 ${dtb_name} 在内核中的位置，尝试直接编译"
+            make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} ${dtb_name} 2>/dev/null || true
+        fi
     done
 else
     echo ">>> 没有自定义 dts，跳过 dtb 编译"
