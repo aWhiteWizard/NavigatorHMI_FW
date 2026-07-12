@@ -426,6 +426,7 @@ case "${TARGET}" in
         collect_artifacts
         ;;
     rootfs)
+        build_app
         build_rootfs
         ;;
     menuconfig_linux)

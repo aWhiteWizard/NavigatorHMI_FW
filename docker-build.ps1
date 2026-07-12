@@ -176,12 +176,6 @@ if ($Menuconfig) {
     Write-Host "  退出时将自动保存配置到 hwt/$Menuconfig/arch/arm/configs/" -ForegroundColor Cyan
     Write-Host "============================================" -ForegroundColor Cyan
 
-    # 确保 hwt/config 目录存在
-    $HwtConfigDir = Join-Path (Join-Path (Join-Path $ProjectRoot "hwt") "$Menuconfig") "config"
-    if (-not (Test-Path $HwtConfigDir)) {
-        New-Item -ItemType Directory -Path $HwtConfigDir -Force | Out-Null
-    }
-
     docker run --rm -it -v "${ProjectRoot}:/workspace" `
         -w /workspace `
         $DockerImage `
