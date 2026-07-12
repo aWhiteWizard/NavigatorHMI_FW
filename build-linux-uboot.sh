@@ -183,27 +183,33 @@ fi
 
 cd ${KERNEL_SRC}
 
-# 如果已有 hwt_defconfig 则使用，否则用 imx 默认配置
-if [ -f arch/arm/configs/hwt_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} hwt_defconfig
-elif [ -f arch/arm/configs/imx_v6_v7_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v6_v7_defconfig
+# 直接使用 hwt 下的 linux_hwt_defconfig（不存在则用 imx 默认创建一份）
+HWT_LINUX_DEFCONFIG=/workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig
+if [ -f ${HWT_LINUX_DEFCONFIG} ]; then
+    cp ${HWT_LINUX_DEFCONFIG} ${KERNEL_SRC}/arch/arm/configs/linux_hwt_defconfig
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} linux_hwt_defconfig
+    echo ">>> 已加载 hwt: linux_hwt_defconfig"
 else
-    echo "WARNING: 未找到 defconfig，跳过内核配置"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v6_v7_defconfig
+    mkdir -p $(dirname ${HWT_LINUX_DEFCONFIG})
+    cp .config $(dirname ${HWT_LINUX_DEFCONFIG})/.config
+    make ARCH=${ARCH} savedefconfig
+    cp defconfig ${HWT_LINUX_DEFCONFIG}
+    echo ">>> 已创建 hwt: linux_hwt_defconfig (基于 imx_v6_v7_defconfig)"
 fi
 
 echo "========================================="
 echo "  进入 Linux Kernel menuconfig ..."
-echo "  退出时将自动保存配置到 hwt/linux/arch/arm/configs/"
+echo "  修改后保存将自动写入 hwt/linux/arch/arm/configs/"
 echo "========================================="
 make ARCH=${ARCH} menuconfig
 
-# 保存配置到挂载的 hwt/linux/arch/arm/configs 目录
+# 保存配置到 hwt
 mkdir -p /workspace/hwt/linux/arch/arm/configs
 cp .config /workspace/hwt/linux/arch/arm/configs/.config
 make ARCH=${ARCH} savedefconfig
-cp defconfig /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig 2>/dev/null || true
-echo ">>> Linux 配置已保存到 /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig"
+cp defconfig ${HWT_LINUX_DEFCONFIG}
+echo ">>> Linux 配置已保存到 ${HWT_LINUX_DEFCONFIG}"
 }
 
 # ===========================================
@@ -226,28 +232,33 @@ fi
 
 cd ${UBOOT_SRC}
 
-# 如果已有 hwt_defconfig 则使用，否则用 mx6ull 默认配置
-if [ -f configs/hwt_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} hwt_defconfig
-elif [ -f configs/mx6ull_14x14_evk_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig
+# 直接使用 hwt 下的 uboot_hwt_defconfig（不存在则用 mx6ull 默认创建一份）
+HWT_UBOOT_DEFCONFIG=/workspace/hwt/uboot/configs/uboot_hwt_defconfig
+if [ -f ${HWT_UBOOT_DEFCONFIG} ]; then
+    cp ${HWT_UBOOT_DEFCONFIG} ${UBOOT_SRC}/configs/uboot_hwt_defconfig
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} uboot_hwt_defconfig
+    echo ">>> 已加载 hwt: uboot_hwt_defconfig"
 else
-    echo "WARNING: 未找到 U-Boot defconfig，尝试 mx6ull_14x14_evk_defconfig"
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig 2>/dev/null || true
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig
+    mkdir -p $(dirname ${HWT_UBOOT_DEFCONFIG})
+    cp .config $(dirname ${HWT_UBOOT_DEFCONFIG})/.config
+    make ARCH=${ARCH} savedefconfig
+    cp defconfig ${HWT_UBOOT_DEFCONFIG}
+    echo ">>> 已创建 hwt: uboot_hwt_defconfig (基于 mx6ull_14x14_evk_defconfig)"
 fi
 
 echo "========================================="
 echo "  进入 U-Boot menuconfig ..."
-echo "  退出时将自动保存配置到 hwt/uboot/configs/"
+echo "  修改后保存将自动写入 hwt/uboot/configs/"
 echo "========================================="
 make ARCH=${ARCH} menuconfig
 
-# 保存配置到挂载的 hwt/uboot/configs 目录
+# 保存配置到 hwt
 mkdir -p /workspace/hwt/uboot/configs
 cp .config /workspace/hwt/uboot/configs/.config
 make ARCH=${ARCH} savedefconfig
-cp defconfig /workspace/hwt/uboot/configs/uboot_hwt_defconfig 2>/dev/null || true
-echo ">>> U-Boot 配置已保存到 /workspace/hwt/uboot/configs/uboot_hwt_defconfig"
+cp defconfig ${HWT_UBOOT_DEFCONFIG}
+echo ">>> U-Boot 配置已保存到 ${HWT_UBOOT_DEFCONFIG}"
 }
 
 # ===========================================
@@ -419,9 +430,11 @@ case "${TARGET}" in
         ;;
     menuconfig_linux)
         menuconfig_linux
+        exit 0
         ;;
     menuconfig_uboot)
         menuconfig_uboot
+        exit 0
         ;;
     *)
         echo "错误: 未知编译目标 '${TARGET}'"
