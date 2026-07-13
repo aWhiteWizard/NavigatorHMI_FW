@@ -384,7 +384,6 @@ ls -lh ${BR_BUILD_DIR}/images/ 2>/dev/null || true
 # 复制产物到 /workspace/build/rootfs
 mkdir -p ${BR_OUTPUT_DIR}
 cp ${BR_BUILD_DIR}/images/rootfs.tar ${BR_OUTPUT_DIR}/ 2>/dev/null || true
-cp ${BR_BUILD_DIR}/images/zImage ${BR_OUTPUT_DIR}/ 2>/dev/null || true
 echo ">>> Rootfs 已输出到 ${BR_OUTPUT_DIR}/"
 }
 
