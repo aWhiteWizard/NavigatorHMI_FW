@@ -36,20 +36,13 @@ fi
 # 配置并编译内核
 cd ${KERNEL_SRC}
 
-# 如果 hwt 提供了自定义 defconfig 则使用，否则用 imx 默认配置
+# 使用 hwt 自定义 defconfig 配置内核
 if [ -f arch/arm/configs/linux_hwt_defconfig ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} linux_hwt_defconfig
 elif [ -f arch/arm/configs/imx_v6_v7_defconfig ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v6_v7_defconfig
 else
     echo "WARNING: 未找到 defconfig，跳过内核配置"
-fi
-
-# 如果已经有 .config 配置，直接使用（来自 menuconfig 保存的）
-if [ -f /workspace/hwt/linux/arch/arm/configs/.config ]; then
-    echo ">>> 应用 hwt/linux/arch/arm/configs/.config ..."
-    cp /workspace/hwt/linux/arch/arm/configs/.config ${KERNEL_SRC}/.config
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} olddefconfig
 fi
 
 # 内核产物暂存目录（提前创建，供 dtb 复制使用）
@@ -116,7 +109,7 @@ fi
 
 cd ${UBOOT_SRC}
 
-# 如果 hwt 提供了自定义 defconfig 则使用，否则用 mx6ull 默认配置
+# 使用 hwt 自定义 defconfig 配置 U-Boot
 if [ -f configs/uboot_hwt_defconfig ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} uboot_hwt_defconfig
 elif [ -f configs/mx6ull_14x14_evk_defconfig ]; then
@@ -124,13 +117,6 @@ elif [ -f configs/mx6ull_14x14_evk_defconfig ]; then
 else
     echo "WARNING: 未找到 U-Boot defconfig，尝试 mx6ull_14x14_evk_defconfig"
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig 2>/dev/null || true
-fi
-
-# 如果已经有 .config 配置，直接使用
-if [ -f /workspace/hwt/uboot/configs/.config ]; then
-    echo ">>> 应用 hwt/uboot/configs/.config ..."
-    cp /workspace/hwt/uboot/configs/.config ${UBOOT_SRC}/.config
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} olddefconfig
 fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS}
