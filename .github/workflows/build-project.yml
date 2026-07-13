@@ -44,10 +44,14 @@ jobs:
       - name: Pull builder image
         run: docker pull ${{ env.BUILDER_IMAGE }}
 
+      - name: Create build directories
+        run: mkdir -p build/buildroot/dl build/linux build/uboot build/rootfs
+
       - name: Build (Linux Kernel 6.6 + U-Boot + App + Rootfs)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -e BR2_DL_DIR="/workspace/build/buildroot/dl" \
             -e FORCE_UNSAFE_CONFIGURE=1 \
             -w /workspace \
             ${{ env.BUILDER_IMAGE }} \
@@ -65,9 +69,18 @@ jobs:
           echo ""
           echo "--- App ---"
           ls -lh build/linux/bin/ 2>/dev/null || echo "(none)"
+          ls -lh build/bin/NavigatorHMI_FW 2>/dev/null || echo "(none)"
           echo ""
           echo "--- U-Boot ---"
           ls -lh build/uboot/ 2>/dev/null || echo "(none)"
+          echo ""
+          echo "--- Rootfs ---"
+          ls -lh build/rootfs/ 2>/dev/null || echo "(none)"
+          if [ -f build/rootfs/rootfs.tar ]; then
+            echo ""
+            echo "--- Rootfs 中包含的应用 ---"
+            tar tf build/rootfs/rootfs.tar | grep -E "NavigatorHMI_FW|usr/bin/" | head -10 || echo "(应用未打包进 rootfs)"
+          fi
 
       - name: Upload Linux artifacts
         if: ${{ github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'linux' || github.event.inputs.target == 'linux+app' }}
