@@ -194,7 +194,7 @@ if ($Menuconfig) {
 # Step 4: 编译全部（Linux Kernel + U-Boot + 应用 + Rootfs）
 # ============================================================
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "  Step 1/1: 编译 Linux Kernel + U-Boot + 应用" -ForegroundColor Cyan
+Write-Host "  Step 1/1: 编译 Linux Kernel U-Boot Rootfs" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 
 # 创建 Buildroot 下载缓存目录

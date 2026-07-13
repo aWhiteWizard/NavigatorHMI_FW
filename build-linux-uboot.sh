@@ -52,6 +52,9 @@ if [ -f /workspace/hwt/linux/arch/arm/configs/.config ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} olddefconfig
 fi
 
+# 内核产物暂存目录（提前创建，供 dtb 复制使用）
+mkdir -p /workspace/build/linux
+
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} zImage
 
 # 编译设备树：只编译 hwt 下自定义的 dts 文件
@@ -78,8 +81,7 @@ fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS} modules
 
-# 内核产物暂存到 /workspace/build/linux
-mkdir -p /workspace/build/linux
+# 复制内核镜像
 cp arch/arm/boot/zImage /workspace/build/linux/
 echo ">>> Linux Kernel 编译完成: /workspace/build/linux/zImage"
 }
