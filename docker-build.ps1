@@ -9,7 +9,7 @@
 .PARAMETER BuildType
     构建类型: Debug 或 Release (默认: Debug)
 .PARAMETER Target
-    编译目标: all (默认), linux, uboot, app, linux+app, rootfs
+    编译目标: all (默认), linux, uboot, app, linux+app, rootfs, image
 .PARAMETER Clean
     清理构建目录后重新编译
 .PARAMETER DockerImage
@@ -40,6 +40,9 @@
 
     .\docker-build.ps1 -Target rootfs
     只编译 Rootfs（需先编出应用）
+
+    .\docker-build.ps1 -Target image
+    编译应用 + Rootfs + 完整 SD 卡镜像 (sdcard.img)
 
 
     .\docker-build.ps1 -Menuconfig linux
@@ -100,7 +103,7 @@ if ($Help) {
 # ============================================================
 # 参数验证
 # ============================================================
-$ValidTargets = @("all", "linux", "uboot", "app", "linux+app", "rootfs")
+$ValidTargets = @("all", "linux", "uboot", "app", "linux+app", "rootfs", "image")
 $ValidMenuconfigs = @("", "linux", "uboot")
 
 if ($Target -and ($ValidTargets -notcontains $Target)) {

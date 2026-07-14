@@ -346,6 +346,33 @@ make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
 # 使用 Linux 6.6 LTS，与 Buildroot 2025.05 默认头文件版本（6.6.x）匹配
 # 无需额外配置
 
+# ========== 应用 hwt 自定义内核配置 ==========
+if [ -f /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig ]; then
+    echo ">>> 使用 hwt 自定义内核配置: linux_hwt_defconfig"
+    sed -i 's/BR2_LINUX_KERNEL_USE_DEFCONFIG=y/BR2_LINUX_KERNEL_USE_DEFCONFIG=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+    sed -i 's/# BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG is not set/BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+    echo "BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
+    echo "BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE=\"/workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig\"" >> ${BR_BUILD_DIR}/.config 2>/dev/null
+fi
+
+# ========== 应用 hwt 自定义 U-Boot 配置 ==========
+# 使用 BR2_TARGET_UBOOT_CUSTOM_CONFIG_FILE 直接指定 defconfig 路径，
+# 避免 defconfig 不在 U-Boot 源码 configs/ 目录下的问题
+if [ -f /workspace/hwt/uboot/configs/uboot_hwt_defconfig ]; then
+    echo ">>> 使用 hwt 自定义 U-Boot 配置: uboot_hwt_defconfig"
+    sed -i 's/BR2_TARGET_UBOOT_BUILD_SYSTEM_LEGACY=y/BR2_TARGET_UBOOT_BUILD_SYSTEM_LEGACY=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+    sed -i 's/# BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG is not set/BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+    echo "BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
+    # 使用自定义配置文件方式（直接指定 defconfig 文件路径）
+    sed -i 's/BR2_TARGET_UBOOT_USE_DEFCONFIG=y/BR2_TARGET_UBOOT_USE_DEFCONFIG=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+    sed -i 's/# BR2_TARGET_UBOOT_USE_CUSTOM_CONFIG is not set/BR2_TARGET_UBOOT_USE_CUSTOM_CONFIG=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
+    echo "BR2_TARGET_UBOOT_USE_CUSTOM_CONFIG=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
+    echo "BR2_TARGET_UBOOT_CUSTOM_CONFIG_FILE=\"/workspace/hwt/uboot/configs/uboot_hwt_defconfig\"" >> ${BR_BUILD_DIR}/.config 2>/dev/null
+fi
+
+# olddefconfig 使自定义配置生效
+make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
+
 # 下载缓存目录（优先使用环境变量 BR2_DL_DIR）
 # 镜像内预缓存路径: /root/buildroot-dl（由 Dockerfile COPY 进去）
 if [ -z "${BR2_DL_DIR}" ] && [ -d /root/buildroot-dl ]; then
@@ -384,7 +411,9 @@ ls -lh ${BR_BUILD_DIR}/images/ 2>/dev/null || true
 # 复制产物到 /workspace/build/rootfs
 mkdir -p ${BR_OUTPUT_DIR}
 cp ${BR_BUILD_DIR}/images/rootfs.tar ${BR_OUTPUT_DIR}/ 2>/dev/null || true
+cp ${BR_BUILD_DIR}/images/sdcard.img ${BR_OUTPUT_DIR}/ 2>/dev/null || true
 echo ">>> Rootfs 已输出到 ${BR_OUTPUT_DIR}/"
+echo ">>> SD 卡镜像: ${BR_OUTPUT_DIR}/sdcard.img"
 }
 
 # ===========================================
@@ -392,10 +421,7 @@ echo ">>> Rootfs 已输出到 ${BR_OUTPUT_DIR}/"
 # ===========================================
 case "${TARGET}" in
     all)
-        build_linux
-        build_uboot
         build_app
-        collect_artifacts
         build_rootfs
         ;;
     linux)
@@ -417,6 +443,10 @@ case "${TARGET}" in
         build_app
         build_rootfs
         ;;
+    image)
+        build_app
+        build_rootfs
+        ;;
     menuconfig_linux)
         menuconfig_linux
         exit 0
@@ -428,7 +458,7 @@ case "${TARGET}" in
     *)
         echo "错误: 未知编译目标 '${TARGET}'"
         echo "用法: $0 [JOBS] [TARGET]"
-        echo "  TARGET: all (默认), linux, uboot, app, linux+app, rootfs, menuconfig_linux, menuconfig_uboot"
+        echo "  TARGET: all (默认), linux, uboot, app, linux+app, rootfs, image, menuconfig_linux, menuconfig_uboot"
         exit 1
         ;;
 esac
