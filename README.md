@@ -8,6 +8,7 @@
 -->
 
 # NavigatorHMI_FW
+
 Embedded device code for NavigatorHMI (i.MX6ULL ARM)
 
 ## 环境要求
@@ -20,24 +21,25 @@ Embedded device code for NavigatorHMI (i.MX6ULL ARM)
 ```
 NavigatorHMI_FW/
 ├── .devcontainer/
-│   └── Dockerfile              # 编译镜像定义（内含 Linux/U-Boot 源码压缩包）
-├── tarballs/                   # 内核/U-Boot 源码压缩包（已打包进镜像，.gitignore 忽略）
-│   ├── linux-6.6.144.tar.xz
-│   └── u-boot-2020.04.tar.bz2
+│   └── Dockerfile                    # 编译镜像定义（内含 Linux/U-Boot 源码压缩包）
+├── .github/workflows/
+│   └── build-project.yml             # GitHub Actions CI 配置
 ├── hwt/
 │   ├── linux/
-│   │   ├── arch/arm/configs/        # Linux 内核配置（menuconfig 导出）
-│   │   └── arch/arm/boot/dts/       # 自定义 dts（任意目录层级，自动扫描）
+│   │   ├── arch/arm/configs/         # Linux 内核配置（linux_hwt_defconfig）
+│   │   └── arch/arm/boot/dts/        # 自定义 dts
 │   └── uboot/
-│       ├── configs/                 # U-Boot 配置（menuconfig 导出）
-│       └── arch/arm/dts/            # 自定义 dts（编译时覆盖）
-├── src/                        # NavigatorHMI_FW 应用源码
+│       ├── configs/                  # U-Boot 配置（uboot_hwt_defconfig）
+│       └── board/freescale/mx6ullevk/    # 自定义板级配置（imximage.cfg）
+├── src/                              # NavigatorHMI_FW 应用源码
 ├── cmake/
 │   └── arm-linux-gnueabihf-toolchain.cmake
-├── buildroot/                   # Buildroot 自定义配置（可选）
-├── docker-push.ps1            # 构建镜像并推送到华为云 SWR
-├── docker-build.ps1           # 编译脚本
-├── build-linux-uboot.sh       # 容器内编译脚本（内核+uboot+应用+rootfs）
+├── buildroot/                        # Buildroot 自定义配置（可选）
+├── cmake/                            # CMake 交叉编译工具链
+├── docker-push.ps1                   # 构建镜像并推送到华为云 SWR
+├── docker-build.ps1                  # 编译脚本（Windows PowerShell）
+├── build-linux-uboot.sh              # 容器内编译脚本
+├── BUILD_GUIDE.md                    # 详细编译指南
 └── CMakeLists.txt
 ```
 
@@ -52,7 +54,7 @@ NavigatorHMI_FW/
 
 ## 编译命令
 
-### 编译全部（Linux Kernel + U-Boot + 应用）
+### 编译全部（Linux Kernel + U-Boot + 应用 + Rootfs）
 
 ```powershell
 .\docker-build.ps1
@@ -61,14 +63,14 @@ NavigatorHMI_FW/
 ### 选择编译目标
 
 ```powershell
-.\docker-build.ps1 -Target linux       # 只编译 Linux Kernel 6.6
-.\docker-build.ps1 -Target uboot       # 只编译 U-Boot 2020.04
-.\docker-build.ps1 -Target app         # 只编译应用
-.\docker-build.ps1 -Target linux+app   # 编译 Linux + 应用（跳过 U-Boot）
-.\docker-build.ps1 -Target rootfs     # 编译 Buildroot Rootfs
+.\docker-build.ps1                      # 全部编译（内核 + U-Boot + 应用 + rootfs）
+.\docker-build.ps1 -Target linux        # 只编译 Linux Kernel 6.6
+.\docker-build.ps1 -Target uboot        # 只编译 U-Boot 2020.04
+.\docker-build.ps1 -Target app          # 只编译应用
+.\docker-build.ps1 -Target linux+app    # 编译 Linux + 应用（跳过 U-Boot）
+.\docker-build.ps1 -Target rootfs       # 编译应用 + Buildroot Rootfs（应用自动打包进 rootfs）
+.\docker-build.ps1 -Target image        # 编译应用 + Rootfs + 完整 SD 卡镜像 (sdcard.img)
 ```
-
-> dts 文件放在 `hwt/linux/arch/arm/boot/dts/` 下，编译时自动只编这些 dtb。
 
 ### 其他选项
 
@@ -90,11 +92,22 @@ NavigatorHMI_FW/
 ```
 
 **工作流程**：解压源码 → 应用 `hwt/` 补丁 → 加载现有配置 → 进入 menuconfig → **退出时自动保存**
-- Linux 配置保存到 `hwt/linux/hwt_defconfig`
-- U-Boot 配置保存到 `hwt/uboot/hwt_defconfig`
-- 下次编译时脚本会自动检测并使用这些自定义配置
+- Linux 配置保存到 `hwt/linux/arch/arm/configs/linux_hwt_defconfig`
+- U-Boot 配置保存到 `hwt/uboot/configs/uboot_hwt_defconfig`
+- 修改后直接生效，无需手动复制
 
-> **注意**：Menuconfig 为交互式界面，需要终端支持（PowerShell 直接运行即可）。```
+> **注意**：Menuconfig 为交互式界面，需要终端支持（PowerShell 直接运行即可）。
+
+## CI 构建（GitHub Actions）
+
+项目配置了 GitHub Actions CI，提交代码后可在 Actions 页面手动触发构建：
+
+1. 进入 GitHub 仓库 → **Actions** → **Build NavigatorHMI_FW (ARM)**
+2. 点击 **Run workflow**
+3. 选择目标（同本地 `-Target` 参数）和构建类型
+4. 等待构建完成，自动上传编译产物（linux/uboot/rootfs 按需上传）
+
+CI 使用与本地相同的 Docker 编译镜像，保证构建环境一致。
 
 ## 编译产物
 
@@ -102,32 +115,36 @@ NavigatorHMI_FW/
 build/
 ├── linux/
 │   ├── zImage                      # Linux 6.6.144 内核镜像
-│   ├── *.dtb                       # 设备树文件
+│   ├── imx6ull-14x14-evk.dtb       # 设备树文件
 │   ├── lib/modules/                # 内核模块
 │   └── bin/
 │       └── NavigatorHMI_FW         # 应用可执行文件
 ├── uboot/
-│   ├── u-boot.bin                  # U-Boot 镜像
-│   ├── u-boot.imx                  # U-Boot i.MX 格式（推荐使用）
-│   └── u-boot-dtb.imx              # U-Boot + DTB 镜像
-└── rootfs/
-    ├── rootfs.tar                  # Rootfs 压缩包
-    ├── rootfs.ext2/ext4            # Rootfs 分区镜像
-    └── sdcard.img                  # 完整 SD 卡镜像
+│   └── u-boot-dtb.imx              # U-Boot i.MX 格式（带 imx header，推荐使用）
+├── rootfs/
+│   ├── rootfs.tar                  # Rootfs 压缩包（已含 NavigatorHMI_FW 应用）
+│   └── sdcard.img                  # 完整 SD 卡镜像（image 目标）
+└── buildroot/
+    └── dl/                         # Buildroot 下载缓存（自动复用）
 ```
 
 ## 编译流程说明
 
 `build-linux-uboot.sh` 在容器内根据 `-Target` 选择性执行：
 
-| 目标 | 编译内容 | 版本 |
-|------|---------|------|
-| `linux` | Linux Kernel | 6.6.144 LTS |
-| `uboot` | U-Boot | 2020.04 |
-| `app` | NavigatorHMI_FW | CMake 交叉编译 |
-| `rootfs` | Buildroot 根文件系统 | 2025.05 (imx6ullevk) |
+| 目标 | 执行顺序 |
+|------|---------|
+| `all` | build_linux → build_uboot → build_app → collect_artifacts → build_rootfs |
+| `linux` | build_linux |
+| `uboot` | build_uboot |
+| `app` | build_app → collect_artifacts |
+| `linux+app` | build_linux → build_app → collect_artifacts |
+| `rootfs` | build_app → build_rootfs（应用自动打包进 rootfs） |
+| `image` | build_app → build_rootfs → build_image（生成 sdcard.img） |
 
+各阶段功能：
 1. **解压源码** — 从镜像内 `/root/source/` 解压源码到 `/tmp/`
 2. **应用 HWT 覆盖** — 从挂载的 `/workspace/hwt/` 将自定义配置/补丁覆盖到源码
 3. **交叉编译** — 使用 `arm-linux-gnueabihf-` 工具链编译
-4. **收集产物** — 输出到 `/workspace/build/`
+4. **收集产物** — 应用自动复制到 `build/linux/bin/`
+5. **构建 Rootfs** — 应用自动打包进 rootfs-overlay 的 `/usr/bin/` 目录
