@@ -74,7 +74,7 @@ param(
 
     [switch]$Clean,
 
-    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0",
+    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0-ubuntu18",
 
     [int]$Jobs = 4,
 
@@ -180,6 +180,7 @@ if ($Menuconfig) {
     Write-Host "============================================" -ForegroundColor Cyan
 
     docker run --rm -it -v "${ProjectRoot}:/workspace" `
+        -v "D:\workspace\image_sources:/sources" `
         -w /workspace `
         $DockerImage `
         /bin/bash /workspace/build-linux-uboot.sh 4 menuconfig_${Menuconfig}
@@ -200,17 +201,20 @@ Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Step 1/1: 编译 Linux Kernel U-Boot Rootfs" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 
-# 创建 Buildroot 下载缓存目录
-$BrDlDir = Join-Path $BuildDir "buildroot\dl"
+# 创建 Buildroot 下载缓存目录（位于 /sources/buildroot-2019-dl）
+# 用环境变量 BR2_DL_DIR 传递给容器
+$BrDlDir = "D:\workspace\image_sources\buildroot-2019-dl"
 if (-not (Test-Path $BrDlDir)) {
     New-Item -ItemType Directory -Path $BrDlDir -Force | Out-Null
 }
 
 # 编译脚本挂载到容器内执行
 # BR2_DL_DIR 告诉 Buildroot 使用宿主机缓存的下载包，避免每次重新下载
+# 挂载 image_sources 到 /sources，Buildroot DL 缓存保存在 /sources/buildroot-2019-dl
 # FORCE_UNSAFE_CONFIGURE=1 允许以 root 用户运行 Buildroot
 docker run --rm -v "${ProjectRoot}:/workspace" `
-    -e BR2_DL_DIR="/workspace/build/buildroot/dl" `
+    -v "D:\workspace\image_sources:/sources" `
+    -e BR2_DL_DIR="/sources/buildroot-2019-dl" `
     -e FORCE_UNSAFE_CONFIGURE=1 `
     -w /workspace `
     $DockerImage `

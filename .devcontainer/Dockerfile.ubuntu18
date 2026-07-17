@@ -1,0 +1,80 @@
+# 使用 Ubuntu 18.04 LTS 作为基础镜像（兼容旧版 SDK）
+FROM ubuntu:18.04
+
+# 设置环境变量，避免 apt-get 安装过程中的交互式提示
+ENV DEBIAN_FRONTEND=noninteractive
+
+# === 第一步：更换软件源为国内镜像（加速下载） ===
+RUN sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+
+# === 第二步：安装基础工具和依赖 ===
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    make \
+    cmake \
+    git \
+    wget \
+    curl \
+    vim \
+    && dpkg --add-architecture i386 \
+    && apt-get update \
+    && apt-get install -y \
+        libc6:i386 \
+        libstdc++6:i386 \
+        lib32z1 \
+    && apt-get install -y \
+        bison \
+        flex \
+        libssl-dev \
+        bc \
+        lzop \
+        libncurses5-dev \
+        cpio \
+        unzip \
+        rsync \
+        python \
+        genext2fs \
+        file \
+        tree \
+        net-tools \
+        sudo \
+        mtools \
+        dosfstools \
+    && rm -rf /var/lib/apt/lists/*
+
+# === 第三步：安装升级版 CMake（从本地 sources 复制预编译包） ===
+# Ubuntu 18.04 自带的 cmake 3.10 太旧，项目需要 3.16+
+# 预编译包 cmake-3.16.9-Linux-x86_64.tar.gz 需放在 D:\workspace\image_sources 中
+COPY --from=sources /cmake-3.16.9-Linux-x86_64.tar.gz /tmp/cmake.tar.gz
+RUN tar -xzf /tmp/cmake.tar.gz -C /usr/local --strip-components=1 && \
+    rm -f /tmp/cmake.tar.gz
+
+# === 第四步：安装交叉编译器（Linaro 4.9.4） ===
+# 复制并解压到 /opt/
+COPY --from=sources /gcc-linaro-4.9.4-2017.01-i686_arm-linux-gnueabihf.tar.xz /tmp/
+RUN tar -xJf /tmp/gcc-linaro-4.9.4-2017.01-i686_arm-linux-gnueabihf.tar.xz -C /opt/ && \
+    rm -f /tmp/gcc-linaro-4.9.4-2017.01-i686_arm-linux-gnueabihf.tar.xz
+
+# === 第五步：配置环境变量（方便编译时调用） ===
+ENV ARCH=arm
+ENV CROSS_COMPILE=arm-linux-gnueabihf-
+ENV PATH=/opt/gcc-linaro-4.9.4-2017.01-i686_arm-linux-gnueabihf/bin:${PATH}
+ENV CC=${CROSS_COMPILE}gcc
+ENV CXX=${CROSS_COMPILE}g++
+
+# === 第六步：设置工作目录 ===
+WORKDIR /workspace
+
+# === 第七步：创建 /root/source 目录并复制各类源码压缩包 ===
+# 压缩包从外部 context "sources" 获取，构建时需指定 --build-context sources=路径
+RUN mkdir -p /root/source
+COPY --from=sources /linux-imx-rel_imx_4.1.15_2.1.0_ga_alientek.tar.bz2 /root/source/
+COPY --from=sources /uboot-imx-rel_imx_4.1.15_2.1.0_ga_alientek.tar.bz2 /root/source/
+COPY --from=sources /buildroot-2019.02.6.tar.bz2 /root/source/
+
+# 预填充 Buildroot 下载缓存（在 Docker 内首次编译时自动下载）
+RUN mkdir -p /root/buildroot-dl
+
+# 重置 DEBIAN_FRONTEND
+ENV DEBIAN_FRONTEND=

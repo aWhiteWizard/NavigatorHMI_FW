@@ -1,0 +1,42 @@
+# Buildroot 2019.02.6 配置 - 正点原子 i.MX6ULL ALIENTEK EMMC
+# ============================================================
+# Buildroot 只负责 rootfs + sdcard.img 打包
+# Linux 内核和 U-Boot 由单独脚本编译后注入 images 目录
+# ============================================================
+
+# --- 架构 ---
+BR2_arm=y
+BR2_cortex_a7=y
+BR2_ARM_FPU_NEON_VFPV4=y
+
+# --- 内核头文件 ---
+# 使用外部工具链的 libstdc++
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_PATH="/opt/gcc-linaro-4.9.4-2017.01-i686_arm-linux-gnueabihf"
+BR2_TOOLCHAIN_EXTERNAL_PREFIX="arm-linux-gnueabihf"
+
+# --- 系统配置 ---
+BR2_TARGET_GENERIC_HOSTNAME="NavigatorHMI"
+BR2_TARGET_GENERIC_GETTY_PORT="ttymxc0"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE="115200"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="board/freescale/common/imx/post-image.sh"
+
+# --- 不编译 Linux 内核（由外部提供）---
+# BR2_LINUX_KERNEL 不启用，用单独编译的 zImage + dtb
+
+# --- 不编译 U-Boot（由外部提供）---
+# BR2_TARGET_UBOOT 不启用，用单独编译的 u-boot-dtb.imx
+
+# --- SD 卡镜像工具 ---
+BR2_PACKAGE_HOST_DOSFSTOOLS=y
+BR2_PACKAGE_HOST_GENIMAGE=y
+BR2_PACKAGE_HOST_MTOOLS=y
+
+# --- 文件系统 ---
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE=120M
+
+# --- 应用（将 NavigatorHMI_FW 放入 rootfs）---
+# 通过 rootfs-overlay 机制部署
+# BR2_ROOTFS_OVERLAY 在 build-linux-uboot.sh 中动态设置

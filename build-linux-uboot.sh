@@ -16,15 +16,15 @@ echo "========================================="
 # ===========================================
 build_linux() {
 echo "========================================="
-echo "  [1/3] 编译 Linux Kernel 6.6.144 ..."
+echo "  [1/3] 编译 Linux Kernel 4.1.15 ..."
 echo "========================================="
 
 # 解压内核源码（首次运行解压，之后可复用）
-KERNEL_SRC=/tmp/linux-6.6.144
+KERNEL_SRC=/tmp/linux-imx-rel_imx_4.1.15_2.1.0_ga_alientek
 if [ ! -d ${KERNEL_SRC} ]; then
     mkdir -p /tmp
     echo ">>> 解压 Linux 内核源码 ..."
-    tar -xJf /root/source/linux-6.6.144.tar.xz -C /tmp
+    tar -xjf /root/source/linux-imx-rel_imx_4.1.15_2.1.0_ga_alientek.tar.bz2 -C /tmp
 fi
 
 # 从挂载的 /workspace/hwt/linux 覆盖到内核源码
@@ -38,11 +38,14 @@ cd ${KERNEL_SRC}
 
 # 使用 hwt 自定义 defconfig 配置内核
 if [ -f arch/arm/configs/linux_hwt_defconfig ]; then
+    echo ">>> 使用 hwt 自定义配置: linux_hwt_defconfig"
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} linux_hwt_defconfig
-elif [ -f arch/arm/configs/imx_v6_v7_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v6_v7_defconfig
+elif [ -f arch/arm/configs/imx_alientek_emmc_defconfig ]; then
+    echo ">>> 使用板级默认配置: imx_alientek_emmc_defconfig"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_alientek_emmc_defconfig
 else
-    echo "WARNING: 未找到 defconfig，跳过内核配置"
+    echo ">>> 使用 i.MX 通用配置: imx_v7_defconfig"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v7_defconfig
 fi
 
 # 内核产物暂存目录（提前创建，供 dtb 复制使用）
@@ -85,21 +88,24 @@ echo ">>> Linux Kernel 编译完成: /workspace/build/linux/zImage"
 build_uboot() {
 echo ""
 echo "========================================="
-echo "  [2/3] 编译 U-Boot 2020.04 ..."
+echo "  [2/3] 编译 U-Boot (rel_imx_4.1.15_2.1.0_ga_alientek) ..."
 echo "========================================="
 
 # 解压 U-Boot 源码
-UBOOT_SRC=/tmp/u-boot-2020.04
+UBOOT_SRC=/tmp/uboot-imx-rel_imx_4.1.15_2.1.0_ga_alientek
 if [ ! -d ${UBOOT_SRC} ]; then
     mkdir -p /tmp
     echo ">>> 解压 U-Boot 源码 ..."
-    tar -xjf /root/source/u-boot-2020.04.tar.bz2 -C /tmp
+    tar -xjf /root/source/uboot-imx-rel_imx_4.1.15_2.1.0_ga_alientek.tar.bz2 -C /tmp
 fi
 
 # 从挂载的 /workspace/hwt/uboot 覆盖到 U-Boot 源码
 if [ -d /workspace/hwt/uboot ] && [ "$(ls -A /workspace/hwt/uboot 2>/dev/null)" ]; then
     echo ">>> 应用 hwt/uboot 覆盖到 U-Boot 源码 ..."
-    cp -rf /workspace/hwt/uboot/* ${UBOOT_SRC}/
+    # 逐个复制各子目录，确保覆盖所有内容
+    for item in /workspace/hwt/uboot/*; do
+        cp -rf "$item" ${UBOOT_SRC}/
+    done
 fi
 
 # 如果 hwt/uboot/configs 下有自定义配置，复制到 U-Boot 的 configs 目录
@@ -107,24 +113,51 @@ if [ -f /workspace/hwt/uboot/configs/uboot_hwt_defconfig ]; then
     cp /workspace/hwt/uboot/configs/uboot_hwt_defconfig ${UBOOT_SRC}/configs/uboot_hwt_defconfig
 fi
 
+# 验证 board 文件覆盖是否成功
+if [ -f /workspace/hwt/uboot/board/freescale/mx6ull_alientek_emmc/mx6ull_alientek_emmc.c ]; then
+    cp /workspace/hwt/uboot/board/freescale/mx6ull_alientek_emmc/mx6ull_alientek_emmc.c \
+        ${UBOOT_SRC}/board/freescale/mx6ull_alientek_emmc/mx6ull_alientek_emmc.c
+    echo ">>> board 文件覆盖完成"
+fi
+
+# 验证关键文件是否覆盖成功
+if grep -q "NavigatorHMI" ${UBOOT_SRC}/board/freescale/mx6ull_alientek_emmc/mx6ull_alientek_emmc.c 2>/dev/null; then
+    echo ">>> Board Name 覆盖验证通过"
+else
+    echo ">>> WARNING: Board Name 覆盖验证失败！"
+fi
+
 cd ${UBOOT_SRC}
 
-# 使用 hwt 自定义 defconfig 配置 U-Boot
+# 使用 hwt 自定义 defconfig 配置 U-Boot（优先使用 uboot_hwt_defconfig）
 if [ -f configs/uboot_hwt_defconfig ]; then
+    echo ">>> 使用 hwt 自定义配置: uboot_hwt_defconfig"
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} uboot_hwt_defconfig
-elif [ -f configs/mx6ull_14x14_evk_defconfig ]; then
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig
+elif [ -f configs/mx6ull_alientek_emmc_defconfig ]; then
+    echo ">>> 使用板级默认配置: mx6ull_alientek_emmc_defconfig"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_alientek_emmc_defconfig
 else
-    echo "WARNING: 未找到 U-Boot defconfig，尝试 mx6ull_14x14_evk_defconfig"
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig 2>/dev/null || true
+    echo ">>> 使用 EVK 默认配置: mx6ull_14x14_evk_defconfig"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig
 fi
 
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS}
+
+# 生成 i.MX 启动镜像（带 IVT 头的 u-boot.imx）
+# 旧版 U-Boot 需要 tools/mkimage 生成 .imx，但 make 会自动调用
+# 如果没生成则手动尝试
+if [ ! -f u-boot.imx ] && [ ! -f u-boot-dtb.imx ]; then
+    if [ -f tools/mkimage ]; then
+        echo ">>> 手动生成 u-boot.imx ..."
+        ./tools/mkimage -n board/freescale/mx6ull_alientek_emmc/imximage.cfg -T imximage -e 0x87800000 -d u-boot.bin u-boot.imx 2>/dev/null || true
+    fi
+fi
 
 # 将 U-Boot 编译产物输出
 mkdir -p /workspace/build/uboot
 cp u-boot.bin /workspace/build/uboot/ 2>/dev/null || true
 cp u-boot-dtb.imx /workspace/build/uboot/ 2>/dev/null || true
+cp u-boot.imx /workspace/build/uboot/ 2>/dev/null || true
 cp SPL /workspace/build/uboot/ 2>/dev/null || true
 echo ">>> U-Boot 编译完成: /workspace/build/uboot/"
 }
@@ -157,11 +190,11 @@ echo ">>> NavigatorHMI_FW 应用编译完成"
 # ===========================================
 menuconfig_linux() {
 # 解压内核源码
-KERNEL_SRC=/tmp/linux-6.6.144
+KERNEL_SRC=/tmp/linux-imx-rel_imx_4.1.15_2.1.0_ga_alientek
 if [ ! -d ${KERNEL_SRC} ]; then
     mkdir -p /tmp
     echo ">>> 解压 Linux 内核源码 ..."
-    tar -xJf /root/source/linux-6.6.144.tar.xz -C /tmp
+    tar -xjf /root/source/linux-imx-rel_imx_4.1.15_2.1.0_ga_alientek.tar.bz2 -C /tmp
 fi
 
 # 从挂载的 /workspace/hwt/linux 覆盖到内核源码
@@ -178,13 +211,20 @@ if [ -f ${HWT_LINUX_DEFCONFIG} ]; then
     cp ${HWT_LINUX_DEFCONFIG} ${KERNEL_SRC}/arch/arm/configs/linux_hwt_defconfig
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} linux_hwt_defconfig
     echo ">>> 已加载 hwt: linux_hwt_defconfig"
-else
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v6_v7_defconfig
+elif [ -f ${KERNEL_SRC}/arch/arm/configs/imx_alientek_emmc_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_alientek_emmc_defconfig
     mkdir -p $(dirname ${HWT_LINUX_DEFCONFIG})
     cp .config $(dirname ${HWT_LINUX_DEFCONFIG})/.config
     make ARCH=${ARCH} savedefconfig
     cp defconfig ${HWT_LINUX_DEFCONFIG}
-    echo ">>> 已创建 hwt: linux_hwt_defconfig (基于 imx_v6_v7_defconfig)"
+    echo ">>> 已创建 hwt: linux_hwt_defconfig (基于 imx_alientek_emmc_defconfig)"
+else
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} imx_v7_defconfig
+    mkdir -p $(dirname ${HWT_LINUX_DEFCONFIG})
+    cp .config $(dirname ${HWT_LINUX_DEFCONFIG})/.config
+    make ARCH=${ARCH} savedefconfig
+    cp defconfig ${HWT_LINUX_DEFCONFIG}
+    echo ">>> 已创建 hwt: linux_hwt_defconfig (基于 imx_v7_defconfig)"
 fi
 
 echo "========================================="
@@ -206,11 +246,11 @@ echo ">>> Linux 配置已保存到 ${HWT_LINUX_DEFCONFIG}"
 # ===========================================
 menuconfig_uboot() {
 # 解压 U-Boot 源码
-UBOOT_SRC=/tmp/u-boot-2020.04
+UBOOT_SRC=/tmp/uboot-imx-rel_imx_4.1.15_2.1.0_ga_alientek
 if [ ! -d ${UBOOT_SRC} ]; then
     mkdir -p /tmp
     echo ">>> 解压 U-Boot 源码 ..."
-    tar -xjf /root/source/u-boot-2020.04.tar.bz2 -C /tmp
+    tar -xjf /root/source/uboot-imx-rel_imx_4.1.15_2.1.0_ga_alientek.tar.bz2 -C /tmp
 fi
 
 # 从挂载的 /workspace/hwt/uboot 覆盖到 U-Boot 源码
@@ -221,12 +261,19 @@ fi
 
 cd ${UBOOT_SRC}
 
-# 直接使用 hwt 下的 uboot_hwt_defconfig（不存在则用 mx6ull 默认创建一份）
+# 直接使用 hwt 下的 uboot_hwt_defconfig（不存在则用 Alientek eMMC 默认创建一份）
 HWT_UBOOT_DEFCONFIG=/workspace/hwt/uboot/configs/uboot_hwt_defconfig
 if [ -f ${HWT_UBOOT_DEFCONFIG} ]; then
     cp ${HWT_UBOOT_DEFCONFIG} ${UBOOT_SRC}/configs/uboot_hwt_defconfig
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} uboot_hwt_defconfig
     echo ">>> 已加载 hwt: uboot_hwt_defconfig"
+elif [ -f configs/mx6ull_alientek_emmc_defconfig ]; then
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_alientek_emmc_defconfig
+    mkdir -p $(dirname ${HWT_UBOOT_DEFCONFIG})
+    cp .config $(dirname ${HWT_UBOOT_DEFCONFIG})/.config
+    make ARCH=${ARCH} savedefconfig
+    cp defconfig ${HWT_UBOOT_DEFCONFIG}
+    echo ">>> 已创建 hwt: uboot_hwt_defconfig (基于 mx6ull_alientek_emmc_defconfig)"
 else
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mx6ull_14x14_evk_defconfig
     mkdir -p $(dirname ${HWT_UBOOT_DEFCONFIG})
@@ -281,7 +328,7 @@ echo "========================================="
 echo "  [4/4] 编译 Buildroot Rootfs ..."
 echo "========================================="
 
-BR_VERSION=2025.05
+BR_VERSION=2019.02.6
 BR_DIR=/tmp/buildroot-${BR_VERSION}
 BR_BUILD_DIR=/tmp/buildroot-${BR_VERSION}-build
 BR_OUTPUT_DIR=/workspace/build/rootfs
@@ -290,7 +337,7 @@ BR_OUTPUT_DIR=/workspace/build/rootfs
 if [ ! -d ${BR_DIR} ]; then
     mkdir -p /tmp
     echo ">>> 解压 Buildroot 源码 ..."
-    tar -xzf /root/source/buildroot-${BR_VERSION}.tar.gz -C /tmp
+    tar -xjf /root/source/buildroot-${BR_VERSION}.tar.bz2 -C /tmp
 fi
 
 # 创建外部构建目录
@@ -298,105 +345,80 @@ mkdir -p ${BR_BUILD_DIR}
 
 cd ${BR_DIR}
 
-# 如果工程中有自定义 Buildroot 配置，使用它
-BR_CONFIG_SRC=/workspace/buildroot
-if [ -f ${BR_CONFIG_SRC}/config ] || [ -f ${BR_CONFIG_SRC}/.config ]; then
+# 使用工程中的自定义 Buildroot 配置
+BR_CONFIG_SRC=/workspace/hwt/buildroot
+if [ -f ${BR_CONFIG_SRC}/alientek_emmc_defconfig ]; then
+    echo ">>> 使用工程中的自定义 Buildroot 配置: alientek_emmc_defconfig"
+    # 复制 defconfig 到 Buildroot 的 configs 目录，然后用 make 加载
+    cp ${BR_CONFIG_SRC}/alientek_emmc_defconfig ${BR_DIR}/configs/alientek_emmc_defconfig
+    make O=${BR_BUILD_DIR} alientek_emmc_defconfig
+elif [ -f ${BR_CONFIG_SRC}/config ] || [ -f ${BR_CONFIG_SRC}/.config ]; then
     echo ">>> 使用工程中的自定义 Buildroot 配置 ..."
     if [ -f ${BR_CONFIG_SRC}/.config ]; then
         cp ${BR_CONFIG_SRC}/.config ${BR_BUILD_DIR}/.config
     else
-        make O=${BR_BUILD_DIR} imx6ullevk_defconfig
+        make O=${BR_BUILD_DIR} imx6ulevk_defconfig
     fi
 else
-    echo ">>> 使用 Buildroot 默认 i.MX6ULL 配置 (imx6ullevk_defconfig) ..."
-    make O=${BR_BUILD_DIR} imx6ullevk_defconfig
+    echo ">>> 使用 Buildroot 默认 i.MX6UL EVK 配置 (imx6ulevk_defconfig) ..."
+    make O=${BR_BUILD_DIR} imx6ulevk_defconfig
 fi
-
-# ========== 配置 Buildroot 使用本地源码 ==========
-# 使用 Docker 镜像内的 Linux 内核源码，避免重复下载
-make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
-
-# 启用自定义内核 tarball 模式
-sed -i 's/BR2_LINUX_KERNEL_CUSTOM_VERSION=y/BR2_LINUX_KERNEL_CUSTOM_VERSION=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-sed -i 's/# BR2_LINUX_KERNEL_CUSTOM_TARBALL is not set/BR2_LINUX_KERNEL_CUSTOM_TARBALL=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-echo "BR2_LINUX_KERNEL_CUSTOM_TARBALL=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
-
-# 设置内核源码路径
-if grep -q "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION" ${BR_BUILD_DIR}/.config 2>/dev/null; then
-    sed -i "s|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=.*|BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"file:///root/source/linux-6.6.144.tar.xz\"|" ${BR_BUILD_DIR}/.config
-else
-    echo "BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION=\"file:///root/source/linux-6.6.144.tar.xz\"" >> ${BR_BUILD_DIR}/.config
-fi
-
-# 同样，使用 Docker 镜像内的 U-Boot 源码
-sed -i 's/BR2_TARGET_UBOOT_CUSTOM_VERSION=y/BR2_TARGET_UBOOT_CUSTOM_VERSION=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-sed -i 's/# BR2_TARGET_UBOOT_CUSTOM_TARBALL is not set/BR2_TARGET_UBOOT_CUSTOM_TARBALL=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-echo "BR2_TARGET_UBOOT_CUSTOM_TARBALL=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
-
-if grep -q "BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION" ${BR_BUILD_DIR}/.config 2>/dev/null; then
-    sed -i "s|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=.*|BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"file:///root/source/u-boot-2020.04.tar.bz2\"|" ${BR_BUILD_DIR}/.config
-else
-    echo "BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION=\"file:///root/source/u-boot-2020.04.tar.bz2\"" >> ${BR_BUILD_DIR}/.config
-fi
-
-# 再次 olddefconfig 使配置生效
-make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
 
 # ========== 内核头文件版本由 Buildroot 默认决定 ==========
-# 使用 Linux 6.6 LTS，与 Buildroot 2025.05 默认头文件版本（6.6.x）匹配
+# 使用 Linux 4.1.15 内核，与 Buildroot 2019.02.6 默认头文件版本匹配
 # 无需额外配置
-
-# ========== 应用 hwt 自定义内核配置 ==========
-if [ -f /workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig ]; then
-    echo ">>> 使用 hwt 自定义内核配置: linux_hwt_defconfig"
-    sed -i 's/BR2_LINUX_KERNEL_USE_DEFCONFIG=y/BR2_LINUX_KERNEL_USE_DEFCONFIG=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-    sed -i 's/# BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG is not set/BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-    echo "BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
-    echo "BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE=\"/workspace/hwt/linux/arch/arm/configs/linux_hwt_defconfig\"" >> ${BR_BUILD_DIR}/.config 2>/dev/null
-fi
-
-# ========== 应用 hwt 自定义 U-Boot 配置 ==========
-# 使用 BR2_TARGET_UBOOT_CUSTOM_CONFIG_FILE 直接指定 defconfig 路径，
-# 避免 defconfig 不在 U-Boot 源码 configs/ 目录下的问题
-if [ -f /workspace/hwt/uboot/configs/uboot_hwt_defconfig ]; then
-    echo ">>> 使用 hwt 自定义 U-Boot 配置: uboot_hwt_defconfig"
-    sed -i 's/BR2_TARGET_UBOOT_BUILD_SYSTEM_LEGACY=y/BR2_TARGET_UBOOT_BUILD_SYSTEM_LEGACY=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-    sed -i 's/# BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG is not set/BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-    echo "BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
-    # 使用自定义配置文件方式（直接指定 defconfig 文件路径）
-    sed -i 's/BR2_TARGET_UBOOT_USE_DEFCONFIG=y/BR2_TARGET_UBOOT_USE_DEFCONFIG=n/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-    sed -i 's/# BR2_TARGET_UBOOT_USE_CUSTOM_CONFIG is not set/BR2_TARGET_UBOOT_USE_CUSTOM_CONFIG=y/' ${BR_BUILD_DIR}/.config 2>/dev/null || true
-    echo "BR2_TARGET_UBOOT_USE_CUSTOM_CONFIG=y" >> ${BR_BUILD_DIR}/.config 2>/dev/null
-    echo "BR2_TARGET_UBOOT_CUSTOM_CONFIG_FILE=\"/workspace/hwt/uboot/configs/uboot_hwt_defconfig\"" >> ${BR_BUILD_DIR}/.config 2>/dev/null
-fi
 
 # olddefconfig 使自定义配置生效
 make O=${BR_BUILD_DIR} olddefconfig 2>/dev/null || true
 
-# 下载缓存目录（优先使用环境变量 BR2_DL_DIR）
-# 镜像内预缓存路径: /root/buildroot-dl（由 Dockerfile COPY 进去）
-if [ -z "${BR2_DL_DIR}" ] && [ -d /root/buildroot-dl ]; then
-    CACHE_DIR=/root/buildroot-dl
-else
-    CACHE_DIR=${BR2_DL_DIR:-/tmp/buildroot-dl}
-fi
+# 下载缓存目录（使用独立的 DL 缓存，与镜像内预置的 buildroot-dl 区分）
+CACHE_DIR=${BR2_DL_DIR:-/workspace/build/buildroot-dl}
 mkdir -p ${CACHE_DIR}
-echo ">>> 下载缓存: ${CACHE_DIR}"
+echo ">>> Buildroot 下载缓存: ${CACHE_DIR}"
 echo "BR2_DL_DIR=\"${CACHE_DIR}\"" >> ${BR_BUILD_DIR}/.config
 
-# 复制工程中的 rootfs-overlay
+# 创建 rootfs-overlay 并将应用放入
+mkdir -p ${BR_BUILD_DIR}/rootfs-overlay/usr/bin
 if [ -d ${BR_CONFIG_SRC}/rootfs-overlay ]; then
     echo ">>> 使用工程中的 rootfs-overlay ..."
-    mkdir -p ${BR_BUILD_DIR}/rootfs-overlay
     cp -rf ${BR_CONFIG_SRC}/rootfs-overlay/* ${BR_BUILD_DIR}/rootfs-overlay/ 2>/dev/null || true
-    echo "BR2_ROOTFS_OVERLAY=\"${BR_BUILD_DIR}/rootfs-overlay\"" >> ${BR_BUILD_DIR}/.config
 fi
+echo "BR2_ROOTFS_OVERLAY=\"${BR_BUILD_DIR}/rootfs-overlay\"" >> ${BR_BUILD_DIR}/.config
 
 # 如果编译了应用，把应用放入 rootfs-overlay
 if [ -f /workspace/build/bin/NavigatorHMI_FW ]; then
     echo ">>> 将 NavigatorHMI_FW 应用加入 rootfs ..."
-    mkdir -p ${BR_BUILD_DIR}/rootfs-overlay/usr/bin
     cp /workspace/build/bin/NavigatorHMI_FW ${BR_BUILD_DIR}/rootfs-overlay/usr/bin/
+fi
+
+# 注入外部编译的 Linux 内核和 U-Boot 产物到 images 目录
+echo ">>> 注入外部编译的 Linux/U-Boot 产物到 images 目录 ..."
+mkdir -p ${BR_BUILD_DIR}/images
+
+# 复制 zImage
+if [ -f /workspace/build/linux/zImage ]; then
+    cp /workspace/build/linux/zImage ${BR_BUILD_DIR}/images/zImage
+    echo "    zImage 注入成功"
+fi
+
+# 复制 dtb（同时复制一份为 Alientek U-Boot 期望的名称）
+if [ -f /workspace/build/linux/imx6ull-14x14-evk.dtb ]; then
+    cp /workspace/build/linux/imx6ull-14x14-evk.dtb ${BR_BUILD_DIR}/images/
+    cp /workspace/build/linux/imx6ull-14x14-evk.dtb ${BR_BUILD_DIR}/images/imx6ull-alientek-emmc.dtb
+    echo "    dtb 注入成功 (imx6ull-14x14-evk.dtb + imx6ull-alientek-emmc.dtb)"
+fi
+
+# 复制 u-boot 镜像（post-image 的 uboot_image() 函数依赖 .config 中的标记，
+# 但由于 BR2_TARGET_UBOOT 未启用，标记会被 olddefconfig 清掉。
+# 所以直接手动将 u-boot.imx 注入到 sdcard.img 的正确偏移位置）
+if [ -f /workspace/build/uboot/u-boot-dtb.imx ]; then
+    cp /workspace/build/uboot/u-boot-dtb.imx ${BR_BUILD_DIR}/images/
+    echo "    u-boot-dtb.imx 注入成功"
+elif [ -f /workspace/build/uboot/u-boot.imx ]; then
+    cp /workspace/build/uboot/u-boot.imx ${BR_BUILD_DIR}/images/
+    echo "    u-boot.imx 注入成功"
+else
+    echo "    WARNING: 未找到 u-boot.imx 或 u-boot-dtb.imx！"
 fi
 
 # 编译 Buildroot
@@ -407,6 +429,31 @@ FORCE_UNSAFE_CONFIGURE=1 make O=${BR_BUILD_DIR} -j${JOBS}
 echo ""
 echo ">>> Buildroot 编译完成!"
 ls -lh ${BR_BUILD_DIR}/images/ 2>/dev/null || true
+
+# 手动注入 U-Boot 到 sdcard.img（因为 genimage 模板中 %UBOOTBIN% 为空）
+if [ -f ${BR_BUILD_DIR}/images/u-boot.imx ] && [ -f ${BR_BUILD_DIR}/images/sdcard.img ]; then
+    echo ">>> 手动注入 U-Boot 到 sdcard.img (偏移 1024)..."
+    dd if=${BR_BUILD_DIR}/images/u-boot.imx of=${BR_BUILD_DIR}/images/sdcard.img bs=1024 seek=1 conv=notrunc 2>/dev/null
+    echo "    U-Boot 注入完成"
+fi
+
+# 重建 boot.vfat 并注入 zImage 和 dtb
+# 注意：Buildroot 的 genimage 已经在 sdcard.img 中创建了 boot 分区，
+# 我们直接在 sdcard.img 内部的 FAT 分区操作
+echo ">>> 注入 zImage 和 dtb 到 sdcard.img 的 boot 分区 ..."
+if [ -f /workspace/build/linux/zImage ] && [ -f /workspace/build/linux/imx6ull-alientek-emmc.dtb ] && [ -f ${BR_BUILD_DIR}/images/sdcard.img ]; then
+    # 确保 mtools 可用
+    apt-get install -y mtools 2>/dev/null || true
+
+    BOOT_OFFSET=8M
+    echo "    写入 zImage ..."
+    MTOOLS_SKIP_CHECK=1 mcopy -sp -i ${BR_BUILD_DIR}/images/sdcard.img@@${BOOT_OFFSET} \
+        /workspace/build/linux/zImage ::zImage 2>&1 || true
+    echo "    写入 dtb ..."
+    MTOOLS_SKIP_CHECK=1 mcopy -sp -i ${BR_BUILD_DIR}/images/sdcard.img@@${BOOT_OFFSET} \
+        /workspace/build/linux/imx6ull-alientek-emmc.dtb :: 2>&1 || true
+    echo "    boot 分区注入完成"
+fi
 
 # 复制产物到 /workspace/build/rootfs
 mkdir -p ${BR_OUTPUT_DIR}
@@ -444,6 +491,8 @@ case "${TARGET}" in
         build_rootfs
         ;;
     image)
+        build_linux
+        build_uboot
         build_app
         build_rootfs
         ;;

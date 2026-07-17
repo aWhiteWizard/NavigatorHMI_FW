@@ -8,8 +8,8 @@ project(NavigatorHMI_FW VERSION 1.0.0 LANGUAGES C CXX)
 # 编译方式: 交叉编译，在 Docker 容器中进行
 # ============================================================
 
-# 设置 C++ 标准
-set(CMAKE_CXX_STANDARD 17)
+# 设置 C++ 标准（Linaro 4.9.4 最大支持 C++14）
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
