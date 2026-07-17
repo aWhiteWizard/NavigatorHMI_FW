@@ -25,7 +25,7 @@ on:
           - rootfs
 
 env:
-  BUILDER_IMAGE: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0
+  BUILDER_IMAGE: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0-ubuntu18
 
 jobs:
   build:
