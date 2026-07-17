@@ -2,7 +2,7 @@
 
 > **日期**: 2026-07-17
 > **目的**: 将编译环境从 Ubuntu 22.04 (kernel 6.6 + U-Boot 2020.04 + Buildroot 2025.05) 迁移到 Ubuntu 18.04 (kernel 4.1.15 NXP IMX + U-Boot IMX 4.1.15 + Buildroot 2019.02.6)
-> **状态**: ✅ 系统启动成功 + 应用注入成功 + 自定义板名/欢迎语
+> **状态**: ✅ **已归档** — 系统完整启动，所有功能验证通过
 
 ---
 
@@ -107,8 +107,11 @@ COPY --from=sources /buildroot-2019.02.6.tar.bz2 /root/source/
 hwt/
 ├── buildroot/
 │   ├── alientek_emmc_defconfig          # Buildroot 配置（只编译 rootfs，不编译内核/U-Boot）
+│   │                                     含 BR2_TARGET_GENERIC_HOSTNAME 设置
 │   └── rootfs-overlay/
 │       └── etc/
+│           ├── hostname                 # 系统主机名 (NavigatorHMI)
+│           ├── hosts                    # hosts 映射
 │           ├── issue                    # Linux 登录欢迎语
 │           └── issue.net
 ├── linux/
@@ -251,7 +254,18 @@ Welcome to NavigatorHMI System
 Kernel \r on \m
 ```
 
-### 7.3 修改 rootfs 大小
+### 7.3 修改主机名
+
+编辑 `hwt/buildroot/rootfs-overlay/etc/hostname`：
+
+```
+NavigatorHMI
+```
+
+> **注意**: 该文件必须使用 Unix (LF) 行尾，否则登录提示会显示乱码（如 `rHMI login:`）。
+> Buildroot defconfig 中 `BR2_TARGET_GENERIC_HOSTNAME` 也需同步修改。
+
+### 7.4 修改 rootfs 大小
 
 编辑 `hwt/buildroot/alientek_emmc_defconfig`：
 
@@ -286,3 +300,50 @@ BR2_TARGET_ROOTFS_EXT2_SIZE=120M   # 改为需要的大小
 # 或手动指定镜像
 .\docker-build.ps1 -target image -DockerImage swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0-ubuntu18 -SkipLogin
 ```
+
+---
+
+## 10. 已知问题与排查
+
+### 10.1 `"CONFIG_CMD_DHCP" redefined` 警告
+
+U-Boot 编译时会大量出现此类 warning：
+
+```
+include/configs/mx6ull_alientek_emmc.h:322:0: warning: "CONFIG_CMD_DHCP" redefined
+```
+
+**原因**: 正点原子移植的 U-Boot 正处于从 `#define`（头文件）向 Kconfig（defconfig）过渡的时期，`CONFIG_CMD_DHCP`、`CONFIG_CMD_PING`、`CONFIG_SYS_HUSH_PARSER` 等在两个地方同时定义。
+
+**影响**: ❌ 无 — 只是警告，定义的值一致，编译产物正确。
+
+### 10.2 `login: rHMI` 登录提示乱码
+
+**原因**: `/etc/hostname` 文件使用了 Windows CRLF (`\r\n`) 行尾。Linux `getty` 读到 `\r`（回车符）时光标回到行首，覆盖了前面的字符，只看到后半段。
+
+**修复**: 确保 `rootfs-overlay/etc/` 下所有配置文件均为 Unix LF 行尾。
+
+### 10.3 CMake `Permission denied` (feature_tests.cxx)
+
+```
+CMake Error: file failed to open for writing (Permission denied):
+  /workspace/build/CMakeFiles/feature_tests.cxx
+```
+
+**原因**: 使用 `-Clean` 参数后，Windows 重建的 `build/` 目录挂载到 Docker 容器中权限异常。
+
+**解决**: 不加 `-Clean` 参数直接编译即可。如果必须 clean，手动删除 `build/` 目录后在容器内 `mkdir -p /workspace/build`。
+
+### 10.4 `libstdc++.so.6` 版本警告
+
+```
+/lib/arm-linux-gnueabihf/libstdc++.so.6: warning: GLIBCXX_... not found
+```
+
+**原因**: Buildroot 2019.02.6 使用的工具链与 Linaro 4.9.4 的 libstdc++ 版本有细微差异。
+
+**影响**: ❌ 无 — 应用正常运行，仅在 `ldd` 或 `ldconfig` 时显示。
+
+---
+
+> *文档版本: v1.0 — 2026-07-17 归档*
