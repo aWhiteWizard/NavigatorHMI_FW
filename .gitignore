@@ -58,6 +58,14 @@ compile_commands.json
 *.bak
 *.swp
 
+# 构建日志目录
+logs/
+
+# 字体文件（体积大且有版权问题，不提交；本地放入 rootfs-overlay 字体目录即可）
+*.ttf
+*.otf
+*.ttc
+
 # vcpkg
 vcpkg_installed/
 

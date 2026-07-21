@@ -35,7 +35,7 @@ BR2_PACKAGE_HOST_MTOOLS=y
 # --- 文件系统 ---
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
-BR2_TARGET_ROOTFS_EXT2_SIZE=120M
+BR2_TARGET_ROOTFS_EXT2_SIZE=256M
 
 # --- 应用（将 NavigatorHMI_FW 放入 rootfs）---
 # 通过 rootfs-overlay 机制部署

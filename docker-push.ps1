@@ -25,7 +25,7 @@
 param(
     [switch]$Help,
 
-    [string]$ImageTag = "v1.0",
+    [string]$ImageTag = "v1.1-ubuntu18",
     [switch]$SkipPush
 )
 
@@ -38,9 +38,9 @@ if ($Help) {
 }
 
 # Simple tag validation
-if ($ImageTag -notmatch '^[\w.]+$') {
+if ($ImageTag -notmatch '^[\w.-]+$') {
     Write-Host "错误: 无效的镜像标签 '$ImageTag'" -ForegroundColor Red
-    Write-Host "标签只能包含字母、数字、下划线和点" -ForegroundColor Yellow
+    Write-Host "标签只能包含字母、数字、下划线、点和横线" -ForegroundColor Yellow
     exit 1
 }
 
@@ -98,7 +98,7 @@ $SourceDir = "D:\workspace\image_sources"
 # --provenance=false 禁用 attestation（华为云 SWR 不支持新版 manifest 格式）
 # --build-context sources=... 将外部压缩包目录作为构建上下文传入
 docker build --provenance=false -t $FullImageTag `
-    -f "${ProjectRoot}\.devcontainer\Dockerfile" `
+    -f "${ProjectRoot}\.devcontainer\Dockerfile.ubuntu18" `
     --build-context "sources=${SourceDir}" `
     $ProjectRoot
 

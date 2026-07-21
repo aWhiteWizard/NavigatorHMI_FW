@@ -24,6 +24,22 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O2")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -O2")
 
 # ============================================================
+# Qt5 依赖（ARM 版，由 -Target qt 交叉编译产出）
+# 工具链文件检测到 build/qt5.12.9-arm 时已自动设置 CMAKE_PREFIX_PATH
+# ============================================================
+find_package(Qt5 QUIET COMPONENTS Core Gui Widgets)
+if(NOT Qt5_FOUND)
+    message(FATAL_ERROR
+        "未找到 ARM 版 Qt5！\n"
+        "请先执行: .\\docker-build.ps1 -Target qt   (首次约 1~2 小时)\n"
+        "产物应位于: build/qt5.12.9-arm/")
+endif()
+message(STATUS "Qt5 版本: ${Qt5_VERSION}")
+
+# AUTOMOC: 自动处理 Q_OBJECT 宏（moc）
+set(CMAKE_AUTOMOC ON)
+
+# ============================================================
 # 源文件收集
 # ============================================================
 # 收集 src/ 目录下所有源文件
@@ -37,6 +53,7 @@ file(GLOB_RECURSE SOURCES
 # ============================================================
 if(SOURCES)
     add_executable(${PROJECT_NAME} ${SOURCES})
+    target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Gui Qt5::Widgets)
     
     # 如果有公共头文件目录，可以在这里添加
     # target_include_directories(${PROJECT_NAME} PRIVATE

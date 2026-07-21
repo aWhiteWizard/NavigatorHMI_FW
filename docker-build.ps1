@@ -9,11 +9,12 @@
 .PARAMETER BuildType
     构建类型: Debug 或 Release (默认: Debug)
 .PARAMETER Target
-    编译目标: all (默认), linux, uboot, app, linux+app, rootfs, image
+    编译目标: all (默认), linux, uboot, app, linux+app, qt, rootfs, image
+    qt 目标为交叉编译 Qt 5.12.9，仅首次需要（约 1~2 小时），结果缓存在 build/qt5.12.9-arm
 .PARAMETER Clean
     清理构建目录后重新编译
 .PARAMETER DockerImage
-    指定使用的 Docker 镜像 (默认: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0)
+    指定使用的 Docker 镜像 (默认: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.1-ubuntu18)
 .PARAMETER Jobs
     并行编译线程数 (默认: 4)
 .PARAMETER Menuconfig
@@ -43,6 +44,9 @@
 
     .\docker-build.ps1 -Target image
     编译应用 + Rootfs + 完整 SD 卡镜像 (sdcard.img)
+
+    .\docker-build.ps1 -Target qt
+    交叉编译 Qt 5.12.9（仅首次需要，之后编译 rootfs/image 会自动注入）
 
 
     .\docker-build.ps1 -Menuconfig linux
@@ -74,7 +78,7 @@ param(
 
     [switch]$Clean,
 
-    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0-ubuntu18",
+    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.1-ubuntu18",
 
     [int]$Jobs = 4,
 
@@ -103,7 +107,7 @@ if ($Help) {
 # ============================================================
 # 参数验证
 # ============================================================
-$ValidTargets = @("all", "linux", "uboot", "app", "linux+app", "rootfs", "image")
+$ValidTargets = @("all", "linux", "uboot", "app", "linux+app", "qt", "rootfs", "image")
 $ValidMenuconfigs = @("", "linux", "uboot")
 
 if ($Target -and ($ValidTargets -notcontains $Target)) {

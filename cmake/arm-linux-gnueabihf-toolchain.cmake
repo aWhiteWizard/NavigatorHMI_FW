@@ -30,3 +30,15 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+# ============================================================
+# Qt5 支持（可选）
+# 若已通过 -Target qt 编译出 ARM 版 Qt，则自动启用 find_package(Qt5)
+# 用法: find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets)
+#       target_link_libraries(app Qt5::Core Qt5::Gui Qt5::Widgets)
+# ============================================================
+set(QT_ARM_PREFIX "/workspace/build/qt5.12.9-arm")
+if(EXISTS "${QT_ARM_PREFIX}/lib/cmake")
+    set(CMAKE_PREFIX_PATH "${QT_ARM_PREFIX}")
+    message(STATUS "已检测到 ARM 版 Qt5: ${QT_ARM_PREFIX}")
+endif()

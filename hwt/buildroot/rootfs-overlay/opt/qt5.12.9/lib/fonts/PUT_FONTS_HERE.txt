@@ -1,0 +1,11 @@
+Qt 字体目录（QT_QPA_FONTDIR 指向这里）
+=====================================
+
+linuxfb 平台没有 fontconfig，Qt 直接从本目录加载字体文件。
+
+请将 .ttf / .otf 字体文件放到本目录，例如：
+  - DroidSansFallbackFull.ttf （中文显示，约 10~20MB）
+  - DejaVuSans.ttf            （英文/数字）
+
+注意：字体文件较大，不建议提交到 git 仓库，可在编译 rootfs 前
+      手动复制到 build 目录的 rootfs-overlay 对应路径中。

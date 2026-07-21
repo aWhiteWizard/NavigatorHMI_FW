@@ -28,9 +28,11 @@ NavigatorHMI_FW/
 │   ├── linux/
 │   │   ├── arch/arm/configs/         # Linux 内核配置（linux_hwt_defconfig）
 │   │   └── arch/arm/boot/dts/        # 自定义 dts
-│   └── uboot/
-│       ├── configs/                  # U-Boot 配置（uboot_hwt_defconfig）
-│       └── board/freescale/mx6ullevk/    # 自定义板级配置（imximage.cfg）
+│   ├── uboot/
+│   │   ├── configs/                  # U-Boot 配置（uboot_hwt_defconfig）
+│   │   └── board/freescale/mx6ullevk/    # 自定义板级配置（imximage.cfg）
+│   └── qt/
+│       └── mkspecs/linux-arm-gnueabihf-g++/  # Qt 交叉编译 mkspec
 ├── src/                              # NavigatorHMI_FW 应用源码
 ├── cmake/
 │   └── arm-linux-gnueabihf-toolchain.cmake
@@ -70,6 +72,7 @@ NavigatorHMI_FW/
 .\docker-build.ps1 -Target linux+app    # 编译 Linux + 应用（跳过 U-Boot）
 .\docker-build.ps1 -Target rootfs       # 编译应用 + Buildroot Rootfs（应用自动打包进 rootfs）
 .\docker-build.ps1 -Target image        # 编译应用 + Rootfs + 完整 SD 卡镜像 (sdcard.img)
+.\docker-build.ps1 -Target qt           # 交叉编译 Qt 5.12.9（仅首次需要，约 1~2 小时）
 ```
 
 ### 其他选项
@@ -124,6 +127,7 @@ build/
 ├── rootfs/
 │   ├── rootfs.tar                  # Rootfs 压缩包（已含 NavigatorHMI_FW 应用）
 │   └── sdcard.img                  # 完整 SD 卡镜像（image 目标）
+├── qt5.12.9-arm/                   # ARM 版 Qt 5.12.9（qt 目标产物，CMake find_package 使用）
 └── buildroot/
     └── dl/                         # Buildroot 下载缓存（自动复用）
 ```
@@ -141,6 +145,7 @@ build/
 | `linux+app` | build_linux → build_app → collect_artifacts |
 | `rootfs` | build_app → build_rootfs（应用自动打包进 rootfs） |
 | `image` | build_app → build_rootfs → build_image（生成 sdcard.img） |
+| `qt` | build_qt（交叉编译 Qt 5.12.9，结果缓存在 build/qt5.12.9-arm） |
 
 各阶段功能：
 1. **解压源码** — 从镜像内 `/root/source/` 解压源码到 `/tmp/`
@@ -148,3 +153,34 @@ build/
 3. **交叉编译** — 使用 `arm-linux-gnueabihf-` 工具链编译
 4. **收集产物** — 应用自动复制到 `build/linux/bin/`
 5. **构建 Rootfs** — 应用自动打包进 rootfs-overlay 的 `/usr/bin/` 目录
+
+## Qt 5.12.9 交叉编译
+
+**首次使用先编译 Qt**（每台开发机只需一次，约 1~2 小时）：
+
+```powershell
+.\docker-build.ps1 -Target qt
+```
+
+- **源码**：镜像内 `/root/source/qt-everywhere-src-5.12.9.tar.xz`
+- **mkspec**：`hwt/qt/mkspecs/linux-arm-gnueabihf-g++/`（hard-float 工具链）
+- **配置要点**：linuxfb（i.MX6ULL 无 GPU，软件渲染）、`-no-opengl`、第三方库全用 Qt 内置版（无需 sysroot）
+- **保留模块**：qtbase、qtdeclarative、qtquickcontrols2、qtgraphicaleffects、qtsvg、qtimageformats、qtserialport、qtxmlpatterns
+- **产物**：`build/qt5.12.9-arm/`（staging，跨容器持久化）
+- **重新编译**：删除 `build/qt5.12.9-arm/` 和 `build/.qt5.12.9-done` 后再执行 `-Target qt`
+
+编译 `rootfs` / `image` 目标时，若检测到已编译的 Qt，会自动把 Qt 运行时（lib/plugins/qml，剔除开发文件）注入目标机 `/opt/qt5.12.9`，环境变量由 overlay 中的 `/etc/profile.d/qt.sh` 设置。
+
+**应用链接 Qt**（CMakeLists.txt）：
+
+```cmake
+find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets)
+target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Gui Qt5::Widgets)
+```
+
+工具链文件检测到 `build/qt5.12.9-arm` 存在时会自动设置 `CMAKE_PREFIX_PATH`。
+
+**目标机注意事项**：
+- **字体**：linuxfb 无 fontconfig，需把 ttf 字体放入 `/opt/qt5.12.9/lib/fonts/`（中文显示需中文字体，如 DroidSansFallback）
+- **触摸**：默认 `evdevtouch:/dev/input/event1`，event 号不对时在目标机上修改 `/etc/profile.d/qt.sh`
+- **rootfs 分区**：已扩容到 256M 以容纳 Qt 运行时

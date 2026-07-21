@@ -22,10 +22,11 @@ on:
           - uboot
           - app
           - linux+app
+          - qt
           - rootfs
 
 env:
-  BUILDER_IMAGE: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.0-ubuntu18
+  BUILDER_IMAGE: swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.1-ubuntu18
 
 jobs:
   build:
@@ -95,6 +96,13 @@ jobs:
         with:
           name: uboot-${{ github.event.inputs.build_type || 'Debug' }}
           path: build/uboot/
+
+      - name: Upload Qt artifacts
+        if: ${{ github.event.inputs.target == 'qt' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qt5.12.9-arm
+          path: build/qt5.12.9-arm/
 
       - name: Upload Rootfs artifacts
         if: ${{ github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'rootfs' }}

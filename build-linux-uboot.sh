@@ -4,7 +4,7 @@ set -e
 ARCH=arm
 CROSS_COMPILE=arm-linux-gnueabihf-
 JOBS=${1:-4}         # 并行线程数，默认 4
-TARGET=${2:-all}     # 编译目标: all, linux, uboot, app, rootfs
+TARGET=${2:-all}     # 编译目标: all, linux, uboot, app, linux+app, qt, rootfs, image
 
 echo "========================================="
 echo "  编译目标: ${TARGET}"
@@ -391,6 +391,23 @@ if [ -f /workspace/build/bin/NavigatorHMI_FW ]; then
     cp /workspace/build/bin/NavigatorHMI_FW ${BR_BUILD_DIR}/rootfs-overlay/usr/bin/
 fi
 
+# 如果已编译 Qt，把 Qt 运行时注入 rootfs (/opt/qt5.12.9)
+QT_STAGING=/workspace/build/qt5.12.9-arm
+if [ -f /workspace/build/.qt5.12.9-done ] && [ -d ${QT_STAGING}/lib ]; then
+    echo ">>> 将 Qt 5.12.9 运行时注入 rootfs (/opt/qt5.12.9) ..."
+    QT_OVERLAY=${BR_BUILD_DIR}/rootfs-overlay/opt/qt5.12.9
+    mkdir -p ${QT_OVERLAY}
+    cp -rf ${QT_STAGING}/lib ${QT_OVERLAY}/
+    cp -rf ${QT_STAGING}/plugins ${QT_OVERLAY}/ 2>/dev/null || true
+    cp -rf ${QT_STAGING}/qml ${QT_OVERLAY}/ 2>/dev/null || true
+    # 删除开发文件，减小 rootfs 体积
+    find ${QT_OVERLAY}/lib -type f \( -name "*.a" -o -name "*.la" -o -name "*.prl" \) -delete
+    rm -rf ${QT_OVERLAY}/lib/cmake ${QT_OVERLAY}/lib/pkgconfig
+    echo "    Qt 运行时注入完成 ($(du -sh ${QT_OVERLAY} | cut -f1))"
+else
+    echo ">>> 未检测到已编译的 Qt，跳过 Qt 注入（先执行: ./docker-build.ps1 -Target qt）"
+fi
+
 # 注入外部编译的 Linux 内核和 U-Boot 产物到 images 目录
 echo ">>> 注入外部编译的 Linux/U-Boot 产物到 images 目录 ..."
 mkdir -p ${BR_BUILD_DIR}/images
@@ -464,6 +481,85 @@ echo ">>> SD 卡镜像: ${BR_OUTPUT_DIR}/sdcard.img"
 }
 
 # ===========================================
+# 编译 Qt 5.12.9（交叉编译，仅首次需要，约 1~2 小时）
+# ===========================================
+build_qt() {
+echo ""
+echo "========================================="
+echo "  编译 Qt 5.12.9 (arm-linux-gnueabihf)"
+echo "========================================="
+
+QT_VERSION=5.12.9
+QT_SRC=/tmp/qt-everywhere-src-${QT_VERSION}
+QT_EXTPREFIX=/workspace/build/qt${QT_VERSION}-arm   # 宿主侧安装位置（CMake find_package 用）
+QT_PREFIX=/opt/qt${QT_VERSION}                      # 目标设备部署路径（随 rootfs 烧录）
+QT_DONE=/workspace/build/.qt${QT_VERSION}-done
+
+# 已完成则跳过（staging 在挂载卷上持久化，每台机器只需编译一次）
+if [ -f ${QT_DONE} ] && [ -f ${QT_EXTPREFIX}/lib/libQt5Core.so ]; then
+    echo ">>> 检测到已编译的 Qt (${QT_EXTPREFIX})，跳过"
+    echo ">>> 如需重新编译，请删除: build/qt${QT_VERSION}-arm/ 和 build/.qt${QT_VERSION}-done"
+    return 0
+fi
+
+# 解压 Qt 源码到容器 /tmp（容器原生文件系统，编译 IO 远快于挂载卷）
+if [ ! -d ${QT_SRC} ]; then
+    echo ">>> 解压 Qt 源码 ..."
+    tar -xJf /root/source/qt-everywhere-src-${QT_VERSION}.tar.xz -C /tmp
+fi
+
+# 应用 hwt 自定义 mkspec（arm-linux-gnueabihf 工具链）
+if [ -d /workspace/hwt/qt/mkspecs/linux-arm-gnueabihf-g++ ]; then
+    echo ">>> 应用 hwt/qt mkspec: linux-arm-gnueabihf-g++"
+    cp -rf /workspace/hwt/qt/mkspecs/linux-arm-gnueabihf-g++ ${QT_SRC}/qtbase/mkspecs/
+else
+    echo "错误: 未找到 hwt/qt/mkspecs/linux-arm-gnueabihf-g++"
+    exit 1
+fi
+
+cd ${QT_SRC}
+
+# 配置 Qt（i.MX6ULL 无 GPU → linuxfb + 软件渲染；第三方库全用 Qt 内置版，无需 sysroot）
+if [ ! -f ${QT_SRC}/.configured ]; then
+    echo ">>> 配置 Qt ..."
+    ./configure \
+        -prefix ${QT_PREFIX} \
+        -extprefix ${QT_EXTPREFIX} \
+        -opensource -confirm-license \
+        -release -strip \
+        -xplatform linux-arm-gnueabihf-g++ \
+        -no-opengl -linuxfb -no-xcb \
+        -no-glib -no-dbus -no-cups -no-openssl \
+        -no-libudev -no-mtdev \
+        -qt-zlib -qt-libpng -qt-libjpeg -qt-freetype -qt-pcre \
+        -sql-sqlite \
+        -make libs -nomake examples -nomake tests -nomake tools \
+        -skip qt3d -skip qtactiveqt -skip qtandroidextras \
+        -skip qtcanvas3d -skip qtcharts -skip qtconnectivity \
+        -skip qtdatavis3d -skip qtdoc -skip qtgamepad \
+        -skip qtlocation -skip qtmacextras -skip qtmultimedia \
+        -skip qtnetworkauth -skip qtpurchasing -skip qtquickcontrols \
+        -skip qtremoteobjects -skip qtscript -skip qtscxml \
+        -skip qtsensors -skip qtserialbus -skip qtspeech \
+        -skip qttools -skip qttranslations -skip qtvirtualkeyboard \
+        -skip qtwayland -skip qtwebchannel -skip qtwebengine \
+        -skip qtwebglplugin -skip qtwebsockets -skip qtwebview \
+        -skip qtwinextras -skip qtx11extras \
+        -silent \
+        && touch ${QT_SRC}/.configured
+fi
+
+echo ">>> 编译 Qt (-j${JOBS}) ..."
+make -j${JOBS}
+make install
+touch ${QT_DONE}
+
+echo ">>> Qt 编译完成"
+echo "    宿主侧: ${QT_EXTPREFIX}  (CMake find_package 使用)"
+echo "    目标侧: ${QT_PREFIX}     (编译 rootfs 时自动注入)"
+}
+
+# ===========================================
 # 主调度
 # ===========================================
 case "${TARGET}" in
@@ -496,6 +592,9 @@ case "${TARGET}" in
         build_app
         build_rootfs
         ;;
+    qt)
+        build_qt
+        ;;
     menuconfig_linux)
         menuconfig_linux
         exit 0
@@ -507,7 +606,7 @@ case "${TARGET}" in
     *)
         echo "错误: 未知编译目标 '${TARGET}'"
         echo "用法: $0 [JOBS] [TARGET]"
-        echo "  TARGET: all (默认), linux, uboot, app, linux+app, rootfs, image, menuconfig_linux, menuconfig_uboot"
+        echo "  TARGET: all (默认), linux, uboot, app, linux+app, qt, rootfs, image, menuconfig_linux, menuconfig_uboot"
         exit 1
         ;;
 esac
