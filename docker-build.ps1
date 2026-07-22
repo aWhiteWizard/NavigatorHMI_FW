@@ -78,7 +78,7 @@ param(
 
     [switch]$Clean,
 
-    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.1-ubuntu18",
+    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.2-ubuntu18",
 
     [int]$Jobs = 4,
 

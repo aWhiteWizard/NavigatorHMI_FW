@@ -47,6 +47,8 @@
 	"image=zImage\0" \
 	"console=ttymxc0\0" \
 	"baudrate=115200\0" \
+	"ethaddr=00:04:9f:01:02:03\0" \
+	"eth1addr=00:04:9f:01:02:04\0" \
 	"fdt_high=0xffffffff\0" \
 	"initrd_high=0xffffffff\0" \
 	"fdt_file=imx6ull-14x14-evk.dtb\0" \

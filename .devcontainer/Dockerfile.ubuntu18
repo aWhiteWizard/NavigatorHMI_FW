@@ -75,6 +75,9 @@ COPY --from=sources /uboot-imx-rel_imx_4.1.15_2.1.0_ga_alientek.tar.bz2 /root/so
 COPY --from=sources /buildroot-2019.02.6.tar.bz2 /root/source/
 COPY --from=sources /qt-everywhere-src-5.12.9.tar.xz /root/source/
 
+# 第三方库源码包（正点原子套装，ARM 目标侧库/工具，存档备用 + Buildroot DL 缓存来源）
+COPY --from=sources /source_lib_for_18.04/ /root/source/lib/
+
 # 预填充 Buildroot 下载缓存（在 Docker 内首次编译时自动下载）
 RUN mkdir -p /root/buildroot-dl
 

@@ -9,8 +9,10 @@ BR2_arm=y
 BR2_cortex_a7=y
 BR2_ARM_FPU_NEON_VFPV4=y
 
-# --- 内核头文件 ---
-# 使用外部工具链的 libstdc++
+# --- 工具链 ---
+# 注意：以下外部工具链配置缺少 BR2_TOOLCHAIN_EXTERNAL_CUSTOM，实际并未生效。
+# 真实使用的是 Buildroot 内部工具链（gcc 8.x + glibc 2.28），
+# 应用/Qt（Linaro 4.9.4, glibc 2.19）在其上运行正常（glibc 向前兼容），保持现状。
 BR2_TOOLCHAIN_EXTERNAL=y
 BR2_TOOLCHAIN_EXTERNAL_PATH="/opt/gcc-linaro-4.9.4-2017.01-i686_arm-linux-gnueabihf"
 BR2_TOOLCHAIN_EXTERNAL_PREFIX="arm-linux-gnueabihf"
@@ -35,8 +37,39 @@ BR2_PACKAGE_HOST_MTOOLS=y
 # --- 文件系统 ---
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
-BR2_TARGET_ROOTFS_EXT2_SIZE=256M
+BR2_TARGET_ROOTFS_EXT2_SIZE="256M"
 
 # --- 应用（将 NavigatorHMI_FW 放入 rootfs）---
 # 通过 rootfs-overlay 机制部署
 # BR2_ROOTFS_OVERLAY 在 build-linux-uboot.sh 中动态设置
+
+# --- 第三方软件包（Navigator HMI 实用集）---
+# 远程调试/网络
+BR2_PACKAGE_OPENSSH=y
+BR2_PACKAGE_OPENSSL=y
+BR2_PACKAGE_IPROUTE2=y
+BR2_PACKAGE_VSFTPD=y
+# 调试工具
+BR2_PACKAGE_GDB=y
+BR2_PACKAGE_GDB_SERVER=y
+BR2_PACKAGE_GDB_DEBUGGER=y
+BR2_PACKAGE_MINICOM=y
+# CAN 总线
+BR2_PACKAGE_CAN_UTILS=y
+# 音频（导航语音）
+BR2_PACKAGE_ALSA_LIB=y
+BR2_PACKAGE_ALSA_UTILS=y
+BR2_PACKAGE_ALSA_UTILS_APLAY=y
+BR2_PACKAGE_ALSA_UTILS_ARECORD=y
+BR2_PACKAGE_ALSA_UTILS_AMIXER=y
+# WiFi
+BR2_PACKAGE_WPA_SUPPLICANT=y
+BR2_PACKAGE_LIBNL=y
+# 触摸屏校准工具
+BR2_PACKAGE_TSLIB=y
+# 4G 拨号（备用）
+BR2_PACKAGE_PPPD=y
+# 压缩库
+BR2_PACKAGE_ZLIB=y
+# 熵采集守护（修复开机 getrandom 阻塞等熵池 ~2 分钟）
+BR2_PACKAGE_HAVEGED=y

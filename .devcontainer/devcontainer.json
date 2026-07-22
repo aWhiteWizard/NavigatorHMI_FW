@@ -1,6 +1,6 @@
 {
     "name": "FW Development Environment",
-    "image": "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.1-ubuntu18",
+    "image": "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/fw-builder-env:v1.2-ubuntu18",
     "customizations": {
         "vscode": {
             "extensions": [

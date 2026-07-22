@@ -25,7 +25,7 @@
 param(
     [switch]$Help,
 
-    [string]$ImageTag = "v1.1-ubuntu18",
+    [string]$ImageTag = "v1.2-ubuntu18",
     [switch]$SkipPush
 )
 

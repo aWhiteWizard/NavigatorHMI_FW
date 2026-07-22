@@ -385,6 +385,11 @@ if [ -d ${BR_CONFIG_SRC}/rootfs-overlay ]; then
 fi
 echo "BR2_ROOTFS_OVERLAY=\"${BR_BUILD_DIR}/rootfs-overlay\"" >> ${BR_BUILD_DIR}/.config
 
+# post-build 脚本（gconv 模块注入等，修复 Qt iconv_open failed）
+if [ -f /workspace/hwt/buildroot/post-build.sh ]; then
+    echo "BR2_ROOTFS_POST_BUILD_SCRIPT=\"/workspace/hwt/buildroot/post-build.sh\"" >> ${BR_BUILD_DIR}/.config
+fi
+
 # 如果编译了应用，把应用放入 rootfs-overlay
 if [ -f /workspace/build/bin/NavigatorHMI_FW ]; then
     echo ">>> 将 NavigatorHMI_FW 应用加入 rootfs ..."
