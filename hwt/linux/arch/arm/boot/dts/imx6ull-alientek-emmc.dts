@@ -250,7 +250,7 @@
 		status = "disabled";	/* 板子无 WM8960 codec */
 	};
 
-	/* FT5426 电容触摸（官方文档：I2C2，INT=SNVS_TAMPER9，RST=GPIO1_IO9）*/
+	/* FT5426 电容触摸（本机不存在，扫描确认芯片为 GT9147@0x14）*/
 	ft5426: ft5426@38 {
 		compatible = "edt,edt-ft5426","edt,edt-ft5406";
 		reg = <0x38>;
@@ -260,10 +260,10 @@
 		interrupts = <9 2>;
 		reset-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
 		interrupt-gpios = <&gpio5 9 GPIO_ACTIVE_LOW>;
-		status = "okay";
+		status = "disable";
 	};
 
-	/* GT9147 电容触摸（与 FT5426 同脚位，二者只能开一）*/
+	/* GT9147 电容触摸（实测确认：I2C2 @ 0x14，INT=SNVS_TAMPER9，RST=GPIO1_IO9）*/
 	gt9147: gt9147@14 {
 		compatible = "goodix,gt9147", "goodix,gt9xx";
 		reg = <0x14>;
@@ -273,7 +273,7 @@
 		interrupts = <9 2>;
 		reset-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
 		interrupt-gpios = <&gpio5 9 GPIO_ACTIVE_LOW>;
-		status = "disable";
+		status = "okay";
 	};
 
 	ov5640: ov5640@3c {
