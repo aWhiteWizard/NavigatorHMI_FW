@@ -89,7 +89,7 @@ display0: display {
 
 （`bus-width` 两种配置都是 24，无需变动）
 
-此外，`&lcdif` 节点已移除 `pinctrl_lcdif_reset` 引用——因为 LCD 复位引脚（GPIO5_IO09）与 GT9147 触摸复位共线，复位控制权交给触摸驱动：
+此外，`&lcdif` 节点已移除 `pinctrl_lcdif_reset` 引用——因为 LCD 复位引脚（GPIO5_IO09）与触摸中断共用，控制权交给触摸驱动：
 
 ```dts
 &lcdif {
@@ -112,8 +112,11 @@ display0: display {
 | 型号 | GT9147（汇顶科技） |
 | 总线 | I2C2 |
 | 设备地址 | 0x14 |
-| 中断引脚 | GPIO1_IO09 |
-| 复位引脚 | GPIO5_IO09（与 LCD 复位共线） |
+| 中断引脚 | SNVS_TAMPER9（GPIO5_IO09，与 LCD 复位共线） |
+| 复位引脚 | GPIO1_IO09 |
+
+> 芯片型号通过自研 i2c_scan 工具实测确认（扫描 I2C2 总线，0x14 应答）。
+> 引脚定义以官方文档为准：INT=SNVS_TAMPER9，RST=GPIO1_IO9。
 
 ### 3.2 DTS 节点
 
@@ -128,12 +131,11 @@ display0: display {
         compatible = "goodix,gt9147", "goodix,gt9xx";
         reg = <0x14>;
         pinctrl-names = "default";
-        pinctrl-0 = <&pinctrl_gt9xx
-                    &pinctrl_gt9xx_reset>;
-        interrupt-parent = <&gpio1>;
-        interrupts = <9 0>;
-        reset-gpios = <&gpio5 9 GPIO_ACTIVE_LOW>;
-        interrupt-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+        pinctrl-0 = <&pinctrl_ts_rst>;
+        interrupt-parent = <&gpio5>;
+        interrupts = <9 2>;
+        reset-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+        interrupt-gpios = <&gpio5 9 GPIO_ACTIVE_LOW>;
         status = "okay";
     };
 };
@@ -141,25 +143,19 @@ display0: display {
 
 ### 3.3 pinctrl 配置
 
-GT9147 使用两个 pin control 组，均在 `&iomuxc` 中定义（与 dts 中现有组同一约定）：
+GT9147 只需一个 pin control 组（复位脚，定义在 `&iomuxc` 中）：
 
 ```dts
-/* 中断引脚 —— GPIO1_IO09 */
-pinctrl_gt9xx: gt9xxgrp {
+/* 复位引脚 —— GPIO1_IO09 */
+pinctrl_ts_rst: tsrstgrp {
     fsl,pins = <
         MX6UL_PAD_GPIO1_IO09__GPIO1_IO09    0x10B0
     >;
 };
-
-/* 复位引脚 —— GPIO5_IO09（SNVS 域引脚，组仍定义在 &iomuxc 内） */
-pinctrl_gt9xx_reset: gt9xxresetgrp {
-    fsl,pins = <
-        MX6ULL_PAD_SNVS_TAMPER9__GPIO5_IO09  0x10B0
-    >;
-};
 ```
 
-> **pinctrl 数值**：GT9147 中断脚用 `0x10B0`，而 FT5426 触控用 `0xF080`。两者电气特性不同，不可混用。
+> **中断脚（SNVS_TAMPER9）无需 pinctrl 组**：SNVS 域引脚默认即 GPIO 功能。
+> 注意：该内核 iomuxc-snvs 驱动注册 SNVS_TAMPER9 组会报 `failed to get pin(32) name` 错误，不要为 SNVS 引脚建组。
 
 ### 3.4 内核配置
 
