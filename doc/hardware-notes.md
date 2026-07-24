@@ -500,3 +500,84 @@ Mini 底板只有 **1 颗 PHY**（ENET2），ENET1 MAC 信号走 P4 排针引出
 
 ---
 
+
+## 9. SSH 登录与密码设置
+
+### 9.1 Buildroot 默认密码策略
+
+Buildroot 默认 root 用户**无密码**，SSH 服务会拒绝空密码登录。
+
+**解决方案**：登录后执行 `passwd` 设置密码。
+
+### 9.2 ⚠️ 踩坑记录：passwd 锁文件残留
+
+**现象**：`passwd: can't create /etc/passwd+: File exists`
+
+**根因**：前一次 passwd 异常中断，锁文件残留。
+
+**修复**：
+
+```bash
+rm -f /etc/passwd+ /etc/shadow+
+passwd
+```
+
+### 9.3 ⚠️ 踩坑记录：SSH "Password expired" 死循环
+
+**根因**：`/etc/shadow` 第三字段为 `0`（epoch 1970），SSHD 判定密码过期。`passwd` 更新密码哈希但 busybox 在新会话重登时再次判定过期，陷入循环。
+
+| shadow 字段 | 值 | 含义 |
+|-------------|-----|------|
+| 第1字段 | `root` | 用户名 |
+| 第2字段 | `$1$...` | 密码哈希 |
+| **第3字段** | **`0`** | **密码最后修改日 = 1970-01-01 → SSH 判定过期** |
+| 第4-9字段 | 默认值 | 有效期/警告/禁用等 |
+
+**修复**：将第三字段改为当前 epoch 天数。
+
+```bash
+DAYS=$(expr $(date +%s) / 86400)
+awk -F: -v days="$DAYS" 'BEGIN{OFS=":"} $1=="root"{$3=days}1' /etc/shadow > /tmp/s && mv /tmp/s /etc/shadow
+```
+
+宿主机计算：`python -c "from datetime import date; print((date.today()-date(1970,1,1)).days)"`
+
+### 9.4 应急恢复
+
+**串口可用**：`passwd -d root` → `echo 'PermitEmptyPasswords yes' >> /etc/ssh/sshd_config` → 空密码登录 → `passwd` → `sed -i '/PermitEmptyPasswords/d' /etc/ssh/sshd_config`
+
+**串口不可用**：U-Boot `init=/bin/sh` → `mount -o remount,rw /` → 重建 shadow → `sync` → `exec /sbin/init`
+
+
+### 9.5 生成密码哈希
+
+```bash
+python -c "import crypt; print(crypt.crypt('your_password', '\$1\$ab\$'))"
+```
+
+### 9.6 静态 IP
+
+```bash
+cat > /etc/network/interfaces << 'EOF'
+auto eth0
+iface eth0 inet static
+    address 192.168.1.125
+    netmask 255.255.255.0
+    gateway 192.168.1.1
+EOF
+
+### 9.7 验证命令
+
+| 检查项 | 命令 | 预期结果 |
+|--------|------|---------|
+| SSH 登录 | `ssh root@192.168.1.125` | 密码登录成功 |
+| shadow 第三字段 | `awk -F: 'NR==1{print $3}' /etc/shadow` | 不为 0 |
+| 网口状态 | `ifconfig eth0` | 显示配置的静态 IP |
+| 联网验证 | `ping -c 3 192.168.1.1` | `64 bytes from ...` |
+```
+
+---
+
+*文档版本: v1.0 — 2026-07-22*
+
+---
