@@ -114,6 +114,7 @@ display0: display {
 | 设备地址 | 0x14 |
 | 中断引脚 | SNVS_TAMPER9（GPIO5_IO09，与 LCD 复位共线） |
 | 复位引脚 | GPIO1_IO09 |
+| 驱动补丁 | 内核 goodix.c 的 of_device_id 表缺 gt9147，需加 `{ .compatible = "goodix,gt9147" },` 和 `{ .compatible = "goodix,gt9xx" },` 在 gt911 条目后；补丁文件位置：`hwt/linux/drivers/input/touchscreen/goodix.c` |
 
 > 芯片型号通过自研 i2c_scan 工具实测确认（扫描 I2C2 总线，0x14 应答）。
 > 引脚定义以官方文档为准：INT=SNVS_TAMPER9，RST=GPIO1_IO9。
@@ -165,7 +166,16 @@ CONFIG_TOUCHSCREEN_GOODIX=y
 
 ### 3.5 ⚠️ 兼容性说明
 
-内核 `drivers/input/touchscreen/goodix.c` 的 `of_device_id` 表中没有 `"goodix,gt9147"` 条目，仅有 `"goodix,gt911"`、`"goodix,gt927"` 等。但已验证：Linux 4.1.15 的 `i2c-core` 中 `i2c_device_probe` **不强制 OF 匹配检查**，无条件调用 `driver->probe`（id 可为 NULL），驱动通过 dts 属性（interrupt/reset-gpios）完成初始化，因此 gt9147 节点能正常绑定工作。
+内核 `drivers/input/touchscreen/goodix.c` 的 `of_device_id` 表中**没有** `"goodix,gt9147"` 条目（仅有 `"goodix,gt911"`、`"goodix,gt927"` 等）。i2c 设备绑定走 `i2c_device_match` 三层检查：OF compatible → ACPI → ID table，三者全败 → 驱动不绑定 → probe 从未调用 → 无任何内核日志。
+
+**修复方法**：在 `goodix.c` 的 `of_device_id` 表 `gt911` 条目后追加两行：
+
+```c
+{ .compatible = "goodix,gt9147" },
+{ .compatible = "goodix,gt9xx" },
+```
+
+补丁文件已放入 HWT 覆盖层 `hwt/linux/drivers/input/touchscreen/goodix.c`，随内核一起编译。上板验证：`dmesg | grep -i goodix` 显示 `Goodix-TS 1-0014: IC VERSION: ...` 即成功。
 
 ### 3.6 冲突处理（关键）
 
@@ -419,6 +429,70 @@ grep -E "CONFIG_TOUCHSCREEN_GOODIX|CONFIG_FB_IMX" hwt/linux/arch/arm/configs/lin
 | 无 WM8960 报错 | dmesg | grep -i wm8960 | 无输出 |
 | 触摸 event 号 | cat /proc/bus/input/devices | GT9147 对应 event1 |
 | Qt 触摸工作 | 启动 HMI 应用 | 触摸按下有反应，位置准确 |
+
+### 7.8 硬件核实以原理图为准
+
+文档或 dts 中的 GPIO 分配需要与原理图交叉验证。本次 Mini 底板原理图确认了以下关键引脚：
+
+- 触摸 INT/RST 引脚归属
+- ENET PHY 复位引脚（ENET1=GPIO5_IO07，ENET2=GPIO5_IO08）
+- I2C 总线归属（GT9147 在 I2C2）
+
+> 🔍 **审图员可辅助看图**：提供原理图/PCB 照片可委派 diagram-reader 工具提取连接信息。
+
+### 7.9 上板之前用 i2c_scan 确认芯片存在
+
+在调试新外设时，先用 i2c_scan 工具扫描目标 I2C 总线，确认设备地址是否匹配预期。本次扫描 I2C2 在 `0x14` 发现 GT9147，排除了误判为 FT5426 的可能。
+
+---
+
+## 8. 以太网修复记录
+
+### 8.1 PHY 硬件信息
+
+| 参数 | 值 |
+|------|------|
+| PHY 型号 | LAN8720A |
+| ENET1 复位引脚 | GPIO5_IO07 (SNVS_TAMPER7) |
+| ENET2 复位引脚 | GPIO5_IO08 (SNVS_TAMPER8) |
+| ENET1 MDIO 地址 | 0 |
+| ENET2 MDIO 地址 | 1 |
+
+### 8.2 DTS 必要属性
+
+```dts
+&fec1 {
+    phy-mode = "rmii";
+    phy-reset-gpios = <&gpio5 7 GPIO_ACTIVE_LOW>;
+    phy-reset-duration = <200>;
+};
+
+&fec2 {
+    phy-mode = "rmii";
+    phy-reset-gpios = <&gpio5 8 GPIO_ACTIVE_LOW>;
+    phy-reset-duration = <200>;
+};
+```
+
+两个 PHY 均需添加 `smsc,disable-energy-detect` 属性，防止检测不到能量时自动掉线。
+
+### 8.3 内核配置
+
+```kconfig
+CONFIG_SMSC_PHY=y
+```
+
+### 8.4 原理图确认
+
+Mini 底板只有 **1 颗 PHY**（ENET2），ENET1 MAC 信号走 P4 排针引出，未焊接 PHY。
+
+### 8.5 ⚠️ 踩坑记录：phy-reset-gpios 引用错误
+
+**现象**：PHY 无法 link up，`mii-tool` 显示 `no link`。
+
+**根因**：最初 `phy-reset-gpios` 引用了 NXP EVK 板上的 SPI 扩展器 GPIO（`&gpio_expander`），而 Mini 底板没有该扩展器，复位信号无效。
+
+**修复**：改为直连 `gpio5_7`（ENET1）和 `gpio5_8`（ENET2），复位成功，PHY link up 为 `100Mbps Full`。
 
 ---
 
