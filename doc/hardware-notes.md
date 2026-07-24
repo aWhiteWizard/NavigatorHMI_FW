@@ -574,10 +574,29 @@ EOF
 | shadow 第三字段 | `awk -F: 'NR==1{print $3}' /etc/shadow` | 不为 0 |
 | 网口状态 | `ifconfig eth0` | 显示配置的静态 IP |
 | 联网验证 | `ping -c 3 192.168.1.1` | `64 bytes from ...` |
+
+### 9.8 ⚠️ 踩坑记录：重烧镜像后 SSH host key 变更
+
+**现象**：`WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!`
+
+**根因**：重烧 sdcard.img 后板子 host key 变了——openssh 首次启动生成新密钥对，Windows 客户端记录与板子不匹配。
+
+**修复**：在 Windows PowerShell 中清除旧记录：
+
+```powershell
+ssh-keygen -R 192.168.1.125
 ```
 
----
+### 9.9 ⚠️ 踩坑记录：静态 IP 重烧后丢失
 
-*文档版本: v1.0 — 2026-07-22*
+**现象**：在板上手动改 `/etc/network/interfaces` 配好静态 IP，重烧 sdcard.img 后配置丢失。
 
----
+**根因**：手工修改在 rootfs 内存中，重烧镜像后恢复默认。
+
+**修复**：将静态 IP 配置写进 HWT rootfs-overlay：
+
+```
+hwt/buildroot/rootfs-overlay/etc/network/interfaces
+```
+
+随镜像一起烧录，永久生效。
