@@ -95,34 +95,30 @@ static int goodix_ts_read_input_report(struct goodix_ts_data *ts, u8 *data)
 {
 	int touch_num;
 	int error;
-	u16 coor = GOODIX_READ_COOR_ADDR;
+	u8 status;
 
-	/* gt9147: coordinate data starts at 0x8157, not 0x814F */
-	if (ts->version >= 9147)
-		coor = GT9147_READ_COOR_ADDR;
-
-	error = goodix_i2c_read(ts->client, coor, data,
-				GOODIX_CONTACT_SIZE + 1);
+	/* 先从 0x814E 读状态字节，获取触摸点数 */
+	error = goodix_i2c_read(ts->client, GOODIX_READ_COOR_ADDR, &status, 1);
 	if (error) {
-		dev_err(&ts->client->dev, "I2C transfer error: %d\n", error);
+		dev_err(&ts->client->dev, "I2C read status error: %d\n", error);
 		return error;
 	}
-
-	touch_num = data[0] & 0x0f;
+	touch_num = status & 0x0f;
 	if (touch_num > ts->max_touch_num)
-		return -EPROTO;
+		touch_num = 0;
 
-	if (touch_num > 1) {
-		data += 1 + GOODIX_CONTACT_SIZE;
-		error = goodix_i2c_read(ts->client,
-					coor +
-						1 + GOODIX_CONTACT_SIZE,
-					data,
-					GOODIX_CONTACT_SIZE * (touch_num - 1));
-		if (error)
+	/* gt9147: 坐标数据从 0x8157 开始，不是 0x814F */
+	if (touch_num > 0) {
+		u16 coor = GOODIX_READ_COOR_ADDR;
+		if (ts->version >= 9147)
+			coor = GT9147_READ_COOR_ADDR;
+		error = goodix_i2c_read(ts->client, coor, data,
+					GOODIX_CONTACT_SIZE * touch_num);
+		if (error) {
+			dev_err(&ts->client->dev, "I2C read coords error: %d\n", error);
 			return error;
+		}
 	}
-
 	return touch_num;
 }
 
@@ -161,7 +157,7 @@ static void goodix_process_events(struct goodix_ts_data *ts)
 
 	for (i = 0; i < touch_num; i++)
 		goodix_ts_report_touch(ts,
-				&point_data[1 + GOODIX_CONTACT_SIZE * i]);
+				&point_data[GOODIX_CONTACT_SIZE * i]);
 
 	input_mt_sync_frame(ts->input_dev);
 	input_sync(ts->input_dev);

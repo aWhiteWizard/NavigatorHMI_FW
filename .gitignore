@@ -79,3 +79,4 @@ Testing/
 # source tarballs (kernel/uboot source packages, included in Docker image)
 tarballs/
 nul
+.pi/.agent_task_*.md
