@@ -30,6 +30,7 @@
 struct goodix_ts_data {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
+	int version;
 	int abs_x_max;
 	int abs_y_max;
 	unsigned int max_touch_num;
@@ -45,7 +46,8 @@ struct goodix_ts_data {
 #define GOODIX_CONFIG_MAX_LENGTH	240
 
 /* Register defines */
-#define GOODIX_READ_COOR_ADDR		0x814E
+#define GOODIX_READ_COOR_ADDR		0x814E	/* gt911 status + coords start */
+#define GT9147_READ_COOR_ADDR		0x8157	/* gt9147: points start 9 bytes after status */
 #define GOODIX_REG_CONFIG_DATA		0x8047
 #define GOODIX_REG_VERSION		0x8140
 
@@ -93,8 +95,13 @@ static int goodix_ts_read_input_report(struct goodix_ts_data *ts, u8 *data)
 {
 	int touch_num;
 	int error;
+	u16 coor = GOODIX_READ_COOR_ADDR;
 
-	error = goodix_i2c_read(ts->client, GOODIX_READ_COOR_ADDR, data,
+	/* gt9147: coordinate data starts at 0x8157, not 0x814F */
+	if (ts->version >= 9147)
+		coor = GT9147_READ_COOR_ADDR;
+
+	error = goodix_i2c_read(ts->client, coor, data,
 				GOODIX_CONTACT_SIZE + 1);
 	if (error) {
 		dev_err(&ts->client->dev, "I2C transfer error: %d\n", error);
@@ -108,7 +115,7 @@ static int goodix_ts_read_input_report(struct goodix_ts_data *ts, u8 *data)
 	if (touch_num > 1) {
 		data += 1 + GOODIX_CONTACT_SIZE;
 		error = goodix_i2c_read(ts->client,
-					GOODIX_READ_COOR_ADDR +
+					coor +
 						1 + GOODIX_CONTACT_SIZE,
 					data,
 					GOODIX_CONTACT_SIZE * (touch_num - 1));
@@ -355,6 +362,8 @@ static int goodix_ts_probe(struct i2c_client *client,
 	}
 
 	goodix_read_config(ts);
+	/* save gt9147 version info for coordinate address selection */
+	ts->version = version_info;
 
 	error = goodix_request_input_dev(ts);
 	if (error)
