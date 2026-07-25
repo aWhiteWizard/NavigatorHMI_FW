@@ -107,11 +107,9 @@ static int goodix_ts_read_input_report(struct goodix_ts_data *ts, u8 *data)
 	if (touch_num > ts->max_touch_num)
 		touch_num = 0;
 
-	/* gt9147: 坐标数据从 0x8157 开始，不是 0x814F */
+	/* gt9147: 坐标数据从 0x8157 开始，不是主线的 0x814F */
 	if (touch_num > 0) {
-		u16 coor = GOODIX_READ_COOR_ADDR;
-		if (ts->version >= 9147)
-			coor = GT9147_READ_COOR_ADDR;
+		u16 coor = GT9147_READ_COOR_ADDR;
 		error = goodix_i2c_read(ts->client, coor, data,
 					GOODIX_CONTACT_SIZE * touch_num);
 		if (error) {
