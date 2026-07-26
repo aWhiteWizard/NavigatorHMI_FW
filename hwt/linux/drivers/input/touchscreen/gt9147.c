@@ -293,7 +293,8 @@ int gt9147_probe(struct i2c_client *client, const struct i2c_device_id *id)
     /* 4,初始化GT9147，烧写固件 */
     gt9147_read_regs(&gt9147, GT_CFGS_REG, &data, 1);
     printk("GT9147 ID =%#X\r\n", data);
-    if(data <  GT9147_CT[0]) {
+    /* 芯片已就绪，始终写入完整配置（出厂配置在冷启动后不稳定）*/
+    if(data > 0) {
        gt9147_send_cfg(&gt9147, 0);
     }
 
