@@ -51,6 +51,7 @@ int main(int argc, char *argv[])
         "QPushButton:pressed { background-color: #1F4E79; }"));
 
     QObject::connect(button, &QPushButton::clicked, title, [title]() {
+        { FILE *fp = fopen("/tmp/touch.log", "a"); if(fp) { fprintf(fp, "clicked\n"); fclose(fp); } }
         title->setText(QStringLiteral("触摸测试成功 ✓"));
     });
 

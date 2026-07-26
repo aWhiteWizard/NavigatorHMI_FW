@@ -1,0 +1,21 @@
+#!/bin/sh
+# vuinput 后台驻留版 — 持续保持一个虚拟触摸设备，供 Qt 连接
+# 用法: vuinput-start (创建设备) / vuinput-touch X Y (点击)
+# 结束后: vinput-kill 释放设备
+
+DEV="/dev/vuinput.pid"
+case "$1" in
+    start)
+        /usr/bin/vuinput -d &
+        echo $! > /dev/vuinput.pid
+        sleep 1
+        echo "vuinput started pid=$(cat /dev/vuinput.pid)"
+        ;;
+    touch)
+        /usr/bin/vuinput -t ${2:-400} ${3:-400}
+        ;;
+    stop)
+        kill $(cat /dev/vuinput.pid 2>/dev/null) 2>/dev/null
+        rm -f /dev/vuinput.pid
+        ;;
+esac

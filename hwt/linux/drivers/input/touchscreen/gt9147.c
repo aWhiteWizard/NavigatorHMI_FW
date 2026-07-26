@@ -184,6 +184,7 @@ static irqreturn_t gt9147_irq_handler(int irq, void *dev_id)
     struct gt9147_dev *dev = dev_id;
 
     ret = gt9147_read_regs(dev, GT_GSTID_REG, &data, 1);
+    printk_ratelimited("gt9147 IRQ: GSTID=0x%02X\n", data);
     if (data == 0x00)  {     /* 没有触摸数据，直接返回 */
         goto fail;
     } else {                 /* 统计触摸点数据 */
