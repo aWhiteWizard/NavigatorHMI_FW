@@ -11,6 +11,15 @@
 
 Embedded device code for NavigatorHMI (i.MX6ULL ARM)
 
+## RK3562（子任务 B，HMI panel）
+
+RK3562 平台（迅为 6.1 SDK + Qt 6.4.3）的编译/部署/迁移说明见 **[doc/rk3562-build-deploy.md](doc/rk3562-build-deploy.md)**：
+
+- 编译：`docker-build-rk3562.ps1`（镜像 `rk3562-builder-env:v1.0-ubuntu20` + SDK 卷挂载）
+- **换电脑迁移（方案 A）**：编译产物打 tar 存档 D 盘 → 新电脑拷贝 SDK + 解压产物 → 增量编译（无需重编 2-3h），详见文档 §5
+
+> 本 README 其余章节为 i.MX6ULL 平台（子任务历史）说明。
+
 ## 环境要求
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)（Windows）

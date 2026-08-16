@@ -1,0 +1,68 @@
+# ============================================================
+# NavigatorHMI RK3562 定制 Buildroot defconfig (V1.0, 2026-08-14)
+#
+# 基于 rockchip_rk3562_defconfig 裁剪:
+#   - 去 network/chromium.config   (数小时编译, HMI 不需要)
+#   - 去 topeet_rk3562_rootfs.config (Qt5 全家桶; V1.0 用 Qt 6.4.3, Qt5/Qt6 互斥)
+#   - 去 gui/weston.config         (HMI 用 Qt eglfs 直渲, 不需要 wayland)
+#   - 去 gst/* npu2 benchmark test (非部署必需, 缩短首编时间)
+# 启用 Qt 6.4.3: base + eglfs + serialbus/serialport + svg + core5compat
+# (V1.0 需求: 触屏 eglfs 渲染 / Modbus 串口 / SVG 图标 / Qt5 兼容层)
+# ============================================================
+#include "base/base.config"
+#include "bus/pci.config"
+#include "chips/rk3562_aarch64.config"
+#include "font/chinese.config"
+#include "fs/exfat.config"
+#include "fs/ntfs.config"
+#include "fs/vfat.config"
+#include "gpu/mali.config"
+#include "multimedia/audio.config"
+#include "multimedia/mpp.config"
+#include "wifibt/bt.config"
+#include "wifibt/wireless.config"
+#include "tools/common.config"
+
+# ---- Qt 6.4.3 (V1.0) ----
+# 注意: BR2_PACKAGE_QT6 是 menuconfig 菜单 (meta 开关), 必须显式启用,
+# 否则 QT6BASE 等子选项全部不生效 (2026-08-15 踩坑)
+BR2_PACKAGE_QT6=y
+BR2_PACKAGE_QT6BASE=y
+BR2_PACKAGE_QT6BASE_GUI=y
+BR2_PACKAGE_QT6BASE_EGLFS=y
+BR2_PACKAGE_QT6BASE_DEFAULT_QPA="eglfs"
+BR2_PACKAGE_QT6BASE_OPENGL=y
+BR2_PACKAGE_QT6BASE_OPENGL_ES2=y
+BR2_PACKAGE_QT6BASE_FONTCONFIG=y
+BR2_PACKAGE_QT6BASE_HARFBUZZ=y
+BR2_PACKAGE_QT6BASE_PNG=y
+BR2_PACKAGE_QT6BASE_JPEG=y
+BR2_PACKAGE_QT6BASE_GIF=y
+BR2_PACKAGE_QT6BASE_NETWORK=y
+BR2_PACKAGE_QT6BASE_XML=y
+BR2_PACKAGE_QT6BASE_SQL=y
+BR2_PACKAGE_QT6BASE_SQLITE=y
+BR2_PACKAGE_QT6BASE_CONCURRENT=y
+BR2_PACKAGE_QT6BASE_DBUS=y
+BR2_PACKAGE_QT6BASE_TSLIB=y
+BR2_PACKAGE_QT6BASE_WIDGETS=y
+BR2_PACKAGE_QT6BASE_LINUXFB=y
+BR2_PACKAGE_QT6SERIALBUS=y
+BR2_PACKAGE_QT6SERIALPORT=y
+BR2_PACKAGE_QT6SVG=y
+BR2_PACKAGE_QT6CORE5COMPAT=y
+
+# ---- 部署基础 (调试/维护) ----
+BR2_TARGET_GENERIC_ROOT_PASSWD="topeet"
+BR2_PACKAGE_OPENSSH=y
+BR2_PACKAGE_IPROUTE2=y
+
+# ---- 外部工具链 (SDK prebuilts, 2026-08-15) ----
+# Rockchip 内部工具链的 glibc fork (2.38/2.41 git commit 版) 在 aarch64 链接 ld.so 时
+# 缺 __lll_lock_wake_private 符号 → 改用 SDK 自带 prebuilts 工具链
+# (gcc 10.3 + glibc, 迅为官方验证, 内核/u-boot 均用它编译成功; 且跳过内部 gcc/glibc 编译)
+#include "toolchain/arm_10_aarch64.config"
+# 工具链符号链接修复后 FORTRAN/OpenMP 可用 (之前误关导致 buildroot 反向报错)
+BR2_TOOLCHAIN_EXTRA_LIBS="libgomp.so"
+# 外部工具链自带内核头文件, 不再编 linux-headers 包
+# BR2_PACKAGE_LINUX_HEADERS is not set

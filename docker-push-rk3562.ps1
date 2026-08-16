@@ -1,31 +1,31 @@
 ﻿<#
 .SYNOPSIS
-    构建 Docker 编译镜像并推送到华为云 SWR
+    构建 RK3562 Docker 编译镜像并推送到华为云 SWR
 .DESCRIPTION
-    1. 构建包含源码压缩包的 Docker 镜像
-    2. 推送到华为云 SWR 仓库
-    3. 后续可用 docker-build.ps1 使用此镜像编译
+    1. 构建包含编译依赖的 rk3562-builder-env 镜像 (SDK 源码不打进镜像, 卷挂载)
+    2. 推送到华为云 SWR 仓库 (image-linuxenv)
+    3. 后续可用 docker-build-rk3562.ps1 使用此镜像编译
 .PARAMETER Help
     显示此帮助信息
 .PARAMETER ImageTag
-    镜像标签 (默认: v1.0)
+    镜像标签 (默认: v1.0-ubuntu20)
 .PARAMETER SkipPush
     跳过推送，只构建本地镜像
 .EXAMPLE
-    .\docker-push.ps1
+    .\docker-push-rk3562.ps1
     构建并推送镜像
 
-    .\docker-push.ps1 -ImageTag v1.1 -SkipPush
+    .\docker-push-rk3562.ps1 -ImageTag v1.1 -SkipPush
     构建 v1.1 标签的镜像，仅本地使用
 
-    .\docker-push.ps1 -Help
+    .\docker-push-rk3562.ps1 -Help
     显示此帮助信息
 #>
 
 param(
     [switch]$Help,
 
-    [string]$ImageTag = "v1.2-ubuntu18",
+    [string]$ImageTag = "v1.0-ubuntu20",
     [switch]$SkipPush
 )
 
@@ -60,7 +60,7 @@ if (-not $SWR_AK -or -not $SWR_SK) {
     Write-Host "❌ 未找到 SWR 凭据：请先设置用户环境变量 SWR_AK / SWR_SK（或重开终端使环境变量生效）" -ForegroundColor Red
     exit 1
 }
-$ImageName = "fw-builder-env"
+$ImageName = "rk3562-builder-env"
 $FullImageTag = "${SWR_Domain}/${SWR_Namespace}/${ImageName}:${ImageTag}"
 
 Write-Host "============================================" -ForegroundColor Cyan
@@ -96,15 +96,11 @@ Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Step 2/3: 构建 Docker 镜像"               -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 
-# 源码压缩包路径
-$SourceDir = "D:\workspace\image_sources"
-
-# 使用 .devcontainer/Dockerfile 构建
+# 使用 .devcontainer/Dockerfile.rk3562 构建
 # --provenance=false 禁用 attestation（华为云 SWR 不支持新版 manifest 格式）
-# --build-context sources=... 将外部压缩包目录作为构建上下文传入
+# SDK 源码(17.8GB)不打进镜像, 编译时用 docker-build-rk3562.ps1 卷挂载
 docker build --provenance=false -t $FullImageTag `
-    -f "${ProjectRoot}\.devcontainer\Dockerfile.ubuntu18" `
-    --build-context "sources=${SourceDir}" `
+    -f "${ProjectRoot}\.devcontainer\Dockerfile.rk3562" `
     $ProjectRoot
 
 if ($LASTEXITCODE -ne 0) {

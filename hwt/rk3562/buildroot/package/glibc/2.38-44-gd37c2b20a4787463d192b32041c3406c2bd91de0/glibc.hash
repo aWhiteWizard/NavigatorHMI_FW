@@ -1,0 +1,2 @@
+# 2026-08-15 NavigatorHMI: glibc 2.38 (切 2.41 失败后), hash 由 dl 缓存计算
+sha256  e38f4284d6909c6b5db7d79c6e450daeaf136a67e547290eec0b063a55eaaa42  glibc-2.38-44-gd37c2b20a4787463d192b32041c3406c2bd91de0.tar.gz

@@ -80,3 +80,11 @@ Testing/
 tarballs/
 nul
 .pi/.agent_task_*.md
+.pi/
+
+# 大文件（模型/离线包/Qt 源码，禁止进仓库）
+models/
+*.gguf
+*.nupkg
+qt*/
+third_party/qt*/

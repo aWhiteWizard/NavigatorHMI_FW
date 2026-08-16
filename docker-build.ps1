@@ -88,20 +88,25 @@ param(
 )
 
 # ============================================================
-# 华为云 SWR 配置
-# ============================================================
-$SWR_AK = "HPUAQUYWVPFHVHWJJGON"
-$SWR_SK = "G6vlkEzbjeG4ZspOgK7pYJPm5G5E7DtbbBvBK5HM"
-$SWR_Region = "cn-southwest-2"
-$SWR_Domain = "swr.$SWR_Region.myhuaweicloud.com"
-$SWR_UserName = "$SWR_Region@$SWR_AK"
-
-# ============================================================
-# 处理 -Help 参数
+# 处理 -Help 参数（优先于 SWR 凭据检查，未设环境变量也能看帮助）
 # ============================================================
 if ($Help) {
     Get-Help $MyInvocation.MyCommand.Path -Detailed
     exit 0
+}
+
+# ============================================================
+# 华为云 SWR 配置（2026-08-14 起优先读用户级环境变量 SWR_AK/SWR_SK/SWR_REGION，
+# 已固化到 HKCU\Environment，避免脚本明文与变量两处不同步）
+# ============================================================
+$SWR_AK = $env:SWR_AK
+$SWR_SK = $env:SWR_SK
+$SWR_Region = if ($env:SWR_REGION) { $env:SWR_REGION } else { "cn-southwest-2" }
+$SWR_Domain = "swr.$SWR_Region.myhuaweicloud.com"
+$SWR_UserName = "$SWR_Region@$SWR_AK"
+if (-not $SWR_AK -or -not $SWR_SK) {
+    Write-Host "❌ 未找到 SWR 凭据：请先设置用户环境变量 SWR_AK / SWR_SK（或重开终端使环境变量生效）" -ForegroundColor Red
+    exit 1
 }
 
 # ============================================================
