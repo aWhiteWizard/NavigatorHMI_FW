@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     构建 RK3562 Docker 编译镜像并推送到华为云 SWR
 .DESCRIPTION
@@ -25,7 +25,7 @@
 param(
     [switch]$Help,
 
-    [string]$ImageTag = "v1.0-ubuntu20",
+    [string]$ImageTag = "v1.1-ubuntu20",
     [switch]$SkipPush
 )
 

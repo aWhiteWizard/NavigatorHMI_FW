@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     在 Docker 容器中交叉编译 NavigatorHMI_FW (RK3562 / aarch64)
 .DESCRIPTION
@@ -61,7 +61,7 @@ param(
 
     [switch]$Clean,
 
-    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/rk3562-builder-env:v1.0-ubuntu20",
+    [string]$DockerImage = "swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/rk3562-builder-env:v1.1-ubuntu20",
 
     [string]$SdkPath = "D:\workspace\rk3562-sdk\rk3562-linux-6.1",
 

@@ -47,8 +47,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsdl1.2-dev libglib2.0-dev libswitch-perl \
     pngcrush schedtool m4 bzr cvs subversion mercurial \
     binutils cpio file bc \
+    tftpd-hpa tftp-hpa \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# TFTP 服务器默认配置 (2026-08-16 B-1: 并入编译镜像, 一镜多用:
+# 编译环境 + 网络烧写 TFTP 服务器)
+RUN echo 'TFTP_USERNAME="tftp"' > /etc/default/tftpd-hpa \
+ && echo 'TFTP_DIRECTORY="/srv/tftp/"' >> /etc/default/tftpd-hpa \
+ && echo 'TFTP_ADDRESS="0.0.0.0:69"' >> /etc/default/tftpd-hpa \
+ && echo 'TFTP_OPTIONS="-l -c -s"' >> /etc/default/tftpd-hpa \
+ && mkdir -p /srv/tftp
 
 # 辅助依赖 (universe 包, 个别缺失不影响核心编译)
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -86,5 +86,5 @@ nul
 models/
 *.gguf
 *.nupkg
-qt*/
+/qt*/
 third_party/qt*/
