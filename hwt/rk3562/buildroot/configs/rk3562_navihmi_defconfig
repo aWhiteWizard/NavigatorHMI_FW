@@ -52,6 +52,10 @@ BR2_PACKAGE_QT6SERIALPORT=y
 BR2_PACKAGE_QT6SVG=y
 BR2_PACKAGE_QT6CORE5COMPAT=y
 
+# ---- protobuf (B-4 转换器依赖: .navihmi 解析) ----
+# 需要 host protoc (编译时生成 C++ 类) + target libprotobuf (运行时解析)
+BR2_PACKAGE_PROTOBUF=y
+
 # ---- 部署基础 (调试/维护) ----
 BR2_TARGET_GENERIC_ROOT_PASSWD="topeet"
 BR2_PACKAGE_OPENSSH=y
