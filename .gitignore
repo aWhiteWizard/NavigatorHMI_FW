@@ -88,3 +88,4 @@ models/
 *.nupkg
 /qt*/
 third_party/qt*/
+__pycache__/
