@@ -1,5 +1,5 @@
 syntax = "proto3";
-package navihmi;
+package navihmi_pb;   // C++ 生成类命名空间（与运行时模型 navihmi 区分；wire 格式不受 package 影响）
 option optimize_for = LITE_RUNTIME;
 
 // ═══════════════════════════════════════════════════════════════════
