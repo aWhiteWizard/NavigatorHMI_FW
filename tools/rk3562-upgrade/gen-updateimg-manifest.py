@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# B-2: 解析官方 update.img (RKFW) 生成 updateimg.manifest.json
+# B-2/B-3: 解析 update.img (RKFW) 生成 updateimg.manifest.json
 # 依据 SDK external/rknetupdate/internal/rkimage/updateimg.go
-import struct, hashlib, json, sys
+# 用法: gen-updateimg-manifest.py <update.img路径> [输出manifest路径]
+import struct, hashlib, json, sys, os
 
-path = r"D:\资料\iTOP-3562开发板\系统烧写\RGB_7_0屏幕镜像\update.img"
-out  = r"D:\ProgramData\Agent_backup\updateimg.manifest.json"
+path = sys.argv[1] if len(sys.argv) > 1 else r"D:\资料\iTOP-3562开发板\系统烧写\RGB_7_0屏幕镜像\update.img"
+out  = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(path), "updateimg.manifest.json")
 
 def cstring(b):
     i = b.find(b'\x00')
