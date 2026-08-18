@@ -1,66 +1,59 @@
 /*
  * @Author: aWhiteWizard www.123518341@qq.com
  * @FilePath: \NavigatorHMI_FW\src\main.cpp
- * @Description: NavigatorHMI 主程序 - Qt HMI 链路验证 Demo
- *               全屏自适应 + 中文标签 + 触摸按钮 + RGB 色块
- *               用于验证: Qt5 交叉编译 / linuxfb 显示 / 中文字体 /
- *                        evdev 触摸 / RGB565 颜色通道是否正确
+ * @Description: NavigatorHMI FW 应用入口（跨平台）
+ *               同一份代码：RK3128（Linux ARM, Qt 6.5.6）+ Windows 桌面（仿真器）
+ *               输入：组态软件编译的 .navihmi（fw/proto/navihmi.proto 契约）
+ *               用法：navihmi-fw --project xxx.navihmi
  */
-#include <QApplication>
-#include <QWidget>
-#include <QLabel>
-#include <QPushButton>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QCommandLineParser>
+#include <QDebug>
 
-// 创建一个纯色块标签（用于 RGB 通道诊断：显示颜色应与名称一致）
-static QLabel* makeColorBlock(const QString &name, const QString &color, QWidget *parent)
-{
-    QLabel *label = new QLabel(name, parent);
-    label->setAlignment(Qt::AlignCenter);
-    label->setStyleSheet(QStringLiteral(
-        "QLabel { background-color: %1; color: white; font-size: 14px; }").arg(color));
-    label->setMinimumHeight(48);
-    return label;
-}
+// FW 运行时模块（后续迭代逐个接入）
+// #include "runtime/projectparser.h"
+// #include "runtime/tagstore.h"
+// #include "runtime/alarmengine.h"
+// #include "ui/hmiview.h"
 
 int main(int argc, char *argv[])
 {
-    QApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("NavigatorHMI_FW"));
+    app.setApplicationVersion(QStringLiteral("1.1.0"));
 
-    QWidget window;
-    window.setWindowTitle(QStringLiteral("NavigatorHMI"));
-    window.setStyleSheet(QStringLiteral("QWidget { background-color: #203864; }"));
+    // 平台后端：Linux 嵌入式按 FW_PLATFORM_BACKEND 设 QPA（linuxfb/eglfs，CMake -D 配置）
+#if !defined(Q_OS_WIN)
+    qputenv("QT_QPA_PLATFORM", QByteArrayLiteral(FW_PLATFORM_BACKEND));
+#endif
 
-    QVBoxLayout *mainLayout = new QVBoxLayout(&window);
+    QCommandLineParser parser;
+    parser.setApplicationDescription(QStringLiteral("NavigatorHMI FW 应用（RK3128 / Windows 仿真器）"));
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.addOption(QCommandLineOption(QStringLiteral("project"), QStringLiteral(".navihmi 工程文件路径"), QStringLiteral("path")));
+    parser.process(app);
 
-    QLabel *title = new QLabel(QStringLiteral("NavigatorHMI\nQt 5.12.9 @ i.MX6ULL"), &window);
-    title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet(QStringLiteral("QLabel { color: white; font-size: 20px; }"));
+    const QString projectPath = parser.value(QStringLiteral("project"));
 
-    // RGB 诊断色块：屏幕应显示 红/绿/蓝，若红蓝互换则需调整像素格式
-    QHBoxLayout *colorLayout = new QHBoxLayout();
-    colorLayout->addWidget(makeColorBlock(QStringLiteral("红 R"), QStringLiteral("#FF0000"), &window));
-    colorLayout->addWidget(makeColorBlock(QStringLiteral("绿 G"), QStringLiteral("#00FF00"), &window));
-    colorLayout->addWidget(makeColorBlock(QStringLiteral("蓝 B"), QStringLiteral("#0000FF"), &window));
+    // ═══════ 工程解析（骨架：ProjectParser 在 runtime/ 迭代中实现）═══════
+    // ProjectModel model;
+    // ProjectParser projectParser;
+    // if (!projectParser.load(projectPath, &model)) {
+    //     qCritical().noquote() << "工程加载失败:" << projectPath;
+    //     return 1;
+    // }
 
-    QPushButton *button = new QPushButton(QStringLiteral("触摸测试"), &window);
-    button->setStyleSheet(QStringLiteral(
-        "QPushButton { background-color: #2E75B6; color: white; font-size: 18px; "
-        "              border-radius: 8px; min-height: 48px; }"
-        "QPushButton:pressed { background-color: #1F4E79; }"));
-
-    QObject::connect(button, &QPushButton::clicked, title, [title]() {
-        { FILE *fp = fopen("/tmp/touch.log", "a"); if(fp) { fprintf(fp, "clicked\n"); fclose(fp); } }
-        title->setText(QStringLiteral("触摸测试成功 ✓"));
-    });
-
-    mainLayout->addWidget(title, 1);
-    mainLayout->addLayout(colorLayout);
-    mainLayout->addWidget(button);
-
-    // 全屏显示：自动适配帧缓冲实际分辨率（4.3寸 480x272 / 7寸 800x480 等）
-    window.showFullScreen();
+    // ═══════ QML 引擎 ═══════
+    QQmlApplicationEngine engine;
+    // engine.rootContext()->setContextProperty("hmi", &hmiView);   // 控件/报警/设值接口
+    engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
+    if (engine.rootObjects().isEmpty()) {
+        qCritical() << "QML 加载失败";
+        return -1;
+    }
 
     return app.exec();
 }
