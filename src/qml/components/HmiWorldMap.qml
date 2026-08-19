@@ -30,9 +30,9 @@ Rectangle {
     signal hmiSystemShutdown()
 
     // ── Web Mercator 换算 (与 PC 端 MapViewportMath 一致) ──
-    readonly property double R: 6378137.0
-    function mercX(lng) { return lng * R * Math.PI / 180.0 }
-    function mercY(lat) { return R * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) }
+    readonly property double earthRadius: 6378137.0
+    function mercX(lng) { return lng * earthRadius * Math.PI / 180.0 }
+    function mercY(lat) { return earthRadius * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) }
 
     // 显示范围 → 视口中心 + 分辨率（按 bounds 自适应，含 10% padding）
     readonly property double viewMinX: mercX(lngMin)
