@@ -87,7 +87,12 @@ Rectangle {
             var labels = [
                 { name: "成都", lng: 104.0667, lat: 30.5728 },
                 { name: "天府广场", lng: 104.0657, lat: 30.6570 },
-                { name: "东站", lng: 104.1423, lat: 30.6294 }
+                { name: "东站", lng: 104.1423, lat: 30.6294 },
+                { name: "双流机场", lng: 103.9471, lat: 30.5785 },
+                { name: "成都北站", lng: 104.0727, lat: 30.7000 },
+                { name: "锦江区", lng: 104.0833, lat: 30.6500 },
+                { name: "青羊区", lng: 104.0556, lat: 30.6747 },
+                { name: "武侯区", lng: 104.0433, lat: 30.6417 }
             ]
             for (var i = 0; i < labels.length; i++) {
                 var lx = root.toScreenX(labels[i].lng)
@@ -96,6 +101,42 @@ Rectangle {
                     ctx.fillText(labels[i].name, lx + 6, ly - 4)
                 }
             }
+            // 锦江/府河示意（成都母亲河, 简化为折线）
+            ctx.strokeStyle = "#7EC8E3"
+            ctx.lineWidth = 3
+            ctx.beginPath()
+            var river = [
+                { lng: 104.0280, lat: 30.6950 },  // 西北
+                { lng: 104.0500, lat: 30.6780 },
+                { lng: 104.0657, lat: 30.6570 },  // 天府广场
+                { lng: 104.0800, lat: 30.6400 },
+                { lng: 104.0980, lat: 30.6250 },  // 东南
+                { lng: 104.1150, lat: 30.6080 }
+            ]
+            for (var r = 0; r < river.length; r++) {
+                var rx = root.toScreenX(river[r].lng)
+                var ry = root.toScreenY(river[r].lat)
+                if (r === 0) ctx.moveTo(rx, ry); else ctx.lineTo(rx, ry)
+            }
+            ctx.stroke()
+            // 环线示意（一环/二环, 简化为同心椭圆）
+            ctx.strokeStyle = "#F5B041"
+            ctx.lineWidth = 1.5
+            ctx.setLineDash([6, 4])
+            var centers = [
+                { lng: 104.0667, lat: 30.6570, dx: 0.012, dy: 0.012 },  // 一环
+                { lng: 104.0667, lat: 30.6570, dx: 0.020, dy: 0.020 }   // 二环
+            ]
+            for (var c = 0; c < centers.length; c++) {
+                ctx.beginPath()
+                ctx.ellipse(root.toScreenX(centers[c].lng),
+                            root.toScreenY(centers[c].lat),
+                            Math.abs(root.toScreenX(centers[c].lng + centers[c].dx) - root.toScreenX(centers[c].lng)),
+                            Math.abs(root.toScreenY(centers[c].lat + centers[c].dy) - root.toScreenY(centers[c].lat)),
+                            0, 0, Math.PI * 2)
+                ctx.stroke()
+            }
+            ctx.setLineDash([])
         }
     }
 
