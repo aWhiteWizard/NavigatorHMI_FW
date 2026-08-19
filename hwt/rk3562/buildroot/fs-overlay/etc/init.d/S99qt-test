@@ -1,0 +1,35 @@
+#!/bin/sh
+# NavigatorHMI FW 开机自启 (B-4: QML 界面; B-5: 日志重定向)
+# eglfs 全屏; 远程调试: -platform vnc:port=5900
+# Qt 插件路径: buildroot 装到 /usr/plugins (非默认路径)
+# QML 导入路径: buildroot 装到 /usr/qml (非默认路径)
+
+export QT_QPA_PLATFORM=eglfs
+export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/plugins/platforms
+export QT_PLUGIN_PATH=/usr/plugins
+export QML_IMPORT_PATH=/usr/qml
+export QML2_IMPORT_PATH=/usr/qml
+
+LOG=/tmp/navihmi.log
+
+case "$1" in
+  start)
+    echo "Starting navigatorhmi-fw..."
+    sleep 3
+    # 有工程则加载, 无工程显示导航界面; 日志重定向便于排查
+    if [ -f /mnt/user/userdata/app.navihmi ]; then
+        /usr/bin/navigatorhmi-fw --project /mnt/user/userdata/app.navihmi > ${LOG} 2>&1 &
+    else
+        /usr/bin/navigatorhmi-fw > ${LOG} 2>&1 &
+    fi
+    ;;
+  stop)
+    killall navigatorhmi-fw 2>/dev/null
+    ;;
+  *)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac
+
+exit 0
