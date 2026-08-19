@@ -89,3 +89,7 @@ models/
 /qt*/
 third_party/qt*/
 __pycache__/
+
+# B-4: fs-overlay 预编译二进制 (由 build-rk3562.sh 注入, 不入库)
+hwt/rk3562/buildroot/fs-overlay/usr/bin/navigatorhmi-fw
+hwt/rk3562/buildroot/fs-overlay/usr/bin/qt-test

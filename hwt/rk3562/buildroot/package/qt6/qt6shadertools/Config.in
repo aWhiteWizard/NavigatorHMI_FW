@@ -1,0 +1,9 @@
+config BR2_PACKAGE_QT6SHADERTOOLS
+	bool "qt6shadertools"
+	depends on BR2_PACKAGE_QT6
+	depends on BR2_PACKAGE_QT6BASE
+	help
+	  Qt6 Shader Tools module (qsb shader tool + Qt6ShaderTools lib).
+	  B-4 移植: Qt Quick 编译依赖 (qtdeclarative find_package Qt6ShaderTools)。
+
+	  https://doc.qt.io/qt-6/qtshadertools-index.html

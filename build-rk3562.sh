@@ -150,6 +150,19 @@ build_buildroot() {
     if [ -f ${BR_OUT}/images/rootfs.img ]; then
         cp ${BR_OUT}/images/rootfs.img ${OUT}/rootfs/
     fi
+
+    # B-4: GLES/EGL CMake 补丁注入 staging (libmali 提供库但无 CMake config,
+    # Qt6Gui/Quick 交叉编译 find_package(EGL/GLESv2) 需要; 全新环境可复现)
+    local SYSROOT=${BR_OUT}/host/aarch64-buildroot-linux-gnu/sysroot
+    if [ -d "${HWT}/buildroot/cmake/EGL" ]; then
+        echo ">>> 注入 GLES/EGL CMake 补丁到 staging ..."
+        mkdir -p ${SYSROOT}/usr/lib/cmake/EGL ${SYSROOT}/usr/lib/cmake/GLESv2 ${SYSROOT}/usr/lib/cmake/Qt6
+        cp -f ${HWT}/buildroot/cmake/EGL/EGLConfig.cmake ${SYSROOT}/usr/lib/cmake/EGL/
+        cp -f ${HWT}/buildroot/cmake/GLESv2/GLESv2Config.cmake ${SYSROOT}/usr/lib/cmake/GLESv2/
+        cp -f ${HWT}/buildroot/cmake/Qt6/FindEGL.cmake ${SYSROOT}/usr/lib/cmake/Qt6/
+        cp -f ${HWT}/buildroot/cmake/Qt6/FindGLESv2.cmake ${SYSROOT}/usr/lib/cmake/Qt6/
+    fi
+
     echo ">>> Buildroot 完成"
 }
 

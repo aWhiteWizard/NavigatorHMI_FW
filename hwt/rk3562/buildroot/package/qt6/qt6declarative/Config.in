@@ -1,0 +1,74 @@
+config BR2_PACKAGE_QT6DECLARATIVE
+	bool "qt6declarative"
+	depends on BR2_PACKAGE_QT6
+	depends on BR2_PACKAGE_QT6BASE
+	depends on BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6DECLARATIVE_QUICK if BR2_PACKAGE_QT6BASE_WIDGETS
+	help
+	  Qt6 QML/Quick module (Qt QML engine + Qt Quick scene graph).
+	  B-4 移植: 迅为 SDK buildroot 无此包, 按上游 2024.08 移植。
+
+	  https://doc.qt.io/qt-6/qtdeclarative-index.html
+
+if BR2_PACKAGE_QT6DECLARATIVE
+
+config BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	bool "Qt Quick"
+	select BR2_PACKAGE_QT6BASE_NETWORK
+	help
+	  Qt Quick (scene graph, QML items for UI).
+
+config BR2_PACKAGE_QT6DECLARATIVE_QMLCOMPILER
+	bool "QML compiler"
+	help
+	  qmlcachegen / qmltyperegistrar (host tools).
+
+config BR2_PACKAGE_QT6DECLARATIVE_QMLSHAPES
+	bool "Qt Quick Shapes"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Qt Quick Shapes module.
+
+config BR2_PACKAGE_QT6DECLARATIVE_QMLMODELS
+	bool "Qt QML Models"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Qt QML Models module (QQmlModelListModel etc).
+
+config BR2_PACKAGE_QT6DECLARATIVE_QUICKCONTROLS
+	bool "Qt Quick Controls"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Qt Quick Controls (Button/TextField etc).
+
+config BR2_PACKAGE_QT6DECLARATIVE_QUICKLAYOUTS
+	bool "Qt Quick Layouts"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Qt Quick Layouts.
+
+config BR2_PACKAGE_QT6DECLARATIVE_QUICKPARTICLES
+	bool "Qt Quick Particles"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Qt Quick Particles module.
+
+config BR2_PACKAGE_QT6DECLARATIVE_QUICKSHAPES
+	bool "Qt Quick Shapes (deprecated alias)"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Alias of QML Shapes.
+
+config BR2_PACKAGE_QT6DECLARATIVE_QUICKTEST
+	bool "Qt Quick Test"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Qt Quick Test module.
+
+config BR2_PACKAGE_QT6DECLARATIVE_QUICKWINDOW
+	bool "Qt Quick Window"
+	depends on BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  Qt Quick Window module.
+
+endif

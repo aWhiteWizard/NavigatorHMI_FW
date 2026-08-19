@@ -1,0 +1,9 @@
+# NavigatorHMI 静态 IP (B-3): 192.168.1.146 (冲突时手动改)
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 192.168.1.146
+    netmask 255.255.255.0
+    gateway 192.168.1.1

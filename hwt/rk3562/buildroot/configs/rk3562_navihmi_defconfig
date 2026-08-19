@@ -51,6 +51,10 @@ BR2_PACKAGE_QT6SERIALBUS=y
 BR2_PACKAGE_QT6SERIALPORT=y
 BR2_PACKAGE_QT6SVG=y
 BR2_PACKAGE_QT6CORE5COMPAT=y
+# QML/Quick (B-4 界面: 每画面 QML + 控件组件库, 2026-08-19 移植 qt6declarative 包)
+BR2_PACKAGE_QT6DECLARATIVE=y
+BR2_PACKAGE_QT6DECLARATIVE_QUICK=y
+BR2_PACKAGE_QT6SHADERTOOLS=y
 
 # ---- protobuf (B-4 转换器依赖: .navihmi 解析) ----
 # 需要 host protoc (编译时生成 C++ 类) + target libprotobuf (运行时解析)
