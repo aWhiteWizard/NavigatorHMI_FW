@@ -34,13 +34,16 @@ find_package(QT NAMES Qt6 Qt5 QUIET COMPONENTS Core Gui Qml Quick Widgets)
 if(NOT QT_FOUND)
     message(FATAL_ERROR "未找到 Qt（Qt6 或 Qt5）——RK3562 用 CMAKE_PREFIX_PATH 指向 Qt 6.4.3 ARM 安装目录")
 endif()
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets)
-# Qml/Quick 可选：转换器(--convert)只需 Core；QML 界面需要 Qml/Quick（buildroot 补装后启用）
+# Qml/Quick 可选：先单独探测 Qt6Qml/Qt6Quick 包（find_package(Qt6 COMPONENTS) 的组件在首次调用时解析，
+# 二次调用会被跳过——故分别用独立包名 find_package(Qt6Qml)/find_package(Qt6Quick)）
 set(HAVE_QT_QML FALSE)
-find_package(Qt${QT_VERSION_MAJOR} QUIET COMPONENTS Qml Quick)
-if(Qt${QT_VERSION_MAJOR}_Qml_FOUND AND Qt${QT_VERSION_MAJOR}_Quick_FOUND)
+find_package(Qt${QT_VERSION_MAJOR}Qml QUIET)
+find_package(Qt${QT_VERSION_MAJOR}Quick QUIET)
+if(Qt${QT_VERSION_MAJOR}Qml_FOUND AND Qt${QT_VERSION_MAJOR}Quick_FOUND)
     set(HAVE_QT_QML TRUE)
 endif()
+# 核心组件（Core/Gui/Widgets 必需）
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets)
 message(STATUS "Qt 版本: ${QT_VERSION_MAJOR}.${Qt${QT_VERSION_MAJOR}_VERSION}  QML: ${HAVE_QT_QML}")
 
 # ============================================================

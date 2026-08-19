@@ -1,5 +1,25 @@
 <RCC>
-  <qresource prefix="/qml">
+  <qresource prefix="/">
     <file>qml/main.qml</file>
+    <file>qml/nav.qml</file>
+    <file>qml/components/HmiButton.qml</file>
+    <file>qml/components/HmiText.qml</file>
+    <file>qml/components/HmiLabel.qml</file>
+    <file>qml/components/HmiRectangle.qml</file>
+    <file>qml/components/HmiImage.qml</file>
+    <file>qml/components/HmiNumericDisplay.qml</file>
+    <file>qml/components/HmiSwitch.qml</file>
+    <file>qml/components/HmiLine.qml</file>
+    <file>qml/components/HmiCircle.qml</file>
+    <file>qml/components/HmiEllipse.qml</file>
+    <file>qml/components/HmiIoField.qml</file>
+    <file>qml/components/HmiCheckBox.qml</file>
+    <file>qml/components/HmiTextList.qml</file>
+    <file>qml/components/HmiFrame.qml</file>
+    <file>qml/components/HmiProgressBar.qml</file>
+    <file>qml/components/HmiDateTime.qml</file>
+    <file>qml/components/HmiWindow.qml</file>
+    <file>qml/components/HmiPolygon.qml</file>
+    <file>qml/components/HmiWorldMap.qml</file>
   </qresource>
 </RCC>

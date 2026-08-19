@@ -14,10 +14,19 @@
 #include <QCommandLineParser>
 #include <QDebug>
 #include <QTextStream>
+#include <QDir>
+#include <QFile>
+#include <QVariant>
+#include <QVariantList>
+#include <QMetaObject>
 #include <cstdio>
 
 #include "converter/projectparser.h"
+#include "converter/qmlgenerator.h"
 #include "runtime/projectmodel.h"
+#if defined(HAVE_QT_QML)
+#include "runtime/runtimebus.h"
+#endif
 
 // ═══════ 转换器测试模式：解析 .navihmi → 打印模型摘要 ═══════
 static int runConvert(const QString& path)
@@ -86,17 +95,54 @@ static int runConvert(const QString& path)
     return 0;
 }
 
+// ═══════ QML 生成测试模式：解析 .navihmi → 生成 QML 文件到目录 ═══════
+static int runGenQml(const QString& path, const QString& outDir)
+{
+    navihmi::Project proj;
+    if (!navihmi::ProjectParser::parseFile(path, proj)) {
+        qCritical().noquote() << "解析失败:" << path;
+        return 1;
+    }
+    QDir dir(outDir);
+    if (!dir.exists() && !dir.mkpath(".")) {
+        qCritical().noquote() << "创建目录失败:" << outDir;
+        return 1;
+    }
+    const auto files = navihmi::QmlGenerator::generateAll(proj);
+    QTextStream out(stdout);
+    out << "=== QML 生成 ===" << "\n";
+    for (const auto& f : files) {
+        const QString fpath = outDir + "/" + f.first;
+        QFile file(fpath);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            qCritical().noquote() << "写入失败:" << fpath;
+            return 1;
+        }
+        file.write(f.second.toUtf8());
+        file.close();
+        out << "  " << f.first << " (" << f.second.size() << " bytes)" << "\n";
+    }
+    out << "=== 共 " << files.size() << " 个 QML 文件 ===" << "\n";
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     // ── 转换器模式（纯命令行，无需 GUI/Qt 平台插件）──
-    // 在 QGuiApplication 之前处理 --convert：避免无 QPA 插件环境下启动失败
+    // 在 QGuiApplication 之前处理 --convert/--genqml：避免无 QPA 插件环境下启动失败
     {
         bool convertMode = false;
         QString convertPath;
+        bool genQmlMode = false;
+        QString genQmlPath, genQmlDir;
         for (int i = 1; i < argc; ++i) {
             if (qstrcmp(argv[i], "--convert") == 0) {
                 convertMode = true;
                 if (i + 1 < argc) convertPath = QString::fromLocal8Bit(argv[i + 1]);
+            } else if (qstrcmp(argv[i], "--genqml") == 0) {
+                genQmlMode = true;
+                if (i + 1 < argc) genQmlPath = QString::fromLocal8Bit(argv[i + 1]);
+                if (i + 2 < argc) genQmlDir = QString::fromLocal8Bit(argv[i + 2]);
             }
         }
         if (convertMode) {
@@ -105,6 +151,13 @@ int main(int argc, char *argv[])
                 return 1;
             }
             return runConvert(convertPath);
+        }
+        if (genQmlMode) {
+            if (genQmlPath.isEmpty() || genQmlDir.isEmpty()) {
+                qCritical() << "用法: NavigatorHMI_FW --genqml <xxx.navihmi> <outdir>";
+                return 1;
+            }
+            return runGenQml(genQmlPath, genQmlDir);
         }
     }
 
@@ -138,12 +191,93 @@ int main(int argc, char *argv[])
     // ═══════ QML 引擎 ═══════
 #if defined(HAVE_QT_QML)
     QQmlApplicationEngine engine;
-    // engine.rootContext()->setContextProperty("hmi", &hmiView);   // 控件/报警/设值接口
+
+    // 运行时事件总线（QML 只发事件，C++ 执行动作）
+    navihmi::RuntimeBus runtimeBus;
+    runtimeBus.setProject(proj);
+
+    // 生成画面 QML 到临时目录（每画面 + overlay + 主壳）
+    QDir genDir(QDir::tempPath() + "/navihmi_gen");
+    genDir.mkpath(".");
+    QStringList screenFiles;
+    QStringList screenNames;
+    int genIdx = 0;
+    QString startScreen = proj.startScreen;
+    if (startScreen.isEmpty()) {
+        // 默认世界地图（设计文档⑧: start_screen 确认后进入, 默认世界地图）
+        for (const auto& sc : proj.screens)
+            if (sc.type == navihmi::ScreenType::WorldMap) { startScreen = sc.name; break; }
+        if (startScreen.isEmpty()) {
+            for (const auto& sc : proj.screens)
+                if (sc.type == navihmi::ScreenType::Custom) { startScreen = sc.name; break; }
+        }
+    }
+    for (const auto& sc : proj.screens) {
+        QString fname;
+        QString content;
+        if (sc.type == navihmi::ScreenType::WorldMap) {
+            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
+            content = navihmi::QmlGenerator::generateWorldMap(proj);
+        } else if (sc.type == navihmi::ScreenType::Template) {
+            fname = QStringLiteral("overlay.qml");
+            content = navihmi::QmlGenerator::generateOverlay(proj);
+        } else {
+            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
+            content = navihmi::QmlGenerator::generateScreen(proj, sc);
+        }
+        QFile f(genDir.filePath(fname));
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            f.write(content.toUtf8());
+            f.close();
+        }
+        if (sc.type != navihmi::ScreenType::Template) {
+            screenFiles.append(genDir.filePath(fname));
+            screenNames.append(sc.name);
+        }
+        ++genIdx;
+    }
+
+    // 主壳注入
+    QObject* rootObj = nullptr;
+    engine.rootContext()->setContextProperty("runtimeBus", &runtimeBus);
     engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败";
         return -1;
     }
+    rootObj = engine.rootObjects().first();
+
+    // 画面切换（主壳 switchToName 调用）
+    runtimeBus.onScreenSwitch = [rootObj, &engine](const QString& name) {
+        QMetaObject::invokeMethod(rootObj, "switchToName", Q_ARG(QVariant, QVariant(name)));
+    };
+    // Stop Runtime → 返回导航
+    runtimeBus.onStopRuntime = [rootObj]() {
+        QMetaObject::invokeMethod(rootObj, "stopRuntime");
+    };
+
+    // 注入画面清单 + 开始工程
+    QVariantList filesList, namesList;
+    for (const auto& f : screenFiles) filesList.append(f);
+    for (const auto& n : screenNames) namesList.append(n);
+    rootObj->setProperty("screenFiles", filesList);
+    rootObj->setProperty("startScreen", startScreen);
+    rootObj->setProperty("hasProject", !proj.screens.isEmpty());
+
+    // overlay 生成（Stop Runtime 按钮所在）
+    QFile overlayFile(genDir.filePath("overlay.qml"));
+    if (!overlayFile.exists()) {
+        // 无 Template 画面时生成空 overlay
+        overlayFile.open(QIODevice::WriteOnly);
+        overlayFile.write("import QtQuick 2.15\nItem { width: 1024; height: 600 }\n");
+        overlayFile.close();
+    }
+    rootObj->setProperty("overlayFile", genDir.filePath("overlay.qml"));
+
+    // 有工程 → 注入完成后调用 startProject（进入 startScreen/世界地图）
+    if (!proj.screens.isEmpty())
+        QMetaObject::invokeMethod(rootObj, "startProject", Qt::QueuedConnection);
+
     return app.exec();
 #else
     qWarning().noquote() << "当前构建无 Qt Qml/Quick（转换器模式可用 --convert）；QML 界面需 buildroot 补装 Qt6 QML 模块";
