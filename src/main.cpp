@@ -276,6 +276,11 @@ int main(int argc, char *argv[])
     rootObj->setProperty("screenFiles", filesList);
     rootObj->setProperty("startScreen", startScreen);
     rootObj->setProperty("hasProject", !proj.screens.isEmpty());
+    // 设备尺寸（主壳自适应：7 寸 1024×600 / 4 寸 720×720 等比缩放）
+    int devW = proj.deviceWidth > 0 ? proj.deviceWidth : 1024;
+    int devH = proj.deviceHeight > 0 ? proj.deviceHeight : 600;
+    rootObj->setProperty("deviceWidth", devW);
+    rootObj->setProperty("deviceHeight", devH);
 
     // overlay 生成（Stop Runtime 按钮所在）
     QFile overlayFile(genDir.filePath("overlay.qml"));

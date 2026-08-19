@@ -3,7 +3,7 @@ import QtQuick.Controls 2.15
 import "components"
 
 // ═══════════════════════════════════════════════════════════
-// NavigatorHMI FW 主壳（1024×600 设备屏）
+// NavigatorHMI FW 主壳（自适应: 工程 device_width/height 驱动, 7寸 1024×600 / 4寸 720×720）
 // 结构: Loader 加载当前画面 + 全局叠加层 + 运行时事件总线
 // 导航: 无工程 → 导航界面; 有工程 → startScreen 进入
 // ═══════════════════════════════════════════════════════════
@@ -14,6 +14,11 @@ Window {
     visible: true
     title: qsTr("NavigatorHMI")
     color: "#203864"
+
+    // ── 设备尺寸（C++ 按工程注入, 7寸 1024×600 / 4寸 720×720 等比缩放）──
+    property int deviceWidth: 1024
+    property int deviceHeight: 600
+    onDeviceWidthChanged: { width = deviceWidth; height = deviceHeight }
 
     // ── 运行时事件总线（C++ setContextProperty 注入；QML 只发事件，ActionRunner 执行动作）──
     // 注意: 不能声明同名 property, 否则遮蔽 context property 导致 runtimeBus 为 null
@@ -45,12 +50,19 @@ Window {
         anchors.fill: parent
         source: "nav.qml"
         visible: source !== "" && !mainShell.hasProject
-        // 接线导航按钮回调
+        // 接线导航按钮回调 + 设备尺寸传递
         onLoaded: {
             navLoader.item.onStartProject = function() { mainShell.startProject() }
             navLoader.item.onCalibrate = function() { console.log("校准: 待实现") }
             navLoader.item.onDeviceInfo = function() { console.log("设备信息: 待实现") }
             navLoader.item.onSystemManage = function() { console.log("系统管理: 待实现") }
+            navLoader.item.deviceWidth = mainShell.deviceWidth
+            navLoader.item.deviceHeight = mainShell.deviceHeight
+            // 存储管理: 加载选中工程文件（复用 startProject 逻辑）
+            navLoader.item.onLoadProjectFile = function(path) {
+                console.log("加载工程文件: " + path)
+                mainShell.startProject()
+            }
         }
     }
 
