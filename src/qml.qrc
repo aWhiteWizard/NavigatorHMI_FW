@@ -21,5 +21,7 @@
     <file>qml/components/HmiWindow.qml</file>
     <file>qml/components/HmiPolygon.qml</file>
     <file>qml/components/HmiWorldMap.qml</file>
+    <file>qml/images/logo_white.png</file>
+    <file>qml/images/logo_white_small.png</file>
   </qresource>
 </RCC>

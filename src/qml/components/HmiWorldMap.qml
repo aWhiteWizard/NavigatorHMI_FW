@@ -49,6 +49,39 @@ Rectangle {
     function toScreenX(lng) { return (mercX(lng) - centerX) / resolution + width / 2 }
     function toScreenY(lat) { return (centerY - mercY(lat)) / resolution + height / 2 }
 
+    // ── B6-9: 作业点坐标——boundTag 非空时取 DataManager 变量值（"lng,lat"，DMS 或十进制），否则 fixedPoint ──
+    // DMS 例: "(E104°8'32.28\", N30°37'45.84\")" → 104.1423 / 30.6294; W/S 为负
+    function dmsToDec(s) {
+        s = s.trim()
+        var neg = (s.indexOf("W") >= 0 || s.indexOf("S") >= 0)
+        var m = s.match(/([0-9.]+)°([0-9.]+)'([0-9.]+)"/)
+        if (m) {
+            var v = parseFloat(m[1]) + parseFloat(m[2]) / 60 + parseFloat(m[3]) / 3600
+            return neg ? -v : v
+        }
+        return parseFloat(s)   // 兜底十进制
+    }
+    function pointLng(p) {
+        if (p.boundTag && p.boundTag !== "" && dataManager && dataManager.hasTag(p.boundTag)) {
+            var parts = String(dataManager.value(p.boundTag)).split(",")
+            if (parts.length >= 2) {
+                var v = root.dmsToDec(parts[0])
+                if (!isNaN(v)) return v
+            }
+        }
+        return p.lng
+    }
+    function pointLat(p) {
+        if (p.boundTag && p.boundTag !== "" && dataManager && dataManager.hasTag(p.boundTag)) {
+            var parts = String(dataManager.value(p.boundTag)).split(",")
+            if (parts.length >= 2) {
+                var v = root.dmsToDec(parts[1])
+                if (!isNaN(v)) return v
+            }
+        }
+        return p.lat
+    }
+
     // ── 地图底图（网格 + 边界, 模拟瓦片）──
     Canvas {
         id: mapCanvas
@@ -177,8 +210,8 @@ Rectangle {
     Repeater {
         model: root.workPoints
         delegate: Item {
-            x: root.toScreenX(modelData.lng) - 8
-            y: root.toScreenY(modelData.lat) - 8
+            x: root.toScreenX(root.pointLng(modelData)) - 8
+            y: root.toScreenY(root.pointLat(modelData)) - 8
             width: 16
             height: 16
 
@@ -201,20 +234,23 @@ Rectangle {
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
-                    if (root.runtimeBus)
-                        root.runtimeBus.emitEvent("__worldmap__", 0)   // 地图级 onClick
+                    // B6-1: 裸 runtimeBus（context property 沿作用域链解析）——id 限定访问 root.runtimeBus 恒 undefined
+                    if (runtimeBus)
+                        runtimeBus.emitEvent("__worldmap__", 0)   // 地图级 onClick
                 }
             }
         }
     }
 
     // ── 地图点击（空白处 → 地图级事件）──
+    // B6-2: z:-1 置于作业点之下——否则后声明全屏 MouseArea 拦截作业点点击
     MouseArea {
+        z: -1
         anchors.fill: parent
         onClicked: {
             if (root.viewLocked) return
-            if (root.runtimeBus)
-                root.runtimeBus.emitEvent("__worldmap__", 0)
+            if (runtimeBus)
+                runtimeBus.emitEvent("__worldmap__", 0)
         }
     }
 

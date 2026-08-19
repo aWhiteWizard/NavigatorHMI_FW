@@ -28,6 +28,8 @@
 #if defined(HAVE_QT_QML)
 #include "runtime/runtimebus.h"
 #include "runtime/datamanager.h"
+#include "runtime/deviceinfo.h"
+#include "runtime/storageinfo.h"
 #endif
 
 // ═══════ 转换器测试模式：解析 .navihmi → 打印模型摘要 ═══════
@@ -128,6 +130,94 @@ static int runGenQml(const QString& path, const QString& outDir)
     return 0;
 }
 
+// ═══════ QML 工程加载 + 注入（B6-8: 抽函数——启动与"存储替换默认工程后 reload"共用）═══════
+#if defined(HAVE_QT_QML)
+static bool loadAndInject(QObject* rootObj,
+                          navihmi::RuntimeBus& runtimeBus, navihmi::DataManager& dataManager,
+                          const QString& projectPath)
+{
+    navihmi::Project proj;
+    if (!projectPath.isEmpty() && !navihmi::ProjectParser::parseFile(projectPath, proj)) {
+        qCritical().noquote() << "工程加载失败:" << projectPath;
+        return false;
+    }
+    runtimeBus.setProject(proj);      // 内部重置画面匹配状态（⑪候选A）
+    dataManager.setProject(proj);
+
+    // 生成画面 QML 到临时目录（每画面 + overlay + 主壳）
+    QDir genDir(QDir::tempPath() + "/navihmi_gen");
+    genDir.mkpath(".");
+    QStringList screenFiles;
+    QStringList screenNames;
+    int genIdx = 0;
+    QString startScreen = proj.startScreen;
+    if (startScreen.isEmpty()) {
+        // 默认世界地图（设计文档⑧: start_screen 确认后进入, 默认世界地图）
+        for (const auto& sc : proj.screens)
+            if (sc.type == navihmi::ScreenType::WorldMap) { startScreen = sc.name; break; }
+        if (startScreen.isEmpty()) {
+            for (const auto& sc : proj.screens)
+                if (sc.type == navihmi::ScreenType::Custom) { startScreen = sc.name; break; }
+        }
+    }
+    for (const auto& sc : proj.screens) {
+        QString fname;
+        QString content;
+        if (sc.type == navihmi::ScreenType::WorldMap) {
+            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
+            content = navihmi::QmlGenerator::generateWorldMap(proj);
+        } else if (sc.type == navihmi::ScreenType::Template) {
+            fname = QStringLiteral("overlay.qml");
+            content = navihmi::QmlGenerator::generateOverlay(proj);
+        } else {
+            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
+            content = navihmi::QmlGenerator::generateScreen(proj, sc);
+        }
+        QFile f(genDir.filePath(fname));
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            f.write(content.toUtf8());
+            f.close();
+        }
+        if (sc.type != navihmi::ScreenType::Template) {
+            screenFiles.append(genDir.filePath(fname));
+            screenNames.append(sc.name);
+        }
+        ++genIdx;
+    }
+
+    // 注入画面清单（对象数组 [{name, file}]，QML switchToName 用 .name/.file）
+    QVariantList filesList;
+    for (int i = 0; i < screenFiles.size(); ++i) {
+        QVariantMap m;
+        m["name"] = screenNames[i];
+        m["file"] = screenFiles[i];
+        filesList.append(m);
+    }
+    rootObj->setProperty("screenFiles", filesList);
+    rootObj->setProperty("startScreen", startScreen);
+    rootObj->setProperty("hasProject", !proj.screens.isEmpty());
+    // 设备尺寸（主壳自适应：7 寸 1024×600 / 4 寸 720×720 等比缩放）
+    int devW = proj.deviceWidth > 0 ? proj.deviceWidth : 1024;
+    int devH = proj.deviceHeight > 0 ? proj.deviceHeight : 600;
+    rootObj->setProperty("deviceWidth", devW);
+    rootObj->setProperty("deviceHeight", devH);
+
+    // overlay 生成（Stop Runtime 按钮所在）——无 Template 画面时写空 overlay（Truncate 覆盖,
+    // 防 reload 后旧工程 overlay 残留导致旧全局控件事件误触发）
+    bool hasTemplate = false;
+    for (const auto& sc : proj.screens)
+        if (sc.type == navihmi::ScreenType::Template) { hasTemplate = true; break; }
+    QFile overlayFile(genDir.filePath("overlay.qml"));
+    if (!hasTemplate) {
+        overlayFile.open(QIODevice::WriteOnly | QIODevice::Truncate);
+        overlayFile.write("import QtQuick 2.15\nItem { width: 1024; height: 600 }\n");
+        overlayFile.close();
+    }
+    rootObj->setProperty("overlayFile", genDir.filePath("overlay.qml"));
+    return true;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
     // ── 转换器模式（纯命令行，无需 GUI/Qt 平台插件）──
@@ -181,120 +271,53 @@ int main(int argc, char *argv[])
 
     const QString projectPath = parser.value(QStringLiteral("project"));
 
-    // ═══════ 工程解析 ═══════
-    navihmi::Project proj;
-    if (!projectPath.isEmpty()) {
-        if (!navihmi::ProjectParser::parseFile(projectPath, proj)) {
-            qCritical().noquote() << "工程加载失败:" << projectPath;
-            return 1;
-        }
-    }
-
     // ═══════ QML 引擎 ═══════
 #if defined(HAVE_QT_QML)
     QQmlApplicationEngine engine;
 
-    // 运行时事件总线（QML 只发事件，C++ 执行动作）
+    // 运行时事件总线（QML 只发事件，C++ 执行动作；工程注入见 loadAndInject）
     navihmi::RuntimeBus runtimeBus;
-    runtimeBus.setProject(proj);
-
-    // 生成画面 QML 到临时目录（每画面 + overlay + 主壳）
-    QDir genDir(QDir::tempPath() + "/navihmi_gen");
-    genDir.mkpath(".");
-    QStringList screenFiles;
-    QStringList screenNames;
-    int genIdx = 0;
-    QString startScreen = proj.startScreen;
-    if (startScreen.isEmpty()) {
-        // 默认世界地图（设计文档⑧: start_screen 确认后进入, 默认世界地图）
-        for (const auto& sc : proj.screens)
-            if (sc.type == navihmi::ScreenType::WorldMap) { startScreen = sc.name; break; }
-        if (startScreen.isEmpty()) {
-            for (const auto& sc : proj.screens)
-                if (sc.type == navihmi::ScreenType::Custom) { startScreen = sc.name; break; }
-        }
-    }
-    for (const auto& sc : proj.screens) {
-        QString fname;
-        QString content;
-        if (sc.type == navihmi::ScreenType::WorldMap) {
-            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
-            content = navihmi::QmlGenerator::generateWorldMap(proj);
-        } else if (sc.type == navihmi::ScreenType::Template) {
-            fname = QStringLiteral("overlay.qml");
-            content = navihmi::QmlGenerator::generateOverlay(proj);
-        } else {
-            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
-            content = navihmi::QmlGenerator::generateScreen(proj, sc);
-        }
-        QFile f(genDir.filePath(fname));
-        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            f.write(content.toUtf8());
-            f.close();
-        }
-        if (sc.type != navihmi::ScreenType::Template) {
-            screenFiles.append(genDir.filePath(fname));
-            screenNames.append(sc.name);
-        }
-        ++genIdx;
-    }
-
-    // 主壳注入
-    QObject* rootObj = nullptr;
-    engine.rootContext()->setContextProperty("runtimeBus", &runtimeBus);
 
     // 数据管理器（TagStore 雏形：变量实时值中心, QML 组件绑定显示）
     navihmi::DataManager dataManager;
-    dataManager.setProject(proj);
     runtimeBus.setDataManager(&dataManager);
+    engine.rootContext()->setContextProperty("runtimeBus", &runtimeBus);
     engine.rootContext()->setContextProperty("dataManager", &dataManager);
+
+    // 设备信息（B6-6: IP/MAC/版本/内核/运行时间真实读取, 导航页显示）
+    navihmi::DeviceInfo deviceInfo;
+    engine.rootContext()->setContextProperty("deviceInfo", &deviceInfo);
+
+    // 存储信息（B6-7: SD/USB 真实检测 + 工程扫描/替换）
+    navihmi::StorageInfo storageInfo;
+    engine.rootContext()->setContextProperty("storageInfo", &storageInfo);
 
     engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败";
         return -1;
     }
-    rootObj = engine.rootObjects().first();
+    QObject* rootObj = engine.rootObjects().first();
 
-    // 画面切换（主壳 switchToName 调用）
-    runtimeBus.onScreenSwitch = [rootObj, &engine](const QString& name) {
+    // 加载并注入工程（B6-8: 抽函数——无 --project / 文件缺失 → 空工程导航模式, 进程不退出）
+    if (!loadAndInject(rootObj, runtimeBus, dataManager, projectPath))
+        return 1;
+
+    // 画面切换（主壳 switchToName 调用）——⑪候选A: 当前画面同步在 QML switchTo 内完成（单一入口,
+    // 覆盖 startProject/switchToName/switchTo 全路径; 此处不再重复同步, 避免覆盖 previous）
+    runtimeBus.onScreenSwitch = [rootObj](const QString& name) {
         QMetaObject::invokeMethod(rootObj, "switchToName", Q_ARG(QVariant, QVariant(name)));
     };
     // Stop Runtime → 返回导航
     runtimeBus.onStopRuntime = [rootObj]() {
         QMetaObject::invokeMethod(rootObj, "stopRuntime");
     };
-
-    // 注入画面清单 + 开始工程（对象数组 [{name, file}]，QML switchToName 用 .name/.file）
-    QVariantList filesList;
-    for (int i = 0; i < screenFiles.size(); ++i) {
-        QVariantMap m;
-        m["name"] = screenNames[i];
-        m["file"] = screenFiles[i];
-        filesList.append(m);
-    }
-    rootObj->setProperty("screenFiles", filesList);
-    rootObj->setProperty("startScreen", startScreen);
-    rootObj->setProperty("hasProject", !proj.screens.isEmpty());
-    // 设备尺寸（主壳自适应：7 寸 1024×600 / 4 寸 720×720 等比缩放）
-    int devW = proj.deviceWidth > 0 ? proj.deviceWidth : 1024;
-    int devH = proj.deviceHeight > 0 ? proj.deviceHeight : 600;
-    rootObj->setProperty("deviceWidth", devW);
-    rootObj->setProperty("deviceHeight", devH);
-
-    // overlay 生成（Stop Runtime 按钮所在）
-    QFile overlayFile(genDir.filePath("overlay.qml"));
-    if (!overlayFile.exists()) {
-        // 无 Template 画面时生成空 overlay
-        overlayFile.open(QIODevice::WriteOnly);
-        overlayFile.write("import QtQuick 2.15\nItem { width: 1024; height: 600 }\n");
-        overlayFile.close();
-    }
-    rootObj->setProperty("overlayFile", genDir.filePath("overlay.qml"));
-
-    // 有工程 → 注入完成后调用 startProject（进入 startScreen/世界地图）
-    if (!proj.screens.isEmpty())
-        QMetaObject::invokeMethod(rootObj, "startProject", Qt::QueuedConnection);
+    // 存储管理替换默认工程后 → 重新加载注入（B6-8: 替换即时生效, 开始工程打开新工程）
+    QObject::connect(&storageInfo, &navihmi::StorageInfo::projectReplaced, rootObj,
+                     [rootObj, &runtimeBus, &dataManager]() {
+        loadAndInject(rootObj, runtimeBus, dataManager,
+                      navihmi::StorageInfo::defaultProjectPath());
+    });
 
     return app.exec();
 #else

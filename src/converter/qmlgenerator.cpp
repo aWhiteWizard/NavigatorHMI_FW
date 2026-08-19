@@ -6,6 +6,7 @@
 
 #include <QTextStream>
 #include <QStringList>
+#include <QRegularExpression>
 #include <cmath>
 
 namespace navihmi {
@@ -225,16 +226,68 @@ QString QmlGenerator::generateWorldMap(const Project& proj)
         ts << (i < proj.worldMap.workPoints.size() - 1 ? ",\n" : "\n");
     }
     ts << "    ]\n";
-    // 范围点
-    ts << "    workRange: [\n";
-    for (int i = 0; i < proj.worldMap.workRangePoints.size(); ++i) {
-        const auto& rp = proj.worldMap.workRangePoints[i];
-        ts << "        { lng: " << rp.fixedPoint.longitude
-           << ", lat: " << rp.fixedPoint.latitude
-           << ", boundTag: \"" << qmlEsc(rp.boundTag) << "\" }";
-        ts << (i < proj.worldMap.workRangePoints.size() - 1 ? ",\n" : "\n");
+    // B6-9: 作业范围与作业点包围盒取并集——保证"作业点必须在作业范围内"（用户语义）
+    //       作业点坐标含 boundTag 时解析变量 baseValue（DMS "(E104°8'32.28\", N30°37'45.84\")" 或十进制）
+    auto dmsToDec = [](const QString& s) -> double {
+        bool neg = s.contains(QLatin1Char('W')) || s.contains(QLatin1Char('S'));
+        const QRegularExpression re(QStringLiteral("([0-9.]+)°([0-9.]+)'([0-9.]+)\""));
+        const auto m = re.match(s);
+        if (m.hasMatch()) {
+            double v = m.captured(1).toDouble() + m.captured(2).toDouble() / 60.0
+                       + m.captured(3).toDouble() / 3600.0;
+            return neg ? -v : v;
+        }
+        return s.trimmed().toDouble();   // 兜底十进制
+    };
+    double wpMinLng = 1e9, wpMaxLng = -1e9, wpMinLat = 1e9, wpMaxLat = -1e9;
+    bool hasWpBox = false;
+    for (const auto& wp : proj.worldMap.workPoints) {
+        double lng = wp.fixedPoint.longitude, lat = wp.fixedPoint.latitude;
+        if (!wp.boundTag.isEmpty()) {
+            const Tag* tag = proj.tagByName(wp.boundTag);
+            if (tag && !tag->baseValue.isEmpty()) {
+                const QStringList parts = tag->baseValue.split(QLatin1Char(','));
+                if (parts.size() >= 2) {
+                    const double l = dmsToDec(parts[0]);
+                    const double a = dmsToDec(parts[1]);
+                    if (!qIsNaN(l) && !qIsNaN(a) && l != 0.0 && a != 0.0) { lng = l; lat = a; }
+                }
+            }
+        }
+        if (lng != 0.0 || lat != 0.0) {
+            wpMinLng = qMin(wpMinLng, lng); wpMaxLng = qMax(wpMaxLng, lng);
+            wpMinLat = qMin(wpMinLat, lat); wpMaxLat = qMax(wpMaxLat, lat);
+            hasWpBox = true;
+        }
     }
-    ts << "    ]\n";
+    // 范围点包围盒
+    double rMinLng = 1e9, rMaxLng = -1e9, rMinLat = 1e9, rMaxLat = -1e9;
+    bool hasRangeBox = false;
+    for (const auto& rp : proj.worldMap.workRangePoints) {
+        rMinLng = qMin(rMinLng, rp.fixedPoint.longitude);
+        rMaxLng = qMax(rMaxLng, rp.fixedPoint.longitude);
+        rMinLat = qMin(rMinLat, rp.fixedPoint.latitude);
+        rMaxLat = qMax(rMaxLat, rp.fixedPoint.latitude);
+        hasRangeBox = true;
+    }
+    if (hasRangeBox && hasWpBox) {
+        rMinLng = qMin(rMinLng, wpMinLng); rMaxLng = qMax(rMaxLng, wpMaxLng);
+        rMinLat = qMin(rMinLat, wpMinLat); rMaxLat = qMax(rMaxLat, wpMaxLat);
+    } else if (!hasRangeBox && hasWpBox) {
+        rMinLng = wpMinLng; rMaxLng = wpMaxLng; rMinLat = wpMinLat; rMaxLat = wpMaxLat;
+    }
+    // 范围点（并集后 4 顶点: 右上/左上/左下/右下, 与既有输出风格一致）
+    // 门控含 hasWpBox: 仅作业点未配置范围时也用作业点包围盒（"作业点必须在作业范围内"）
+    if (hasRangeBox || hasWpBox) {
+        ts << "    workRange: [\n";
+        ts << "        { lng: " << rMaxLng << ", lat: " << rMaxLat << ", boundTag: \"\" },\n";
+        ts << "        { lng: " << rMinLng << ", lat: " << rMaxLat << ", boundTag: \"\" },\n";
+        ts << "        { lng: " << rMinLng << ", lat: " << rMinLat << ", boundTag: \"\" },\n";
+        ts << "        { lng: " << rMaxLng << ", lat: " << rMinLat << ", boundTag: \"\" }\n";
+        ts << "    ]\n";
+    } else {
+        ts << "    workRange: []\n";
+    }
     ts << "}\n";
     return out;
 }

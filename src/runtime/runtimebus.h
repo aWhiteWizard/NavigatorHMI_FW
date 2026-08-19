@@ -30,6 +30,12 @@ public:
     std::function<void(const QString&)> onScreenSwitch;
     /// 返回导航回调（Stop Runtime）
     std::function<void()> onStopRuntime;
+    /// 当前画面切换（⑪候选A: 控件事件匹配范围 = 当前画面 + 上一画面 + 全局画面）
+    /// 上一画面兼容 OnScreenUnload（画面卸载瞬间 currentScreen 已更新，旧画面事件仍可命中）
+    /// 同步入口唯一 = main.qml switchTo() 内调用（startProject/switchToName/switchTo(0) 全路径经此）
+    Q_INVOKABLE void setCurrentScreenByName(const QString& name);
+    /// 重置画面匹配状态（Stop Runtime 回导航时调用，防旧画面索引幽灵匹配）
+    Q_INVOKABLE void resetScreens();
 
 public slots:
     /// QML 事件入口：objectName 控件事件 → 查模型 → 执行动作
@@ -40,7 +46,8 @@ private:
     void executeAction(const EventAction& action, const Widget* widget);
     Project m_project;
     DataManager* m_dataManager = nullptr;
-    int m_currentScreen = -1;
+    int m_currentScreen = -1;    // 当前画面索引（⑪候选A: 控件事件匹配范围）
+    int m_previousScreen = -1;   // 上一画面索引（兼容 OnScreenUnload 卸载瞬间）
 };
 
 } // namespace navihmi

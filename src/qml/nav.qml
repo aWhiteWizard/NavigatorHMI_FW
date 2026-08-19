@@ -18,7 +18,6 @@ Item {
     property var onCalibrate: null
     property var onDeviceInfo: null
     property var onSystemManage: null
-    property var onLoadProjectFile: null    // 存储管理: 加载选中文件
     property int deviceWidth: 1024
     property int deviceHeight: 600
 
@@ -105,9 +104,6 @@ Item {
                 width: pages.width
                 height: pages.height
                 isDark: navRoot.isDark
-                onLoadFile: function(path) {
-                    if (navRoot.onLoadProjectFile) navRoot.onLoadProjectFile(path)
-                }
             }
             // 3: 通信控制
             NetworkPage {
@@ -123,6 +119,9 @@ Item {
 
     // 当前页索引
     property int currentPageIndex: 0
+
+    // B6-8: 用户操作信号（导航交互 → 主壳取消 3 秒自动开工程）
+    signal userAction()
 
     // ── 导航项组件 ──
     component NavItem: Rectangle {
@@ -172,6 +171,7 @@ Item {
         MouseArea {
             anchors.fill: parent
             onClicked: {
+                navRoot.userAction()   // B6-8: 任何导航交互视为用户操作
                 if (navItem.page === "dark" || navItem.page === "toggle") {
                     navItem.clicked()
                 } else if (navItem.navItemIndex >= 0) {
@@ -259,14 +259,21 @@ Item {
         border.width: 1
 
         property bool isDark: false
-        // 内容: 5 项信息
+        // B6-6: 内容真实读取（deviceInfo context property）；运行时间动态刷新
         property var entries: [
-            { label: "IP", value: "192.168.1.146" },
-            { label: "MAC", value: "00:11:22:33:44:55" },
-            { label: "版本", value: "v1.1.0" },
-            { label: "内核", value: "6.1.141" },
-            { label: "运行", value: "72h 15m" }
+            { label: "IP", value: deviceInfo ? deviceInfo.ipAddress : "—" },
+            { label: "MAC", value: deviceInfo ? deviceInfo.macAddress : "—" },
+            { label: "版本", value: deviceInfo ? deviceInfo.appVersion : "—" },
+            { label: "内核", value: deviceInfo ? deviceInfo.kernelVersion : "—" },
+            { label: "运行", value: "" }
         ]
+        property string uptimeText: deviceInfo ? deviceInfo.uptimeText() : "—"
+        Timer {
+            interval: 1000
+            running: true
+            repeat: true
+            onTriggered: infoBox.uptimeText = deviceInfo ? deviceInfo.uptimeText() : "—"
+        }
 
         Text {
             anchors.top: parent.top
@@ -280,7 +287,10 @@ Item {
         }
 
         // 两列（宽度足）或一列（不足）, 一列过长滚动
+        // B6-4: 内容宽度绑 availableWidth（QQC2 ScrollView 视口可用宽）——parent.width(Flickable)
+        //       在 ScrollView 内宽度行为不可靠，曾致 Text width 负值不渲染（"只有框没有信息"）
         ScrollView {
+            id: devInfoScroll
             anchors.top: parent.top
             anchors.topMargin: 30
             anchors.left: parent.left
@@ -292,14 +302,16 @@ Item {
             clip: true
 
             Grid {
-                width: parent.width
-                columns: parent.width > 400 ? 2 : 1
+                width: devInfoScroll.availableWidth
+                columns: devInfoScroll.availableWidth > 400 ? 2 : 1
                 spacing: 4
                 Repeater {
                     model: infoBox.entries
                     delegate: Text {
-                        width: (parent.width > 400 ? parent.width / 2 : parent.width) - 6
-                        text: modelData.label + ":  " + modelData.value
+                        width: (devInfoScroll.availableWidth > 400 ? devInfoScroll.availableWidth / 2 : devInfoScroll.availableWidth) - 6
+                        text: modelData.label === "运行"
+                              ? modelData.label + ":  " + infoBox.uptimeText
+                              : modelData.label + ":  " + modelData.value
                         color: infoBox.isDark ? "#EEE" : "#333"
                         font.pixelSize: 12
                         elide: Text.ElideRight
@@ -315,29 +327,40 @@ Item {
     component DeviceInfoPage: Item {
         id: deviceInfoPageRoot
         property bool isDark: false
+        // B6-6: 运行时间动态刷新（Timer 每秒）
+        property string uptimeText: deviceInfo ? deviceInfo.uptimeText() : "—"
+        Timer {
+            interval: 1000
+            running: true
+            repeat: true
+            onTriggered: deviceInfoPageRoot.uptimeText = deviceInfo ? deviceInfo.uptimeText() : "—"
+        }
 
+        // B6-5: 内容宽度绑 availableWidth——收起/展开导航时卡片宽度跟随视口均匀拉长
+        //       （parent.width(Flickable) 宽度不跟随视口 → 之前"平移而非均匀拉长"）
         ScrollView {
+            id: devInfoPageScroll
             anchors.fill: parent
             clip: true
 
             Column {
-                width: parent.width
+                width: devInfoPageScroll.availableWidth
                 spacing: 8
                 Grid {
-                    columns: parent.parent.width > 400 ? 2 : 1
+                    columns: devInfoPageScroll.availableWidth > 400 ? 2 : 1
                     spacing: 8
-                    width: parent.width
+                    width: devInfoPageScroll.availableWidth
                     Repeater {
                         model: [
-                            { label: "IP 地址", value: "192.168.1.146" },
-                            { label: "MAC", value: "00:11:22:33:44:55" },
-                            { label: "软件版本", value: "v1.1.0" },
-                            { label: "Bootloader", value: "v1.04" },
-                            { label: "内核", value: "6.1.141" },
-                            { label: "运行时间", value: "72h 15m" }
+                            { label: "IP 地址", value: deviceInfo ? deviceInfo.ipAddress : "—" },
+                            { label: "MAC", value: deviceInfo ? deviceInfo.macAddress : "—" },
+                            { label: "软件版本", value: deviceInfo ? deviceInfo.appVersion : "—" },
+                            { label: "Bootloader", value: deviceInfo ? deviceInfo.bootloaderVersion : "—" },
+                            { label: "内核", value: deviceInfo ? deviceInfo.kernelVersion : "—" },
+                            { label: "运行时间", value: "" }
                         ]
                         delegate: Rectangle {
-                            width: (parent.width > 400 ? parent.width / 2 : parent.width) - 4
+                            width: (devInfoPageScroll.availableWidth > 400 ? devInfoPageScroll.availableWidth / 2 : devInfoPageScroll.availableWidth) - 4
                             height: 40
                             radius: 6
                             color: deviceInfoPageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
@@ -355,7 +378,7 @@ Item {
                                     verticalAlignment: Text.AlignVCenter
                                 }
                                 Text {
-                                    text: modelData.value
+                                    text: modelData.label === "运行时间" ? deviceInfoPageRoot.uptimeText : modelData.value
                                     color: deviceInfoPageRoot.isDark ? "#EEE" : "#333"
                                     font.pixelSize: 13
                                     font.bold: true
@@ -370,37 +393,98 @@ Item {
     }
 
     // ═══════════════════════════════════════════════════
-    // 存储管理页（SD/USB 检测 + 文件列表 + 加载）
+    // 存储管理页（来源切换 + 真实扫描 + 加载替换默认工程）
+    // B6-7: 来源卡片可点选中高亮(内存/SD/USB) + 真实状态 + 列表真实扫描
+    //       加载=复制替换默认文件 + 进度条 + 完成弹窗; 主题用 storagePageRoot.isDark
     // ═══════════════════════════════════════════════════
     component StoragePage: Item {
         id: storagePageRoot
         property bool isDark: false
-        signal loadFile(string path)
+        property int currentSource: 0          // 0=内存 1=SD 2=USB
+        property string selFile: ""            // 选中文件路径
+        property string selName: ""            // 选中文件名
+        property bool replacing: false         // 替换进行中（进度条）
+        property int replaceProgress: 0        // 0~100
+        property string replaceMsg: ""         // 完成弹窗文本
+        property bool showReplaceDialog: false // 完成弹窗
+
+        readonly property var sourceDirs: [
+            { name: "内存", dir: "/mnt/user/userdata", status: "内置存储" },
+            { name: "SD 卡", dir: "/mnt/sdcard", status: storageInfo ? storageInfo.sdStatusText() : "—" },
+            { name: "USB", dir: "/mnt/udisk", status: storageInfo ? storageInfo.usbStatusText() : "—" }
+        ]
+
+        ListModel { id: fileListModel }
+
+        // 按来源刷新列表
+        function refresh() {
+            selFile = ""
+            selName = ""
+            fileListModel.clear()
+            if (!storageInfo) return
+            var items = storageInfo.listProjects(sourceDirs[currentSource].dir)
+            for (var i = 0; i < items.length; i++) fileListModel.append(items[i])
+        }
+
+        // 加载=复制替换默认工程文件 → 进度条 → 完成弹窗
+        function doReplace(path, name) {
+            if (!storageInfo || replacing) return
+            replacing = true
+            replaceProgress = 0
+            replaceMsg = ""
+            // 实际替换（文件小, 同步瞬时完成）; 进度条动画模拟过程
+            var ok = storageInfo.replaceDefaultProject(path)
+            replaceMsg = ok ? "已替换为 " + name : "替换失败"
+            progressAnim.start()
+        }
+
+        // 进度条动画（400ms 走完 → 弹窗）
+        PropertyAnimation {
+            id: progressAnim
+            target: storagePageRoot
+            property: "replaceProgress"
+            to: 100
+            duration: 400
+            onFinished: {
+                replacing = false
+                showReplaceDialog = true
+            }
+        }
 
         Column {
             anchors.fill: parent
             spacing: 12
 
-            // 存储状态（两列）
+            // 来源卡片（可点, 选中高亮主题色边框）
             Grid {
-                columns: 2
+                columns: 3
                 spacing: 12
                 width: parent.width
-                Rectangle {
-                    width: parent.parent.width / 2 - 6
-                    height: 48
-                    radius: 8
-                    color: storagePageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
-                    border.color: storagePageRoot.isDark ? "#555" : "#DDD"
-                    Text { anchors.centerIn: parent; text: "SD 卡: ✅ 已插入 (16GB)"; font.pixelSize: 13; color: storagePageRoot.isDark ? "#EEE" : "#333" }
-                }
-                Rectangle {
-                    width: parent.parent.width / 2 - 6
-                    height: 48
-                    radius: 8
-                    color: storagePageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
-                    border.color: storagePageRoot.isDark ? "#555" : "#DDD"
-                    Text { anchors.centerIn: parent; text: "USB: ❌ 未插入"; font.pixelSize: 13; color: storagePageRoot.isDark ? "#EEE" : "#333" }
+                Repeater {
+                    model: storagePageRoot.sourceDirs
+                    delegate: Rectangle {
+                        width: (parent.width - 24) / 3
+                        height: 48
+                        radius: 8
+                        color: storagePageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
+                        border.color: storagePageRoot.currentSource === index ? "#1382B1"
+                                        : (storagePageRoot.isDark ? "#555" : "#DDD")
+                        border.width: storagePageRoot.currentSource === index ? 2 : 1
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 2
+                            Text { text: modelData.name; font.pixelSize: 13; font.bold: true
+                                   color: storagePageRoot.isDark ? "#EEE" : "#333" }
+                            Text { text: modelData.status; font.pixelSize: 11; color: "#999" }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                storagePageRoot.currentSource = index
+                                storagePageRoot.refresh()
+                            }
+                        }
+                    }
                 }
             }
 
@@ -409,59 +493,123 @@ Item {
                 width: parent.width
                 height: parent.height - 72
                 radius: 8
-                color: parent.isDark ? "#3D3D3D" : "#FFFFFF"
-                border.color: parent.isDark ? "#555" : "#DDD"
+                color: storagePageRoot.isDark ? "#3D3D3D" : "#FFFFFF"   // B6-7: 主题修正(原 parent.isDark 恒白)
+                border.color: storagePageRoot.isDark ? "#555" : "#DDD"
 
                 Column {
                     anchors.fill: parent
                     anchors.margins: 12
                     spacing: 6
 
-                    Text { text: "工程文件列表"; color: parent.isDark ? "#CCC" : "#555"; font.pixelSize: 13; font.bold: true }
+                    Text { text: "工程文件列表（" + sourceDirs[currentSource].name + "）"
+                           color: storagePageRoot.isDark ? "#CCC" : "#555"; font.pixelSize: 13; font.bold: true }
 
-                    // 文件项（模拟 SD 卡文件; 实际扫描后续接）
                     Repeater {
-                        model: [
-                            { name: "产线监控.navihmi", size: "2.3MB" },
-                            { name: "测试工程.navihmi", size: "0.8MB" },
-                            { name: "demo.navihmi", size: "1.1MB" }
-                        ]
+                        model: fileListModel
                         delegate: Rectangle {
                             width: parent.width
-                            height: 36
+                            height: 40
                             radius: 4
-                            color: mouse.pressed ? "#E3F2FD" : "transparent"
+                            color: storagePageRoot.selFile === modelData.path ? "#E3F2FD" : "transparent"
                             // 文件名 + 大小（左侧）
                             Row {
                                 anchors.fill: parent
                                 anchors.leftMargin: 6
-                                anchors.rightMargin: 60   // 留出右侧加载按钮空间
+                                anchors.rightMargin: 76   // 留出右侧加载按钮空间(加大)
                                 spacing: 8
                                 Text { text: "📄"; font.pixelSize: 16; verticalAlignment: Text.AlignVCenter }
-                                Text { text: modelData.name; color: storagePageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
-                                Text { text: modelData.size; color: "#999"; font.pixelSize: 11; verticalAlignment: Text.AlignVCenter }
+                                Text { text: modelData.name; color: storagePageRoot.isDark ? "#EEE" : "#333"
+                                       font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                                Text { text: modelData.sizeText; color: "#999"; font.pixelSize: 11
+                                       verticalAlignment: Text.AlignVCenter }
                             }
-                            // 加载按钮（右侧, 独立定位）
+                            // 加载按钮（B6-7: 加大 60×28, z:1 保证不被行 MouseArea 拦截）
                             Rectangle {
-                                width: 48; height: 22; radius: 4; color: "#1565C0"
+                                z: 1
+                                width: 60; height: 28; radius: 4; color: "#1382B1"
                                 anchors.right: parent.right
-                                anchors.rightMargin: 6
+                                anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                Text { anchors.centerIn: parent; text: "加载"; color: "white"; font.pixelSize: 11 }
+                                Text { anchors.centerIn: parent; text: "加载"; color: "white"; font.pixelSize: 12 }
                                 MouseArea {
                                     anchors.fill: parent
-                                    onClicked: storagePageRoot.loadFile("/mnt/user/userdata/app.navihmi")
+                                    onClicked: storagePageRoot.doReplace(modelData.path, modelData.name)
                                 }
                             }
+                            // 行点击=选中（下层; 按钮 z:1 在上层可点）
                             MouseArea {
-                                id: mouse
                                 anchors.fill: parent
+                                onClicked: {
+                                    storagePageRoot.selFile = modelData.path
+                                    storagePageRoot.selName = modelData.name
+                                }
                             }
                         }
                     }
                 }
             }
         }
+
+        // ── 替换进度条覆盖层 ──
+        Rectangle {
+            z: 100
+            anchors.fill: parent
+            color: "#80000000"
+            visible: storagePageRoot.replacing
+            Rectangle {
+                width: parent.width * 0.7
+                height: 90
+                radius: 10
+                anchors.centerIn: parent
+                color: "white"
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 10
+                    Text { text: "正在替换默认工程文件..."; font.pixelSize: 14; color: "#333" }
+                    Rectangle {
+                        width: 260; height: 14; radius: 7; color: "#EEE"
+                        Rectangle {
+                            width: parent.width * storagePageRoot.replaceProgress / 100
+                            height: 14; radius: 7; color: "#1382B1"
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 替换完成弹窗 ──
+        Rectangle {
+            z: 101
+            anchors.fill: parent
+            color: "#80000000"
+            visible: storagePageRoot.showReplaceDialog
+            Rectangle {
+                width: parent.width * 0.6
+                height: 130
+                radius: 10
+                anchors.centerIn: parent
+                color: "white"
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 14
+                    Text { text: storagePageRoot.replaceMsg; font.pixelSize: 15; color: "#333" }
+                    Rectangle {
+                        width: 90; height: 32; radius: 6; color: "#1382B1"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        Text { anchors.centerIn: parent; text: "确定"; color: "white"; font.pixelSize: 13 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                storagePageRoot.showReplaceDialog = false
+                                storagePageRoot.refresh()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Component.onCompleted: refresh()
     }
 
     // ═══════════════════════════════════════════════════
@@ -521,7 +669,7 @@ Item {
                         }
                         Text { text: networkPageRoot.netOn ? "🟢 已连接" : "🔴 已断开"; color: networkPageRoot.netOn ? "#4CAF50" : "#D32F2F"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter }
                     }
-                    Text { text: "IP: 192.168.1.146    MAC: 00:11:22:33:44:55"; color: "#999"; font.pixelSize: 11 }
+                    Text { text: "IP: " + (deviceInfo ? deviceInfo.ipAddress : "—") + "    MAC: " + (deviceInfo ? deviceInfo.macAddress : "—"); color: "#999"; font.pixelSize: 11 }
                 }
             }
         }

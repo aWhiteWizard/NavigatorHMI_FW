@@ -18,11 +18,34 @@ RuntimeBus::RuntimeBus(QObject* parent)
 void RuntimeBus::setProject(const Project& proj)
 {
     m_project = proj;
+    // 工程重载（替换默认工程文件后 reload）: 画面索引失效, 重置匹配状态
+    m_currentScreen = -1;
+    m_previousScreen = -1;
 }
 
 void RuntimeBus::setDataManager(DataManager* dm)
 {
     m_dataManager = dm;
+}
+
+void RuntimeBus::setCurrentScreenByName(const QString& name)
+{
+    // ⑪候选A（用户定）: 切换画面时更新匹配范围——previous=current, current=目标
+    m_previousScreen = m_currentScreen;
+    m_currentScreen = -1;
+    for (int i = 0; i < m_project.screens.size(); ++i) {
+        if (m_project.screens[i].name == name) {
+            m_currentScreen = i;
+            break;
+        }
+    }
+}
+
+void RuntimeBus::resetScreens()
+{
+    // Stop Runtime 回导航：清空画面匹配（防旧画面索引幽灵匹配）
+    m_currentScreen = -1;
+    m_previousScreen = -1;
 }
 
 void RuntimeBus::emitEvent(const QString& objectName, int eventType)
@@ -40,8 +63,14 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType)
         return;
     }
 
-    // 控件事件：遍历所有画面，同名控件全部执行（跨画面同名不遗漏）
-    for (const auto& sc : m_project.screens) {
+    // 控件事件：⑪候选A（用户定）——仅匹配 当前画面 + 上一画面(OnScreenUnload 兼容) + 全局画面(Template)，
+    // 消除其他自定义画面同名控件误触发（如画面A/画面B 同名 button_1 互不连动；
+    // 注: 全局 Template 画面恒匹配，若与 overlay 控件同名仍会连动——demo 工程 Stop(button_1) 与画面A 同名属此，勿再改）
+    for (int i = 0; i < m_project.screens.size(); ++i) {
+        const auto& sc = m_project.screens[i];
+        if (i != m_currentScreen && i != m_previousScreen
+            && sc.type != ScreenType::Template)
+            continue;
         for (const auto& w : sc.widgets) {
             if (w.objectName == objectName) {
                 for (const auto& ev : w.events) {
