@@ -185,6 +185,7 @@ Item {
     // 首页: 开始工程/触摸校准两区铺满 + 设备信息两列
     // ═══════════════════════════════════════════════════
     component HomePage: Item {
+        id: homePageRoot
         property bool isDark: false
         property int infoHeight: 110
         signal startClicked()
@@ -199,7 +200,7 @@ Item {
                 width: parent.width
                 height: (parent.height - 32 - parent.parent.infoHeight) * 0.45
                 text: "开 始 工 程"
-                isDark: parent.parent.isDark
+                isDark: homePageRoot.isDark
                 onClicked: parent.parent.startClicked()
             }
             // 触摸校准（下半区）
@@ -207,7 +208,7 @@ Item {
                 width: parent.width
                 height: (parent.height - 32 - parent.parent.infoHeight) * 0.45
                 text: "触 摸 校 准"
-                isDark: parent.parent.isDark
+                isDark: homePageRoot.isDark
                 onClicked: parent.parent.calibrateClicked()
             }
             // 设备信息（两列, 自适应降列+滚动）
@@ -215,7 +216,7 @@ Item {
                 id: infoBox
                 width: parent.width
                 height: parent.parent.infoHeight
-                isDark: parent.parent.isDark
+                isDark: homePageRoot.isDark
             }
         }
     }
@@ -283,12 +284,15 @@ Item {
             anchors.top: parent.top
             anchors.topMargin: 30
             anchors.left: parent.left
+            anchors.leftMargin: 6
             anchors.right: parent.right
+            anchors.rightMargin: 6
             anchors.bottom: parent.bottom
-            anchors.margins: 6
+            anchors.bottomMargin: 6
             clip: true
 
             Grid {
+                width: parent.width
                 columns: parent.width > 400 ? 2 : 1
                 spacing: 4
                 Repeater {
@@ -309,6 +313,7 @@ Item {
     // 设备信息页（独立页, 与首页信息框同数据, 两列→一列→滚动）
     // ═══════════════════════════════════════════════════
     component DeviceInfoPage: Item {
+        id: deviceInfoPageRoot
         property bool isDark: false
 
         ScrollView {
@@ -319,7 +324,7 @@ Item {
                 width: parent.width
                 spacing: 8
                 Grid {
-                    columns: parent.parent.width > 500 ? 2 : 1
+                    columns: parent.parent.width > 400 ? 2 : 1
                     spacing: 8
                     width: parent.width
                     Repeater {
@@ -332,11 +337,11 @@ Item {
                             { label: "运行时间", value: "72h 15m" }
                         ]
                         delegate: Rectangle {
-                            width: (parent.width > 500 ? parent.width / 2 : parent.width) - 4
+                            width: (parent.width > 400 ? parent.width / 2 : parent.width) - 4
                             height: 40
                             radius: 6
-                            color: parent.parent.isDark ? "#3D3D3D" : "#FFFFFF"
-                            border.color: parent.parent.isDark ? "#555" : "#DDD"
+                            color: deviceInfoPageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
+                            border.color: deviceInfoPageRoot.isDark ? "#555" : "#DDD"
                             border.width: 1
                             Row {
                                 anchors.fill: parent
@@ -345,13 +350,13 @@ Item {
                                 Text {
                                     width: 90
                                     text: modelData.label
-                                    color: parent.parent.isDark ? "#999" : "#888"
+                                    color: deviceInfoPageRoot.isDark ? "#999" : "#888"
                                     font.pixelSize: 13
                                     verticalAlignment: Text.AlignVCenter
                                 }
                                 Text {
                                     text: modelData.value
-                                    color: parent.parent.isDark ? "#EEE" : "#333"
+                                    color: deviceInfoPageRoot.isDark ? "#EEE" : "#333"
                                     font.pixelSize: 13
                                     font.bold: true
                                     verticalAlignment: Text.AlignVCenter
@@ -385,17 +390,17 @@ Item {
                     width: parent.parent.width / 2 - 6
                     height: 48
                     radius: 8
-                    color: parent.parent.isDark ? "#3D3D3D" : "#FFFFFF"
-                    border.color: parent.parent.isDark ? "#555" : "#DDD"
-                    Text { anchors.centerIn: parent; text: "SD 卡: ✅ 已插入 (16GB)"; font.pixelSize: 13; color: parent.parent.isDark ? "#EEE" : "#333" }
+                    color: storagePageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
+                    border.color: storagePageRoot.isDark ? "#555" : "#DDD"
+                    Text { anchors.centerIn: parent; text: "SD 卡: ✅ 已插入 (16GB)"; font.pixelSize: 13; color: storagePageRoot.isDark ? "#EEE" : "#333" }
                 }
                 Rectangle {
                     width: parent.parent.width / 2 - 6
                     height: 48
                     radius: 8
-                    color: parent.parent.isDark ? "#3D3D3D" : "#FFFFFF"
-                    border.color: parent.parent.isDark ? "#555" : "#DDD"
-                    Text { anchors.centerIn: parent; text: "USB: ❌ 未插入"; font.pixelSize: 13; color: parent.parent.isDark ? "#EEE" : "#333" }
+                    color: storagePageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
+                    border.color: storagePageRoot.isDark ? "#555" : "#DDD"
+                    Text { anchors.centerIn: parent; text: "USB: ❌ 未插入"; font.pixelSize: 13; color: storagePageRoot.isDark ? "#EEE" : "#333" }
                 }
             }
 
@@ -433,7 +438,7 @@ Item {
                                 anchors.rightMargin: 60   // 留出右侧加载按钮空间
                                 spacing: 8
                                 Text { text: "📄"; font.pixelSize: 16; verticalAlignment: Text.AlignVCenter }
-                                Text { text: modelData.name; color: parent.parent.isDark ? "#EEE" : "#333"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                                Text { text: modelData.name; color: storagePageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                                 Text { text: modelData.size; color: "#999"; font.pixelSize: 11; verticalAlignment: Text.AlignVCenter }
                             }
                             // 加载按钮（右侧, 独立定位）

@@ -18,7 +18,8 @@ Window {
     // ── 设备尺寸（C++ 按工程注入, 7寸 1024×600 / 4寸 720×720 等比缩放）──
     property int deviceWidth: 1024
     property int deviceHeight: 600
-    onDeviceWidthChanged: { width = deviceWidth; height = deviceHeight }
+    onDeviceWidthChanged: { width = deviceWidth }
+    onDeviceHeightChanged: { height = deviceHeight }
 
     // ── 运行时事件总线（C++ setContextProperty 注入；QML 只发事件，ActionRunner 执行动作）──
     // 注意: 不能声明同名 property, 否则遮蔽 context property 导致 runtimeBus 为 null
