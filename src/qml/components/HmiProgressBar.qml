@@ -42,6 +42,20 @@ Rectangle {
         clip: true
     }
 
+    // 绑定变量 → DataManager 实时值作为进度
+    property double boundValue: boundTag !== "" && dataManager !== undefined && dataManager !== null
+              ? dataManager.value(boundTag).toDouble() : value
+    property double progress: max > min ? Math.min(1.0, Math.max(0.0, (boundValue - min) / (max - min))) : 0
+
+    Rectangle {
+        id: fill
+        width: root.width * root.progress
+        height: parent.height
+        radius: 3
+        color: root.fillColor
+        clip: true
+    }
+
     Text {
         id: pctText
         anchors.fill: parent
@@ -53,6 +67,17 @@ Rectangle {
     }
 
     onProgressChanged: {
+        root.hmiValueChanged()
         if (progress >= 1.0) root.hmiProgressComplete()
+    }
+
+    // DataManager 值变化 → 刷新（C++ 注入 context property）
+    Connections {
+        target: dataManager !== undefined && dataManager !== null ? dataManager : null
+        onValueChanged: function(tagName) {
+            if (tagName === root.boundTag) {
+                root.value = dataManager.value(tagName).toDouble()
+            }
+        }
     }
 }

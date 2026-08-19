@@ -52,8 +52,8 @@ BR2_PACKAGE_QT6SERIALPORT=y
 BR2_PACKAGE_QT6SVG=y
 BR2_PACKAGE_QT6CORE5COMPAT=y
 # QML/Quick (B-4 界面: 每画面 QML + 控件组件库, 2026-08-19 移植 qt6declarative 包)
+# B-5: 去 _QUICK 子选项(defconfig 删了死选项, Config.in 已 select NETWORK)
 BR2_PACKAGE_QT6DECLARATIVE=y
-BR2_PACKAGE_QT6DECLARATIVE_QUICK=y
 BR2_PACKAGE_QT6SHADERTOOLS=y
 
 # ---- protobuf (B-4 转换器依赖: .navihmi 解析) ----

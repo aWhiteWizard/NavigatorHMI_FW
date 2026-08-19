@@ -19,7 +19,9 @@ QT6SHADERTOOLS_LICENSE = \
 	GFDL-1.3 (docs), \
 	BSD-3-Clause, \
 	LicenseRef-Qt-Commercial, \
-	Qt-GPL-exception-1.0
+	Qt-GPL-exception-1.0, \
+	Apache-2.0 (SPIRV-Cross), \
+	MIT (SPIRV-Cross)
 
 QT6SHADERTOOLS_LICENSE_FILES = \
 	LICENSES/BSD-3-Clause.txt \

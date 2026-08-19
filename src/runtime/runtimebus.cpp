@@ -28,35 +28,29 @@ void RuntimeBus::setDataManager(DataManager* dm)
 void RuntimeBus::emitEvent(const QString& objectName, int eventType)
 {
     const EventType et = static_cast<EventType>(eventType);
-    const Widget* widget = nullptr;
-    QList<WidgetEvent> events;
-
-    // 找到控件（遍历画面）
-    const Screen* wmScreen = nullptr;
-    for (const auto& sc : m_project.screens) {
-        if (sc.type == ScreenType::WorldMap)
-            wmScreen = &sc;
-        for (const auto& w : sc.widgets) {
-            if (w.objectName == objectName) {
-                widget = &w;
-                events = w.events;
-                break;
-            }
-        }
-        if (widget) break;
-    }
 
     // 世界地图级事件（objectName 空或 "__worldmap__"）
-    if (!widget && (objectName.isEmpty() || objectName == "__worldmap__")) {
-        if (wmScreen)
-            events = m_project.worldMap.events;
+    if (objectName.isEmpty() || objectName == "__worldmap__") {
+        for (const auto& ev : m_project.worldMap.events) {
+            if (ev.type == et) {
+                for (const auto& action : ev.actions)
+                    executeAction(action, nullptr);
+            }
+        }
+        return;
     }
 
-    // 匹配事件类型，执行动作
-    for (const auto& ev : events) {
-        if (ev.type == et) {
-            for (const auto& action : ev.actions)
-                executeAction(action, widget);
+    // 控件事件：遍历所有画面，同名控件全部执行（跨画面同名不遗漏）
+    for (const auto& sc : m_project.screens) {
+        for (const auto& w : sc.widgets) {
+            if (w.objectName == objectName) {
+                for (const auto& ev : w.events) {
+                    if (ev.type == et) {
+                        for (const auto& action : ev.actions)
+                            executeAction(action, &w);
+                    }
+                }
+            }
         }
     }
 }
