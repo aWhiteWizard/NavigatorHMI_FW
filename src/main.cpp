@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QVariant>
 #include <QVariantList>
+#include <QVariantMap>
 #include <QMetaObject>
 #include <cstdio>
 
@@ -256,10 +257,14 @@ int main(int argc, char *argv[])
         QMetaObject::invokeMethod(rootObj, "stopRuntime");
     };
 
-    // 注入画面清单 + 开始工程
-    QVariantList filesList, namesList;
-    for (const auto& f : screenFiles) filesList.append(f);
-    for (const auto& n : screenNames) namesList.append(n);
+    // 注入画面清单 + 开始工程（对象数组 [{name, file}]，QML switchToName 用 .name/.file）
+    QVariantList filesList;
+    for (int i = 0; i < screenFiles.size(); ++i) {
+        QVariantMap m;
+        m["name"] = screenNames[i];
+        m["file"] = screenFiles[i];
+        filesList.append(m);
+    }
     rootObj->setProperty("screenFiles", filesList);
     rootObj->setProperty("startScreen", startScreen);
     rootObj->setProperty("hasProject", !proj.screens.isEmpty());
