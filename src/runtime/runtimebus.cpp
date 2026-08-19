@@ -106,26 +106,50 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget)
         break;
     }
     case ActionType::ShowPopup:
-        qInfo() << "RuntimeBus: show_popup" << p.value("title");
+        qInfo() << "RuntimeBus: show_popup" << p.value("title") << p.value("message");
         break;
     case ActionType::SendNotification:
         qInfo() << "RuntimeBus: send_notification" << p.value("topic") << p.value("message");
         break;
     case ActionType::SetProperty:
+        // B-5: 属性修改——跨组件寻址后续（ObjectManager）；当前记录目标
         qInfo() << "RuntimeBus: set_property" << p.value("widget") << p.value("key") << p.value("value");
         break;
+    case ActionType::TagAdd:
+    case ActionType::TagSubtract: {
+        const QString tagName = p.value("tag_name");
+        if (m_dataManager && !tagName.isEmpty()) {
+            double cur = m_dataManager->value(tagName).toDouble();
+            double delta = p.value("value").toDouble();
+            m_dataManager->setValue(tagName, cur + (action.type == ActionType::TagAdd ? delta : -delta));
+        }
+        break;
+    }
+    case ActionType::TagToggle: {
+        const QString tagName = p.value("tag_name");
+        if (m_dataManager && !tagName.isEmpty()) {
+            bool cur = m_dataManager->value(tagName).toBool();
+            m_dataManager->setValue(tagName, !cur);
+        }
+        break;
+    }
+    case ActionType::SetBit:
+    case ActionType::ResetBit: {
+        const QString tagName = p.value("tag_name");
+        if (m_dataManager && !tagName.isEmpty())
+            m_dataManager->setValue(tagName, action.type == ActionType::SetBit);
+        break;
+    }
     case ActionType::ScreenPrev:
     case ActionType::ScreenNext:
-    case ActionType::TagAdd:
-    case ActionType::TagSubtract:
-    case ActionType::TagToggle:
-    case ActionType::SetBit:
-    case ActionType::ResetBit:
+        // 导航栈前进/后退（后续：主壳维护栈；当前切换相邻画面）
+        qInfo() << "RuntimeBus: screen" << (action.type == ActionType::ScreenPrev ? "prev" : "next");
+        break;
     case ActionType::SetDatetime:
     case ActionType::GetDatetime:
     case ActionType::AcknowledgeAlarm:
     case ActionType::SetSystemTime:
-        // B-4 首版：记录日志（联动动作后续循环细化）
+        // 记录日志（时间/报警系统后续细化）
         qInfo() << "RuntimeBus: action" << int(action.type) << p;
         break;
     }
