@@ -30,7 +30,7 @@ Item {
         id: navBar
         width: navRoot.navWidth
         height: parent.height
-        color: "#1B2A4A"
+        color: navRoot.isDark ? "#0B2C40" : "#0F5278"   // B6-14 主题色系（白天深/夜间更深）
         Behavior on width { NumberAnimation { duration: 150 } }
 
         Column {
@@ -40,10 +40,10 @@ Item {
             width: parent.width
             spacing: 2
 
-            NavItem { icon: "🏠"; label: "首页"; page: "home"; expanded: navRoot.navExpanded }
-            NavItem { icon: "ℹ️"; label: "设备信息"; page: "info"; expanded: navRoot.navExpanded }
-            NavItem { icon: "💾"; label: "存储管理"; page: "storage"; expanded: navRoot.navExpanded }
-            NavItem { icon: "📡"; label: "通信控制"; page: "network"; expanded: navRoot.navExpanded }
+            NavItem { label: "首页"; page: "home"; expanded: navRoot.navExpanded }
+            NavItem { label: "设备信息"; page: "info"; expanded: navRoot.navExpanded }
+            NavItem { label: "存储管理"; page: "storage"; expanded: navRoot.navExpanded }
+            NavItem { label: "通信控制"; page: "network"; expanded: navRoot.navExpanded }
         }
 
         // 底部: 日夜 + 收起
@@ -53,14 +53,12 @@ Item {
             width: parent.width
             spacing: 2
             NavItem {
-                icon: navRoot.isDark ? "☀️" : "🌙"
                 label: navRoot.isDark ? "日间" : "夜间"
                 page: "dark"
                 expanded: navRoot.navExpanded
                 onClicked: navRoot.isDark = !navRoot.isDark
             }
             NavItem {
-                icon: "◀▶"
                 label: navRoot.navExpanded ? "收起" : "展开"
                 page: "toggle"
                 expanded: navRoot.navExpanded
@@ -76,7 +74,7 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        color: navRoot.isDark ? "#2D2D2D" : "#F5F6FA"
+        color: navRoot.isDark ? "#0E3A52" : "#EAF5FA"   // B6-14 主题色系（白天浅蓝 / 夜间深蓝）
         Behavior on color { ColorAnimation { duration: 200 } }
 
         StackLayout {
@@ -129,9 +127,9 @@ Item {
         width: parent.width
         height: 48
         radius: 4
-        color: navRoot.currentPageIndex === navItemIndex ? "#2A4A8A" : "transparent"
+        color: navRoot.currentPageIndex === navItemIndex
+               ? (navRoot.isDark ? "#1B5E85" : "#1382B1") : "transparent"   // B6-14 主题色高亮
 
-        property string icon: ""
         property string label: ""
         property string page: ""
         property bool expanded: true
@@ -148,13 +146,13 @@ Item {
             anchors.leftMargin: 10
             anchors.rightMargin: 10
             spacing: 8
-            Text {
-                width: 32
-                height: 48
-                text: navItem.icon
-                font.pixelSize: 22
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignHCenter
+            // B6-15: 图标用白色 logo 小图（原 emoji 在嵌入式无字体显示空白）
+            Image {
+                width: navItem.expanded ? 22 : 20
+                height: 22
+                anchors.verticalCenter: parent.verticalCenter
+                source: "qrc:/qml/images/logo_white_small.png"
+                fillMode: Image.PreserveAspectFit
             }
             Text {
                 width: navItem.expanded ? navItem.width - 50 : 0
@@ -195,20 +193,22 @@ Item {
             anchors.fill: parent
             spacing: 16
 
-            // 开始工程（上半区, 铺满横宽）
+            // 开始工程（上半区, 铺满横宽）——B6-15: 右下角白色 logo 小图标
             BigButton {
                 width: parent.width
                 height: (parent.height - 32 - parent.parent.infoHeight) * 0.45
                 text: "开 始 工 程"
                 isDark: homePageRoot.isDark
+                showLogo: true
                 onClicked: parent.parent.startClicked()
             }
-            // 触摸校准（下半区）
+            // 触摸校准（下半区）——B6-12: 长按 3 秒进入防误触
             BigButton {
                 width: parent.width
                 height: (parent.height - 32 - parent.parent.infoHeight) * 0.45
-                text: "触 摸 校 准"
+                text: "触 摸 校 准（长按 3 秒）"
                 isDark: homePageRoot.isDark
+                longPressMs: 3000
                 onClicked: parent.parent.calibrateClicked()
             }
             // 设备信息（两列, 自适应降列+滚动）
@@ -225,26 +225,55 @@ Item {
     component BigButton: Rectangle {
         id: bigBtn
         radius: 12
-        color: mouse.pressed ? (isDark ? "#3A5A9A" : "#2A4A8A") : (isDark ? "#1B2A4A" : "#1B2A4A")
-        border.color: "#3A5A9A"
+        // B6-14 主题色体系（白天 #1382B1 / 夜间 #1B5E85——与 contentArea #0E3A52 拉开层次）
+        color: mouse.pressed ? (isDark ? "#0E3A52" : "#0F5278") : (isDark ? "#1B5E85" : "#1382B1")
+        border.color: isDark ? "#1B5E85" : "#4FA8D0"
         border.width: 1
 
         property string text: ""
         property bool isDark: false
+        property int longPressMs: 0        // B6-12: >0 时长按触发（防误触）
+        property bool showLogo: false      // B6-15: 右下角白色 logo 小图标
         signal clicked()
 
+        // B6-13: 文字放小、左上角、上下留空
         Text {
-            anchors.centerIn: parent
+            anchors.top: parent.top
+            anchors.topMargin: 14
+            anchors.left: parent.left
+            anchors.leftMargin: 18
             text: bigBtn.text
             color: "white"
-            font.pixelSize: Math.max(20, parent.width / 12)
+            font.pixelSize: 18
             font.bold: true
+        }
+
+        // B6-15: 白色 logo 小图标（右下角）
+        Image {
+            width: 26; height: 24
+            anchors.right: parent.right
+            anchors.rightMargin: 16
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 14
+            source: "qrc:/qml/images/logo_white_small.png"
+            fillMode: Image.PreserveAspectFit
+            visible: bigBtn.showLogo
+        }
+
+        // B6-12: 长按防误触（Timer 到时长按触发; 短按仅当 longPressMs=0）
+        Timer {
+            id: lpTimer
+            interval: bigBtn.longPressMs
+            repeat: false
+            onTriggered: bigBtn.clicked()
         }
 
         MouseArea {
             id: mouse
             anchors.fill: parent
-            onClicked: bigBtn.clicked()
+            onPressed: if (bigBtn.longPressMs > 0) lpTimer.start()
+            onReleased: lpTimer.stop()
+            onClicked: if (bigBtn.longPressMs <= 0) bigBtn.clicked()
         }
     }
 
@@ -620,6 +649,21 @@ Item {
         property bool isDark: false
         property bool mqttOn: true
         property bool netOn: true
+        // B6-11: 网络设置脏检测 + 应用结果 + 数字键盘
+        property bool netDirty: false
+        property string applyResult: ""
+        property bool numpadVisible: false
+        property var numpadRow: null
+        function applyNet() {
+            var ip = netIpRow.segValues.join(".")
+            var mask = netMaskRow.segValues.join(".")
+            var gw = netGwRow.segValues.join(".")
+            applyResult = "已应用：IP " + ip + "  掩码 " + mask + "  网关 " + gw
+            netDirty = false
+            console.log("网络设置应用: " + applyResult)
+        }
+        function openNumpad(row) { numpadRow = row; numpadVisible = true }
+        function numpadKey(k) { if (numpadRow) numpadRow.numpadKey(k) }
 
         Column {
             anchors.fill: parent
@@ -671,6 +715,159 @@ Item {
                     }
                     Text { text: "IP: " + (deviceInfo ? deviceInfo.ipAddress : "—") + "    MAC: " + (deviceInfo ? deviceInfo.macAddress : "—"); color: "#999"; font.pixelSize: 11 }
                 }
+            }
+
+            // 网络接口设置（B6-11: 本机 IP / 子网掩码 / 网关 4 段输入 + 应用按钮脏检测）
+            Rectangle {
+                width: parent.width
+                height: 230
+                radius: 8
+                color: networkPageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
+                border.color: networkPageRoot.isDark ? "#555" : "#DDD"
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+                    Text { text: "网络接口设置（本机 IP / 子网掩码 / 网关）"
+                           color: networkPageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 13; font.bold: true }
+                    NetRow { id: netIpRow; label: "IP  "
+                             segments: deviceInfo ? deviceInfo.ipAddress.split(".") : ["192","168","1","146"]
+                             onChanged: networkPageRoot.netDirty = true }
+                    NetRow { id: netMaskRow; label: "掩码"
+                             segments: ["255","255","255","0"]
+                             onChanged: networkPageRoot.netDirty = true }
+                    NetRow { id: netGwRow; label: "网关"
+                             segments: ["192","168","1","1"]
+                             onChanged: networkPageRoot.netDirty = true }
+                    // 应用按钮（脏检测: 未修改灰 / 修改后主题色）+ 结果
+                    Row {
+                        spacing: 12
+                        Rectangle {
+                            width: 80; height: 30; radius: 6
+                            color: networkPageRoot.netDirty ? "#1382B1" : "#999999"
+                            Text { anchors.centerIn: parent; text: "应用"; color: "white"; font.pixelSize: 13 }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: networkPageRoot.applyNet()
+                            }
+                        }
+                        Text { text: networkPageRoot.applyResult; color: "#4CAF50"; font.pixelSize: 12
+                               verticalAlignment: Text.AlignVCenter }
+                    }
+                }
+            }
+        }
+
+        // ── 自制数字小键盘 overlay（B6-11: 设备端无实体键盘——用户 2026-08-19 定）──
+        Rectangle {
+            id: numpad
+            z: 200
+            width: 320; height: 240
+            radius: 10
+            color: networkPageRoot.isDark ? "#222222" : "#F0F0F0"
+            border.color: "#888"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 10
+            visible: networkPageRoot.numpadVisible
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 6
+                Text { text: "数字输入（0-255）"; color: networkPageRoot.isDark ? "#EEE" : "#333"
+                       font.pixelSize: 12; font.bold: true }
+                Grid {
+                    columns: 3
+                    spacing: 6
+                    width: parent.width
+                    Repeater {
+                        model: ["1","2","3","4","5","6","7","8","9","⌫","0","完成"]
+                        delegate: Rectangle {
+                            width: (parent.width - 12) / 3
+                            height: 40
+                            radius: 6
+                            color: modelData === "完成" ? "#1382B1"
+                                   : (networkPageRoot.isDark ? "#3D3D3D" : "white")
+                            border.color: "#999"
+                            Text { anchors.centerIn: parent; text: modelData
+                                   color: modelData === "完成" ? "white"
+                                          : (networkPageRoot.isDark ? "#EEE" : "#333")
+                                   font.pixelSize: 16 }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (modelData === "⌫") networkPageRoot.numpadKey("back")
+                                    else if (modelData === "完成") networkPageRoot.numpadVisible = false
+                                    else networkPageRoot.numpadKey(modelData)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 网络 4 段数字输入行（B6-11: label + 4 个数字输入框, 点分隔）──
+    component NetRow: Row {
+        id: netRow
+        spacing: 5
+        property string label: ""
+        property var segments: ["0", "0", "0", "0"]
+        property var segValues: []
+        property bool initialized: false
+        property var numpadTarget: null   // B6-11: 当前输入 TextField（自制数字键盘）
+        signal changed()
+
+        // B6-11: 数字键盘输入（设备端无实体键盘——用户定自制数字小键盘）
+        function openNumpad(field) {
+            numpadTarget = field
+            networkPageRoot.openNumpad(netRow)
+        }
+        function numpadKey(k) {
+            if (!numpadTarget) return
+            if (k === "back") {
+                if (numpadTarget.text.length > 0)
+                    numpadTarget.text = numpadTarget.text.slice(0, -1)
+            } else {
+                if (numpadTarget.text.length < 3)   // 0-255 最多 3 位
+                    numpadTarget.text += k
+            }
+        }
+
+        Component.onCompleted: {
+            if (segValues.length === 0)
+                for (var i = 0; i < segments.length; i++) segValues.push(segments[i])
+            initialized = true
+        }
+
+        Text { text: netRow.label; width: 36; height: 28; verticalAlignment: Text.AlignVCenter
+               color: networkPageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 13 }
+        Repeater {
+            id: netRepeater
+            model: netRow.segments
+            delegate: Item {
+                width: 44; height: 26
+                TextField {
+                    id: field
+                    width: 44; height: 26; font.pixelSize: 13
+                    text: modelData
+                    readOnly: true   // B6-11: 数字键盘输入（设备端无实体键盘/输入法）
+                    validator: IntValidator { bottom: 0; top: 255 }
+                    onTextChanged: {
+                        netRow.segValues[index] = text
+                        if (netRow.initialized) netRow.changed()
+                    }
+                }
+                // 点击 → 弹数字键盘（readOnly TextField 自身无输入法, 由键盘 overlay 输入）
+                MouseArea {
+                    anchors.fill: field
+                    z: 1
+                    onClicked: netRow.openNumpad(field)
+                }
+                Text { text: index < 3 ? "." : ""; width: 5; height: 26; anchors.left: parent.right
+                       verticalAlignment: Text.AlignVCenter; color: "#888"; font.pixelSize: 13 }
             }
         }
     }

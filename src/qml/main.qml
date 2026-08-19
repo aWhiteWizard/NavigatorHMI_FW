@@ -13,7 +13,7 @@ Window {
     height: 600
     visible: true
     title: qsTr("NavigatorHMI")
-    color: "#203864"
+    color: "#0F5278"   // B6-14 主题色系深色（原 #203864）
 
     // ── 设备尺寸（C++ 按工程注入, 7寸 1024×600 / 4寸 720×720 等比缩放）──
     property int deviceWidth: 1024
@@ -66,7 +66,7 @@ Window {
         // 接线导航按钮回调 + 设备尺寸传递
         onLoaded: {
             navLoader.item.onStartProject = function() { mainShell.startProject() }
-            navLoader.item.onCalibrate = function() { mainShell.userInteracted = true; console.log("校准: 待实现") }
+            navLoader.item.onCalibrate = function() { mainShell.userInteracted = true; if (deviceInfo) deviceInfo.runCalibrate() }
             navLoader.item.onDeviceInfo = function() { console.log("设备信息: 待实现") }
             navLoader.item.onSystemManage = function() { console.log("系统管理: 待实现") }
             navLoader.item.deviceWidth = mainShell.deviceWidth

@@ -51,21 +51,32 @@ void RuntimeBus::resetScreens()
 void RuntimeBus::emitEvent(const QString& objectName, int eventType)
 {
     const EventType et = static_cast<EventType>(eventType);
+    // TraceLog（B6-10）: 事件入口 trace——QML 点击 → C++ 事件路由全链路可查（NAVIHMI_TRACE=0 关闭）
+    const bool trace = qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0
+                       || !qEnvironmentVariableIsSet("NAVIHMI_TRACE");   // 默认开
+    if (trace)
+        qInfo().noquote() << "[TRACE] emitEvent obj=" << objectName
+                          << "type=" << int(et);
 
     // 世界地图级事件（objectName 空或 "__worldmap__"）
     if (objectName.isEmpty() || objectName == "__worldmap__") {
+        int hit = 0;
         for (const auto& ev : m_project.worldMap.events) {
             if (ev.type == et) {
+                ++hit;
                 for (const auto& action : ev.actions)
                     executeAction(action, nullptr);
             }
         }
+        if (trace)
+            qInfo().noquote() << "[TRACE]   worldMap events hit=" << hit;
         return;
     }
 
     // 控件事件：⑪候选A（用户定）——仅匹配 当前画面 + 上一画面(OnScreenUnload 兼容) + 全局画面(Template)，
     // 消除其他自定义画面同名控件误触发（如画面A/画面B 同名 button_1 互不连动；
     // 注: 全局 Template 画面恒匹配，若与 overlay 控件同名仍会连动——demo 工程 Stop(button_1) 与画面A 同名属此，勿再改）
+    int hit = 0;
     for (int i = 0; i < m_project.screens.size(); ++i) {
         const auto& sc = m_project.screens[i];
         if (i != m_currentScreen && i != m_previousScreen
@@ -75,6 +86,10 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType)
             if (w.objectName == objectName) {
                 for (const auto& ev : w.events) {
                     if (ev.type == et) {
+                        ++hit;
+                        if (trace)
+                            qInfo().noquote() << "[TRACE]   screen=" << sc.name
+                                              << "widget=" << w.objectName << "type=" << int(et);
                         for (const auto& action : ev.actions)
                             executeAction(action, &w);
                     }
@@ -82,6 +97,10 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType)
             }
         }
     }
+    if (trace)
+        qInfo().noquote() << "[TRACE]   widget events hit=" << hit
+                          << "(current=" << (m_currentScreen >= 0 ? m_project.screens[m_currentScreen].name : "-")
+                          << " previous=" << (m_previousScreen >= 0 ? m_project.screens[m_previousScreen].name : "-") << ")";
 }
 
 void RuntimeBus::executeAction(const EventAction& action, const Widget* widget)
@@ -91,6 +110,10 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget)
     switch (action.type) {
     case ActionType::ScreenSwitch: {
         const QString target = p.value("target_screen");
+        // TraceLog（B6-10）: 切换动作打目标（ScreenSwitch 原无日志——B-5 排查痛点）
+        if (qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0
+            || !qEnvironmentVariableIsSet("NAVIHMI_TRACE"))
+            qInfo().noquote() << "[TRACE]   action=ScreenSwitch target=" << target;
         if (!target.isEmpty() && onScreenSwitch)
             onScreenSwitch(target);
         break;

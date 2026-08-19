@@ -129,4 +129,17 @@ QString DeviceInfo::uptimeText() const
 #endif
 }
 
+void DeviceInfo::runCalibrate()
+{
+#if defined(Q_OS_WIN)
+    qInfo() << "触摸校准: 仿真器无 tslib（跳过）";
+#else
+    // B6-12: tslib 触摸校准（startDetached 不阻塞 HMI）
+    qInfo() << "触摸校准: 启动 ts_calibrate";
+    const bool ok = QProcess::startDetached(QStringLiteral("ts_calibrate"));
+    if (!ok)
+        qWarning() << "触摸校准: ts_calibrate 启动失败（rootfs 是否安装 tslib？）";
+#endif
+}
+
 } // namespace navihmi

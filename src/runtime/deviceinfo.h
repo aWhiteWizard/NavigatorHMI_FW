@@ -29,6 +29,8 @@ public:
 
     /// 运行时间（/proc/uptime 秒 → "Xd Xh Ym"），QML Timer 周期调用
     Q_INVOKABLE QString uptimeText() const;
+    /// 触摸校准（B6-12: tslib ts_calibrate, 长按 3 秒防误触后由 QML 触发）
+    Q_INVOKABLE void runCalibrate();
 
 signals:
     void infoChanged();
