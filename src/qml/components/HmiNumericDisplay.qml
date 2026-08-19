@@ -1,4 +1,4 @@
-// B-4: HmiNumericDisplay——数值显示控件组件（绑变量显示实时值）
+// B-5: HmiNumericDisplay——数值显示控件组件（绑变量显示 DataManager 实时值）
 import QtQuick 2.15
 
 Rectangle {
@@ -33,7 +33,10 @@ Rectangle {
         id: numText
         anchors.fill: parent
         anchors.margins: 4
-        text: boundTag !== "" ? boundTag : root.value.toFixed(2)
+        // 绑定变量 → DataManager 实时值; 否则自身 value
+        text: boundTag !== "" && dataManager !== undefined && dataManager !== null
+              ? dataManager.value(boundTag) + ""
+              : root.value.toFixed(2)
         color: root.textColor
         font.pixelSize: root.fontSize
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
@@ -42,5 +45,14 @@ Rectangle {
                           : root.hAlign === "Right" ? Text.AlignRight
                           : Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+    }
+
+    // DataManager 值变化 → 刷新（C++ 注入 context property）
+    Connections {
+        target: dataManager !== undefined && dataManager !== null ? dataManager : null
+        onValueChanged: function(tagName, value) {
+            if (tagName === root.boundTag)
+                root.hmiValueChanged()
+        }
     }
 }

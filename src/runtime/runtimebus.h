@@ -14,6 +14,8 @@
 
 namespace navihmi {
 
+class DataManager;
+
 class RuntimeBus : public QObject
 {
     Q_OBJECT
@@ -22,6 +24,8 @@ public:
 
     /// 设置运行时工程（QML 事件路由的依据）
     void setProject(const Project& proj);
+    /// 设置数据管理器（TagWrite 等动作写值用）
+    void setDataManager(DataManager* dm);
     /// 画面切换回调（主壳注入：切到指定画面名）
     std::function<void(const QString&)> onScreenSwitch;
     /// 返回导航回调（Stop Runtime）
@@ -35,6 +39,7 @@ public slots:
 private:
     void executeAction(const EventAction& action, const Widget* widget);
     Project m_project;
+    DataManager* m_dataManager = nullptr;
     int m_currentScreen = -1;
 };
 

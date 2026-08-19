@@ -3,6 +3,7 @@
  * @Description: 运行时事件总线实现——事件 → 动作执行
  */
 #include "runtime/runtimebus.h"
+#include "runtime/datamanager.h"
 
 #include <QDebug>
 #include <QMetaObject>
@@ -17,6 +18,11 @@ RuntimeBus::RuntimeBus(QObject* parent)
 void RuntimeBus::setProject(const Project& proj)
 {
     m_project = proj;
+}
+
+void RuntimeBus::setDataManager(DataManager* dm)
+{
+    m_dataManager = dm;
 }
 
 void RuntimeBus::emitEvent(const QString& objectName, int eventType)
@@ -75,9 +81,30 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget)
         }
         break;
     }
-    case ActionType::TagWrite:
-        qInfo() << "RuntimeBus: tag_write" << p.value("tag_name") << "=" << p.value("value");
+    case ActionType::TagWrite: {
+        // B-5: 实际写 DataManager（变量实时值 → QML 组件刷新）
+        const QString tagName = p.value("tag_name");
+        if (m_dataManager && !tagName.isEmpty()) {
+            const QString val = p.value("value");
+            if (!val.isEmpty()) {
+                // 按目标变量类型解析（简化：数字优先，否则字符串）
+                const Tag* tag = m_project.tagByName(tagName);
+                QVariant v = val;
+                if (tag && (tag->dataType == TagDataType::Float
+                            || tag->dataType == TagDataType::Int16
+                            || tag->dataType == TagDataType::Uint16
+                            || tag->dataType == TagDataType::Int32)) {
+                    bool ok = false;
+                    double d = val.toDouble(&ok);
+                    if (ok) v = d;
+                } else if (tag && tag->dataType == TagDataType::Bool) {
+                    v = (val == "1" || val == "true" || val == "TRUE" || val == "True");
+                }
+                m_dataManager->setValue(tagName, v);
+            }
+        }
         break;
+    }
     case ActionType::ShowPopup:
         qInfo() << "RuntimeBus: show_popup" << p.value("title");
         break;

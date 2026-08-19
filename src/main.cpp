@@ -27,6 +27,7 @@
 #include "runtime/projectmodel.h"
 #if defined(HAVE_QT_QML)
 #include "runtime/runtimebus.h"
+#include "runtime/datamanager.h"
 #endif
 
 // ═══════ 转换器测试模式：解析 .navihmi → 打印模型摘要 ═══════
@@ -241,6 +242,13 @@ int main(int argc, char *argv[])
     // 主壳注入
     QObject* rootObj = nullptr;
     engine.rootContext()->setContextProperty("runtimeBus", &runtimeBus);
+
+    // 数据管理器（TagStore 雏形：变量实时值中心, QML 组件绑定显示）
+    navihmi::DataManager dataManager;
+    dataManager.setProject(proj);
+    runtimeBus.setDataManager(&dataManager);
+    engine.rootContext()->setContextProperty("dataManager", &dataManager);
+
     engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败";
