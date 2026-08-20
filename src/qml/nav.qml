@@ -539,7 +539,7 @@ Item {
                             width: parent.width
                             height: 40
                             radius: 4
-                            color: storagePageRoot.selFile === modelData.path ? "#E3F2FD" : "transparent"
+                            color: storagePageRoot.selFile === model.path ? "#E3F2FD" : "transparent"
                             // 文件名 + 大小（左侧）
                             Row {
                                 anchors.fill: parent
@@ -547,9 +547,9 @@ Item {
                                 anchors.rightMargin: 76   // 留出右侧加载按钮空间(加大)
                                 spacing: 8
                                 Text { text: "📄"; font.pixelSize: 16; verticalAlignment: Text.AlignVCenter }
-                                Text { text: modelData.name; color: storagePageRoot.isDark ? "#EEE" : "#333"
+                                Text { text: model.name; color: storagePageRoot.isDark ? "#EEE" : "#333"
                                        font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
-                                Text { text: modelData.sizeText; color: "#999"; font.pixelSize: 11
+                                Text { text: model.sizeText; color: "#999"; font.pixelSize: 11
                                        verticalAlignment: Text.AlignVCenter }
                             }
                             // 加载按钮（B6-7: 加大 60×28, z:1 保证不被行 MouseArea 拦截）
@@ -562,15 +562,15 @@ Item {
                                 Text { anchors.centerIn: parent; text: "加载"; color: "white"; font.pixelSize: 12 }
                                 MouseArea {
                                     anchors.fill: parent
-                                    onClicked: storagePageRoot.doReplace(modelData.path, modelData.name)
+                                    onClicked: storagePageRoot.doReplace(model.path, model.name)
                                 }
                             }
                             // 行点击=选中（下层; 按钮 z:1 在上层可点）
                             MouseArea {
                                 anchors.fill: parent
                                 onClicked: {
-                                    storagePageRoot.selFile = modelData.path
-                                    storagePageRoot.selName = modelData.name
+                                    storagePageRoot.selFile = model.path
+                                    storagePageRoot.selName = model.name
                                 }
                             }
                         }

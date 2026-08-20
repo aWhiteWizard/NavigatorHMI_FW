@@ -218,6 +218,18 @@ static bool loadAndInject(QObject* rootObj,
 }
 #endif
 
+// ═══════ 启动诊断（B6-8: 无工程模式进程退出排查——信号/崩溃打印）═══════
+#include <csignal>
+#include <cstdlib>
+namespace {
+void onSignal(int sig)
+{
+    std::fprintf(stderr, "!!! navigatorhmi-fw 收到信号 %d\n", sig);
+    std::fflush(stderr);
+    std::_Exit(128 + sig);
+}
+} // namespace
+
 int main(int argc, char *argv[])
 {
     // ── 转换器模式（纯命令行，无需 GUI/Qt 平台插件）──
@@ -257,6 +269,13 @@ int main(int argc, char *argv[])
     app.setApplicationName(QStringLiteral("NavigatorHMI_FW"));
     app.setApplicationVersion(QStringLiteral("1.1.0"));
 
+    // 启动诊断（B6-8）: 信号处理器——退出原因定位
+    std::signal(SIGSEGV, onSignal);
+    std::signal(SIGABRT, onSignal);
+    std::signal(SIGTERM, onSignal);
+    std::signal(SIGHUP, onSignal);
+    std::signal(SIGINT, onSignal);
+
     // 平台后端：Linux 嵌入式按 FW_PLATFORM_BACKEND 设 QPA（linuxfb/eglfs，CMake -D 配置）
 #if !defined(Q_OS_WIN)
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral(FW_PLATFORM_BACKEND));
@@ -273,6 +292,7 @@ int main(int argc, char *argv[])
 
     // ═══════ QML 引擎 ═══════
 #if defined(HAVE_QT_QML)
+    qInfo().noquote() << "navigatorhmi-fw: 启动 projectPath=" << projectPath;   // 诊断(B6-8)
     QQmlApplicationEngine engine;
 
     // 运行时事件总线（QML 只发事件，C++ 执行动作；工程注入见 loadAndInject）
@@ -297,11 +317,14 @@ int main(int argc, char *argv[])
         qCritical() << "QML 加载失败";
         return -1;
     }
+    qInfo().noquote() << "navigatorhmi-fw: engine.load 完成 rootObjects="
+                      << engine.rootObjects().size();   // 诊断(B6-8)
     QObject* rootObj = engine.rootObjects().first();
 
     // 加载并注入工程（B6-8: 抽函数——无 --project / 文件缺失 → 空工程导航模式, 进程不退出）
     if (!loadAndInject(rootObj, runtimeBus, dataManager, projectPath))
         return 1;
+    qInfo().noquote() << "navigatorhmi-fw: loadAndInject 完成";   // 诊断(B6-8)
 
     // 画面切换（主壳 switchToName 调用）——⑪候选A: 当前画面同步在 QML switchTo 内完成（单一入口,
     // 覆盖 startProject/switchToName/switchTo 全路径; 此处不再重复同步, 避免覆盖 previous）
@@ -319,7 +342,10 @@ int main(int argc, char *argv[])
                       navihmi::StorageInfo::defaultProjectPath());
     });
 
-    return app.exec();
+    qInfo().noquote() << "navigatorhmi-fw: 进入事件循环";   // 诊断(B6-8)
+    const int execRc = app.exec();
+    qInfo().noquote() << "navigatorhmi-fw: app.exec() 返回 rc=" << execRc;   // 诊断(B6-8)
+    return execRc;
 #else
     qWarning().noquote() << "当前构建无 Qt Qml/Quick（转换器模式可用 --convert）；QML 界面需 buildroot 补装 Qt6 QML 模块";
     return 0;

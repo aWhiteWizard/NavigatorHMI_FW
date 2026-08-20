@@ -71,8 +71,8 @@ Window {
             navLoader.item.onSystemManage = function() { console.log("系统管理: 待实现") }
             navLoader.item.deviceWidth = mainShell.deviceWidth
             navLoader.item.deviceHeight = mainShell.deviceHeight
-            // B6-8: 用户操作导航 → 取消 3 秒自动开工程
-            navLoader.item.onUserAction = function() { mainShell.userInteracted = true }
+            // B6-8: 用户操作导航 → 取消 3 秒自动开工程（userAction 是信号, 用 connect 而非赋值）
+            navLoader.item.userAction.connect(function() { mainShell.userInteracted = true })
         }
     }
 
