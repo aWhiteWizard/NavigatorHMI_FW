@@ -9,6 +9,7 @@ Item {
     clip: true
 
     property string objectName: ""
+     property string textDecoration: "None"
     property string boundTag: ""
     property double x2: 100
     property double y2: 0
@@ -17,6 +18,41 @@ Item {
     // 通用字段（生成器并集输出）
     property string fillColor: ""
     property string title: ""
+     property string text: ""  // 并集字段容忍(生成器统一输出)
+     property string content: ""  // 并集字段容忍(生成器统一输出)
+     property string hAlign: "Left"  // 并集字段容忍(生成器统一输出)
+     property string fontFamily: ""  // 并集字段容忍(生成器统一输出)
+     property double fontSize: 0  // 并集字段容忍(生成器统一输出)
+     property string fontWeight: "Normal"  // 并集字段容忍(生成器统一输出)
+     property string fontStyle: "Normal"  // 并集字段容忍(生成器统一输出)
+     property string textColor: ""  // 并集字段容忍(生成器统一输出)
+     property string imagePath: ""  // 并集字段容忍(生成器统一输出)
+     property string stretchMode: ""  // 并集字段容忍(生成器统一输出)
+     property string listRef: ""  // 并集字段容忍(生成器统一输出)
+     property int defaultIndex: 0  // 并集字段容忍(生成器统一输出)
+     property double value: 0  // 并集字段容忍(生成器统一输出)
+     property double min: 0  // 并集字段容忍(生成器统一输出)
+     property double max: 0  // 并集字段容忍(生成器统一输出)
+     property string fillStyle: "Solid"  // 并集字段容忍(生成器统一输出)
+     property bool isOn: false  // 并集字段容忍(生成器统一输出)
+     property bool isChecked: false  // 并集字段容忍(生成器统一输出)
+     property bool isReadOnly: false  // 并集字段容忍(生成器统一输出)
+     property string dtText: ""  // 并集字段容忍(生成器统一输出)
+     property string dtFormat: ""  // 并集字段容忍(生成器统一输出)
+     property int windowType: 0  // 并集字段容忍(生成器统一输出)
+     property string winTitle: ""  // 并集字段容忍(生成器统一输出)
+     property bool showTitleBar: true  // 并集字段容忍(生成器统一输出)
+     property bool showHistory: false  // 并集字段容忍(生成器统一输出)
+     property string selectedTag: ""  // 并集字段容忍(生成器统一输出)
+     property double cardWidth: 0  // 并集字段容忍(生成器统一输出)
+     property double cardHeight: 0  // 并集字段容忍(生成器统一输出)
+     property bool showUserName: false  // 并集字段容忍(生成器统一输出)
+     property bool showRole: false  // 并集字段容忍(生成器统一输出)
+     property bool showMode: false  // 并集字段容忍(生成器统一输出)
+     property bool cardShowNumber: false  // 并集字段容忍(生成器统一输出)
+     property bool cardShowStatus: false  // 并集字段容忍(生成器统一输出)
+     property bool cardShowLocation: false  // 并集字段容忍(生成器统一输出)
+     property string boundDevice: ""  // 并集字段容忍(生成器统一输出)
 
     // 起点 = 控件原点 (0,0), 终点 = (x2, y2) 相对控件; 线段从 (0,0) 到 (x2-x, y2-y) 局部坐标
     // 画布内直接用: 线从 (0,0) 画到 (dx, dy)

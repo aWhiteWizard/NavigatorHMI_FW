@@ -14,10 +14,10 @@ Item {
     height: 600
 
     // 主壳注入回调
-    property var onStartProject: null
-    property var onCalibrate: null
-    property var onDeviceInfo: null
-    property var onSystemManage: null
+    property var startProjectHandler: null
+    property var calibrateHandler: null
+    property var deviceInfoHandler: null
+    property var systemManageHandler: null
     property int deviceWidth: 1024
     property int deviceHeight: 600
 
@@ -88,8 +88,8 @@ Item {
                 width: pages.width
                 height: pages.height
                 isDark: navRoot.isDark
-                onStartClicked: { if (navRoot.onStartProject) navRoot.onStartProject() }
-                onCalibrateClicked: { if (navRoot.onCalibrate) navRoot.onCalibrate() }
+                onStartClicked: { if (navRoot.startProjectHandler) navRoot.startProjectHandler() }
+                onCalibrateClicked: { if (navRoot.calibrateHandler) navRoot.calibrateHandler() }
             }
             // 1: 设备信息
             DeviceInfoPage {
@@ -301,7 +301,10 @@ Item {
             interval: 1000
             running: true
             repeat: true
-            onTriggered: infoBox.uptimeText = deviceInfo ? deviceInfo.uptimeText() : "—"
+            onTriggered: {
+                infoBox.uptimeText = deviceInfo ? deviceInfo.uptimeText() : "—"
+                if (vncMirror) vncMirror.markDirty(infoBox.x, infoBox.y, infoBox.width, infoBox.height)
+            }
         }
 
         Text {

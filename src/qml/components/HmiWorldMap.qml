@@ -254,7 +254,13 @@ Rectangle {
         }
     }
 
-    onWorkPointsChanged: rangeCanvas.requestPaint()
-    onWorkRangeChanged: rangeCanvas.requestPaint()
+    onWorkPointsChanged: {
+        rangeCanvas.requestPaint()
+        if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
+    }
+    onWorkRangeChanged: {
+        rangeCanvas.requestPaint()
+        if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
+    }
     Component.onCompleted: { mapCanvas.requestPaint(); rangeCanvas.requestPaint() }
 }

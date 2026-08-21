@@ -116,8 +116,8 @@ void mapWidget(const pb::Widget& p, Widget& w)
     w.value = p.value(); w.min = p.min(); w.max = p.max();
     w.fillStyle = s(p.fill_style());
     w.isOn = p.is_on();
-    w.onText = s(p.on_text());
-    w.offText = s(p.off_text());
+    w.labelOn = s(p.on_text());
+    w.labelOff = s(p.off_text());
     w.isChecked = p.is_checked();
     w.isReadOnly = p.is_read_only();
     w.x2 = p.x2(); w.y2 = p.y2();
@@ -187,6 +187,7 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
     out.deviceWidth = pb.device_width();
     out.deviceHeight = pb.device_height();
     out.showNavigationBar = pb.show_navigation_bar();
+    out.enableVnc = pb.enable_vnc();
     out.navigationPosition = pb.navigation_position() == pb::NAV_TOP ? NavPosition::Top : NavPosition::Bottom;
     out.startScreen = s(pb.start_screen());
 

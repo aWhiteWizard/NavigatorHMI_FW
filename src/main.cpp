@@ -10,6 +10,7 @@
 #if defined(HAVE_QT_QML)
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickWindow>
 #endif
 #include <QCommandLineParser>
 #include <QDebug>
@@ -30,6 +31,7 @@
 #include "runtime/datamanager.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
+#include "runtime/vncmirror.h"
 #endif
 
 // ═══════ 转换器测试模式：解析 .navihmi → 打印模型摘要 ═══════
@@ -134,7 +136,8 @@ static int runGenQml(const QString& path, const QString& outDir)
 #if defined(HAVE_QT_QML)
 static bool loadAndInject(QObject* rootObj,
                           navihmi::RuntimeBus& runtimeBus, navihmi::DataManager& dataManager,
-                          const QString& projectPath)
+                          const QString& projectPath,
+                          navihmi::VncMirror* vncMirror = nullptr)
 {
     navihmi::Project proj;
     if (!projectPath.isEmpty() && !navihmi::ProjectParser::parseFile(projectPath, proj)) {
@@ -201,6 +204,24 @@ static bool loadAndInject(QObject* rootObj,
     int devH = proj.deviceHeight > 0 ? proj.deviceHeight : 600;
     rootObj->setProperty("deviceWidth", devW);
     rootObj->setProperty("deviceHeight", devH);
+
+    // VNC 镜像：按工程 enable_vnc 启停（eglfs 物理屏照常；NAVIHMI_VNC=0 强制关兜底 / =2 强制开调试）
+    if (vncMirror) {
+        vncMirror->setDeviceSize(devW, devH);
+        int force = 1;
+        bool okForce = false;
+        int fv = qEnvironmentVariableIntValue("NAVIHMI_VNC", &okForce);
+        if (okForce) force = fv;
+        bool want = (force == 2) || (proj.enableVnc && force != 0);
+        if (want) {
+            int port = 5900;
+            int pv = qEnvironmentVariableIntValue("NAVIHMI_VNC_PORT");
+            if (pv > 0 && pv < 65536) port = pv;
+            vncMirror->start(quint16(port));
+        } else {
+            vncMirror->stop();
+        }
+    }
 
     // overlay 生成（Stop Runtime 按钮所在）——无 Template 画面时写空 overlay（Truncate 覆盖,
     // 防 reload 后旧工程 overlay 残留导致旧全局控件事件误触发）
@@ -321,8 +342,13 @@ int main(int argc, char *argv[])
                       << engine.rootObjects().size();   // 诊断(B6-8)
     QObject* rootObj = engine.rootObjects().first();
 
+    // VNC 镜像（eglfs 物理屏照常，额外 5900 远程通道；按工程 enable_vnc 启停）
+    navihmi::VncMirror vncMirror(qobject_cast<QQuickWindow*>(rootObj));
+    // QML 生产端脏矩形报告（西门子 dirty-rect 模式：画面变化点调 vncMirror.markDirty）
+    engine.rootContext()->setContextProperty("vncMirror", &vncMirror);
+
     // 加载并注入工程（B6-8: 抽函数——无 --project / 文件缺失 → 空工程导航模式, 进程不退出）
-    if (!loadAndInject(rootObj, runtimeBus, dataManager, projectPath))
+    if (!loadAndInject(rootObj, runtimeBus, dataManager, projectPath, &vncMirror))
         return 1;
     qInfo().noquote() << "navigatorhmi-fw: loadAndInject 完成";   // 诊断(B6-8)
 
@@ -337,9 +363,9 @@ int main(int argc, char *argv[])
     };
     // 存储管理替换默认工程后 → 重新加载注入（B6-8: 替换即时生效, 开始工程打开新工程）
     QObject::connect(&storageInfo, &navihmi::StorageInfo::projectReplaced, rootObj,
-                     [rootObj, &runtimeBus, &dataManager]() {
+                     [rootObj, &runtimeBus, &dataManager, &vncMirror]() {
         loadAndInject(rootObj, runtimeBus, dataManager,
-                      navihmi::StorageInfo::defaultProjectPath());
+                      navihmi::StorageInfo::defaultProjectPath(), &vncMirror);
     });
 
     qInfo().noquote() << "navigatorhmi-fw: 进入事件循环";   // 诊断(B6-8)

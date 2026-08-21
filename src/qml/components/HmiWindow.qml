@@ -12,6 +12,7 @@ Rectangle {
     radius: 3
 
     property string objectName: ""
+     property string textDecoration: "None"
     property string boundTag: ""
     property int windowType: 0
     property string winTitle: ""
@@ -32,6 +33,29 @@ Rectangle {
     property string strokeColor: ""
     property double strokeThickness: 0
     property string title: ""
+     property string text: ""  // 并集字段容忍(生成器统一输出)
+     property string content: ""  // 并集字段容忍(生成器统一输出)
+     property string hAlign: "Left"  // 并集字段容忍(生成器统一输出)
+     property string fontFamily: ""  // 并集字段容忍(生成器统一输出)
+     property double fontSize: 0  // 并集字段容忍(生成器统一输出)
+     property string fontWeight: "Normal"  // 并集字段容忍(生成器统一输出)
+     property string fontStyle: "Normal"  // 并集字段容忍(生成器统一输出)
+     property string textColor: ""  // 并集字段容忍(生成器统一输出)
+     property string imagePath: ""  // 并集字段容忍(生成器统一输出)
+     property string stretchMode: ""  // 并集字段容忍(生成器统一输出)
+     property string listRef: ""  // 并集字段容忍(生成器统一输出)
+     property int defaultIndex: 0  // 并集字段容忍(生成器统一输出)
+     property double value: 0  // 并集字段容忍(生成器统一输出)
+     property double min: 0  // 并集字段容忍(生成器统一输出)
+     property double max: 0  // 并集字段容忍(生成器统一输出)
+     property string fillStyle: "Solid"  // 并集字段容忍(生成器统一输出)
+     property bool isOn: false  // 并集字段容忍(生成器统一输出)
+     property bool isChecked: false  // 并集字段容忍(生成器统一输出)
+     property bool isReadOnly: false  // 并集字段容忍(生成器统一输出)
+     property double x2: 0  // 并集字段容忍(生成器统一输出)
+     property double y2: 0  // 并集字段容忍(生成器统一输出)
+     property string dtText: ""  // 并集字段容忍(生成器统一输出)
+     property string dtFormat: ""  // 并集字段容忍(生成器统一输出)
 
     signal hmiUserChanged()
     signal hmiAck()

@@ -101,8 +101,8 @@ void generateWidget(QTextStream& out, const Widget& w)
     appendProp(out, "max", w.max);
     appendProp(out, "fillStyle", w.fillStyle);
     appendProp(out, "isOn", w.isOn);
-    appendProp(out, "onText", w.onText);
-    appendProp(out, "offText", w.offText);
+    appendProp(out, "labelOn", w.labelOn);
+    appendProp(out, "labelOff", w.labelOff);
     appendProp(out, "isChecked", w.isChecked);
     appendProp(out, "isReadOnly", w.isReadOnly);
     appendProp(out, "x2", w.x2);

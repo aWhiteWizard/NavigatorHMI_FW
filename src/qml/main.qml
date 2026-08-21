@@ -31,6 +31,23 @@ Window {
     property var screenFiles: []        // [{name, file}]
     property int currentIndex: -1
 
+    // ── VNC 镜像持续渲染驱动（C++ 置 vncMirrorActive；1px 颜色微变动画强制渲染循环连续跑帧）──
+    property bool vncMirrorActive: false
+    Rectangle {
+        id: vncPulseItem
+        x: 0; y: 0; width: 1; height: 1
+        z: 100
+        color: "#000000"
+    }
+    ColorAnimation {
+        target: vncPulseItem
+        property: "color"
+        from: "#000000"; to: "#010101"
+        duration: 33
+        loops: Animation.Infinite
+        running: mainShell.vncMirrorActive
+    }
+
     // ── 启动逻辑（B6-8: 有工程先进导航, 3 秒后自动开工程; 用户操作则取消自动进入）──
     property bool userInteracted: false
     property bool showNoProjectDialog: false
@@ -65,10 +82,10 @@ Window {
         visible: source !== "" && !mainShell.runtimeActive
         // 接线导航按钮回调 + 设备尺寸传递
         onLoaded: {
-            navLoader.item.onStartProject = function() { mainShell.startProject() }
-            navLoader.item.onCalibrate = function() { mainShell.userInteracted = true; if (deviceInfo) deviceInfo.runCalibrate() }
-            navLoader.item.onDeviceInfo = function() { console.log("设备信息: 待实现") }
-            navLoader.item.onSystemManage = function() { console.log("系统管理: 待实现") }
+            navLoader.item.startProjectHandler = function() { mainShell.startProject() }
+            navLoader.item.calibrateHandler = function() { mainShell.userInteracted = true; if (deviceInfo) deviceInfo.runCalibrate() }
+            navLoader.item.deviceInfoHandler = function() { console.log("设备信息: 待实现") }
+            navLoader.item.systemManageHandler = function() { console.log("系统管理: 待实现") }
             navLoader.item.deviceWidth = mainShell.deviceWidth
             navLoader.item.deviceHeight = mainShell.deviceHeight
             // B6-8: 用户操作导航 → 取消 3 秒自动开工程（userAction 是信号, 用 connect 而非赋值）
@@ -83,6 +100,8 @@ Window {
         // ⑪候选A: 当前画面同步唯一入口（startProject/switchToName/switchTo 全路径经此）
         if (runtimeBus) runtimeBus.setCurrentScreenByName(screenFiles[index].name)
         screenLoader.source = "file://" + screenFiles[index].file
+        // VNC 脏矩形：切页 → 全屏报告（西门子 dirty-rect 模式；QML 生产端报告变化区域）
+        if (vncMirror) vncMirror.markDirty(0, 0, deviceWidth, deviceHeight)
     }
 
     function switchToName(name) {
@@ -101,6 +120,8 @@ Window {
         runtimeActive = false
         screenLoader.source = ""
         if (runtimeBus) runtimeBus.resetScreens()   // ⑪候选A: 清画面匹配, 防旧画面索引幽灵匹配
+        // VNC 脏矩形：回导航 → 全屏报告
+        if (vncMirror) vncMirror.markDirty(0, 0, deviceWidth, deviceHeight)
     }
 
     // ── 开始工程 → 进入 startScreen ──
@@ -112,7 +133,8 @@ Window {
             return
         }
         runtimeActive = true
-        navLoader.visible = false
+        // 注意: 不能手动设 navLoader.visible —— 其 visible 绑定
+        // `!mainShell.runtimeActive`，此处赋值会破坏绑定，Stop Runtime 后导航页无法再显示
         // 默认 startScreen 或第一个自定义画面
         var target = startScreen
         if (target === "" || !switchToName(target)) {

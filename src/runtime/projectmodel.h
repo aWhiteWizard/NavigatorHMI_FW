@@ -82,7 +82,7 @@ struct Widget {
     double value = 0, min = 0, max = 0;
     QString fillStyle;
     bool isOn = false, isChecked = false, isReadOnly = false;
-    QString onText, offText;
+    QString labelOn, labelOff;
     double x2 = 0, y2 = 0;
     QString title;
     // DateTime (15)
@@ -226,6 +226,7 @@ struct Project {
     QList<UserAccount> users;
     QList<UserGroup> groups;
     SecuritySettings security;
+    bool enableVnc = false;   // VNC 镜像开关（proto 21；默认关=零开销，无人车场景不启）
 
     /// 按名称查画面（找不到返回 nullptr）
     const Screen* screenByName(const QString& name) const;
