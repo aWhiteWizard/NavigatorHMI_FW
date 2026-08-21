@@ -81,9 +81,27 @@ Rectangle {
         anchors.fill: parent
         onClicked: {
             root.isOn = !root.isOn
+            // R1: 交互写变量（状态持久化——切画面重建后从变量恢复）
+            if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
+                dataManager.setValue(root.boundTag, root.isOn)
             root.hmiValueChanged()
             if (root.isOn) root.hmiOn(); else root.hmiOff()
             if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
+        }
+    }
+
+    // R1: 状态持久化——加载时从变量初始化 + 外部变量变化跟随（setValue 防回环由 DataManager 同值跳过）
+    Component.onCompleted: {
+        if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
+            var v = dataManager.value(root.boundTag)
+            if (v !== undefined && v !== null) root.isOn = String(v) === "true" || String(v) === "1"
+        }
+    }
+    Connections {
+        target: dataManager
+        function onValueChanged(tagName, value) {
+            if (root.boundTag !== "" && tagName === root.boundTag)
+                root.isOn = String(value) === "true" || String(value) === "1"
         }
     }
 }

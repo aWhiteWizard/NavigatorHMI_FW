@@ -114,6 +114,7 @@ if(SOURCES)
         ${CMAKE_CURRENT_BINARY_DIR}/pbgen
         ${CMAKE_SOURCE_DIR}/src
         ${Protobuf_INCLUDE_DIRS}
+        $<$<BOOL:${HAVE_QT_QML}>:${Qt${QT_VERSION_MAJOR}Gui_PRIVATE_INCLUDE_DIRS}>   # R3: qzipreader_p.h private 头
     )
     if(HAVE_QT_QML)
         target_link_libraries(${PROJECT_NAME}

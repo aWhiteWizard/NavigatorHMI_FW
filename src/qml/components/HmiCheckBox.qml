@@ -97,8 +97,26 @@ Rectangle {
         anchors.fill: parent
         onClicked: {
             root.isChecked = !root.isChecked
+            // R1: 交互写变量（状态持久化）
+            if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
+                dataManager.setValue(root.boundTag, root.isChecked)
             root.hmiClicked()
             root.hmiValueChanged()
+        }
+    }
+
+    // R1: 状态持久化——初始化 + 外部跟随
+    Component.onCompleted: {
+        if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
+            var v = dataManager.value(root.boundTag)
+            if (v !== undefined && v !== null) root.isChecked = String(v) === "true" || String(v) === "1"
+        }
+    }
+    Connections {
+        target: dataManager
+        function onValueChanged(tagName, value) {
+            if (root.boundTag !== "" && tagName === root.boundTag)
+                root.isChecked = String(value) === "true" || String(value) === "1"
         }
     }
 }

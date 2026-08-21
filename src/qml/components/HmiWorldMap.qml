@@ -19,6 +19,8 @@ Rectangle {
     property bool viewLocked: false
     property var workPoints: []        // [{name, lng, lat, boundTag}]
     property var workRange: []         // [{lng, lat, boundTag}]
+    // R3: 工程自带瓦片根目录（ZIP 工程包解压出的 tiles/, 内含 z/x/y.png）；空=用模拟底图
+    property string tileBasePath: ""
     // runtimeBus 由 C++ setContextProperty 注入（不能声明同名 property 遮蔽）
 
     signal hmiClicked()
@@ -82,13 +84,76 @@ Rectangle {
         return p.lat
     }
 
-    // ── 地图底图（网格 + 边界, 模拟瓦片）──
+    // ── R3: 工程自带瓦片层（ZIP 工程包解压出的 tiles/ 目录; 空则用下方模拟底图）──
+    // 瓦片为 Web Mercator z/x/y.png, 按当前 bounds+zoom 计算可见瓦片范围, 逐片 Image 铺贴
+    Item {
+        id: tileLayer
+        anchors.fill: parent
+        visible: root.tileBasePath !== ""
+
+        // Web Mercator 瓦片坐标（标准公式, 与下载脚本一致）
+        function tileX(lng, z) { return Math.floor((lng + 180.0) / 360.0 * Math.pow(2, z)) }
+        function tileY(lat, z) {
+            var r = lat * Math.PI / 180.0
+            return Math.floor((1.0 - Math.log(Math.tan(r) + 1.0 / Math.cos(r)) / Math.PI) / 2.0 * Math.pow(2, z))
+        }
+        // 该瓦片在屏幕上的位置（世界坐标 → 视口偏移）
+        function tileScreenX(tx, z) {
+            var world = tx / Math.pow(2, z) * 2 * Math.PI * root.earthRadius
+            return (world - root.viewMinX) / root.resolution
+        }
+        function tileScreenY(ty, z) {
+            var world = ty / Math.pow(2, z) * 2 * Math.PI * root.earthRadius
+            return (root.viewMinY - world) / root.resolution + root.height
+        }
+        function tilePixelSize(z) {
+            // 单瓦片 256px; 世界宽 2^z*256 → 每瓦片世界米
+            var worldPerTile = 2 * Math.PI * root.earthRadius / Math.pow(2, z)
+            return worldPerTile / root.resolution
+        }
+
+        // 可见瓦片集合（按 zoomLevel 取整层; 动态重算）
+        property var tiles: []
+        function rebuildTiles() {
+            if (root.tileBasePath === "") { tiles = []; return }
+            var z = root.zoomLevel
+            if (z < 1) z = 1
+            var list = []
+            var tx0 = tileX(root.lngMin, z), tx1 = tileX(root.lngMax, z)
+            var ty0 = tileY(root.latMax, z), ty1 = tileY(root.latMin, z)   // y 北小南大
+            for (var tx = tx0; tx <= tx1; tx++) {
+                for (var ty = ty0; ty <= ty1; ty++) {
+                    list.push({ z: z, x: tx, y: ty })
+                }
+            }
+            tiles = list
+        }
+        // tileBasePath 在生成 QML 时固定（ZIP 解压路径不变），onCompleted 一次重建即可；
+        // reload 替换工程时 main.qml 重建整屏 → 组件重新实例化 → onCompleted 再跑
+        Component.onCompleted: rebuildTiles()
+
+        Repeater {
+            model: tileLayer.tiles
+            delegate: Image {
+                x: tileLayer.tileScreenX(modelData.x, modelData.z)
+                y: tileLayer.tileScreenY(modelData.y, modelData.z)
+                width: tileLayer.tilePixelSize(modelData.z)
+                height: tileLayer.tilePixelSize(modelData.z)
+                source: "file://" + root.tileBasePath + "/" + modelData.z + "/" + modelData.x + "/" + modelData.y + ".png"
+                fillMode: Image.PreserveAspectFit
+            }
+        }
+    }
+
+    // ── 地图底图（网格 + 边界, 模拟瓦片; 有工程瓦片时底色/网格被瓦片覆盖）──
     Canvas {
         id: mapCanvas
         anchors.fill: parent
         onPaint: {
             var ctx = getContext("2d")
             ctx.reset()
+            // 有工程瓦片时：不画蓝底/网格（真实地图已覆盖），仅保留地名/河流/环线标注
+            if (root.tileBasePath === "") {
             // 背景
             ctx.fillStyle = "#DEEBF7"
             ctx.fillRect(0, 0, width, height)
@@ -170,6 +235,7 @@ Rectangle {
                 ctx.stroke()
             }
             ctx.setLineDash([])
+            }   // if (root.tileBasePath === "") — 有瓦片时不画蓝底/网格（标注仍在）
         }
     }
 

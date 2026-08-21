@@ -22,6 +22,9 @@
 #include <QVariantMap>
 #include <QMetaObject>
 #include <cstdio>
+#if defined(HAVE_QT_QML)
+#include <QtGui/private/qzipreader_p.h>   // R3: 工程 ZIP 包解压（Qt private API, sysroot 已含）
+#endif
 
 #include "converter/projectparser.h"
 #include "converter/qmlgenerator.h"
@@ -32,6 +35,90 @@
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"
+#endif
+
+// ═══════ 工程包解析（R3: 工程=单个 ZIP, 内含工程信息 + 瓦片地图）═══════
+// 工程文件 = 一个 ZIP 压缩包（2026-08-21 用户定）：
+//   <工程>.navihmi (ZIP)
+//     ├── app.navihmi   ← 工程二进制（实际加载）
+//     └── tiles/        ← 地图瓦片目录 z/x/y.png（解压后供 HmiWorldMap 加载）
+// 下载到 HMI 就是这个 ZIP；设备端收到后自行解压到对应目录。
+// 兼容：纯二进制 .navihmi（非 ZIP）原样返回, 无瓦片。
+#if defined(HAVE_QT_QML)
+// 整包解压：把 ZIP 全部内容解压到 outDir（返回解压文件数；失败 -1）
+static int extractZipAll(const QString& zipPath, const QString& outDir)
+{
+    QDir dir(outDir);
+    dir.mkpath(".");
+    QZipReader reader(zipPath);
+    if (!reader.exists()) {
+        qWarning().noquote() << "工程 ZIP 打不开:" << zipPath;
+        return -1;
+    }
+    const auto entries = reader.fileInfoList();
+    int extracted = 0;
+    for (const auto& entry : entries) {
+        if (entry.isDir) continue;
+        const QString rel = entry.filePath;
+        if (rel.contains("..")) continue;   // 防路径穿越
+        const QString target = outDir + "/" + rel;
+        QFileInfo fi(target);
+        QDir().mkpath(fi.absolutePath());
+        QFile f(target);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            f.write(reader.fileData(rel));
+            f.close();
+            ++extracted;
+        }
+    }
+    reader.close();
+    qInfo().noquote() << "工程 ZIP 解压完成:" << extracted << "files ->" << outDir;
+    return extracted;
+}
+
+// 解析 --project 参数：ZIP 工程包（PK 魔数）→ 解压到 /tmp/navihmi_pkg/ → 返回内部 app.navihmi
+// tileBasePath 出参为瓦片根目录（无则空）；普通文件 → 原样返回（向后兼容纯二进制）
+static QString resolveProjectPackage(const QString& projectPath, QString& tileBasePath)
+{
+    QFileInfo info(projectPath);
+    if (!info.exists() || !info.isFile()) {
+        tileBasePath = QString();
+        return projectPath;
+    }
+    // 读魔数判断 ZIP
+    QFile f(projectPath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        tileBasePath = QString();
+        return projectPath;
+    }
+    QByteArray magic = f.read(4);
+    f.close();
+    if (magic.size() < 4 || magic[0] != 'P' || magic[1] != 'K') {
+        tileBasePath = QString();
+        return projectPath;          // 普通单文件工程（向后兼容纯二进制）
+    }
+    // ZIP 工程包：整包解压到固定临时目录
+    const QString pkgDir = QDir::tempPath() + "/navihmi_pkg";
+    QDir old(pkgDir);
+    if (old.exists()) {
+        // 清空旧包（防 reload 残留旧瓦片/工程）
+        for (const auto& e : old.entryList(QDir::AllEntries | QDir::NoDotAndDotDot))
+            QFile::remove(old.filePath(e));
+        old.rmdir(pkgDir);
+    }
+    if (extractZipAll(projectPath, pkgDir) < 0) {
+        tileBasePath = QString();
+        return projectPath;
+    }
+    // 内部工程二进制
+    const QString inner = pkgDir + "/app.navihmi";
+    // 瓦片目录（存在才注入）
+    const QString tilesDir = pkgDir + "/tiles";
+    tileBasePath = QFileInfo::exists(tilesDir) ? tilesDir : QString();
+    qInfo().noquote() << "工程包解析: inner=" << inner
+                      << " tiles=" << (tileBasePath.isEmpty() ? "(无)" : tileBasePath);
+    return inner;
+}
 #endif
 
 // ═══════ 转换器测试模式：解析 .navihmi → 打印模型摘要 ═══════
@@ -137,7 +224,8 @@ static int runGenQml(const QString& path, const QString& outDir)
 static bool loadAndInject(QObject* rootObj,
                           navihmi::RuntimeBus& runtimeBus, navihmi::DataManager& dataManager,
                           const QString& projectPath,
-                          navihmi::VncMirror* vncMirror = nullptr)
+                          navihmi::VncMirror* vncMirror = nullptr,
+                          const QString& tileBasePath = QString())
 {
     navihmi::Project proj;
     if (!projectPath.isEmpty() && !navihmi::ProjectParser::parseFile(projectPath, proj)) {
@@ -168,7 +256,7 @@ static bool loadAndInject(QObject* rootObj,
         QString content;
         if (sc.type == navihmi::ScreenType::WorldMap) {
             fname = QStringLiteral("screen_%1.qml").arg(genIdx);
-            content = navihmi::QmlGenerator::generateWorldMap(proj);
+            content = navihmi::QmlGenerator::generateWorldMap(proj, tileBasePath);   // R3: 工程自带瓦片
         } else if (sc.type == navihmi::ScreenType::Template) {
             fname = QStringLiteral("overlay.qml");
             content = navihmi::QmlGenerator::generateOverlay(proj);
@@ -348,7 +436,10 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("vncMirror", &vncMirror);
 
     // 加载并注入工程（B6-8: 抽函数——无 --project / 文件缺失 → 空工程导航模式, 进程不退出）
-    if (!loadAndInject(rootObj, runtimeBus, dataManager, projectPath, &vncMirror))
+    // R3: --project 是 ZIP 工程包时整包解压 → 内部 app.navihmi + tiles/ 瓦片
+    QString tileBasePath;
+    const QString resolvedProject = resolveProjectPackage(projectPath, tileBasePath);
+    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath))
         return 1;
     qInfo().noquote() << "navigatorhmi-fw: loadAndInject 完成";   // 诊断(B6-8)
 
@@ -364,8 +455,10 @@ int main(int argc, char *argv[])
     // 存储管理替换默认工程后 → 重新加载注入（B6-8: 替换即时生效, 开始工程打开新工程）
     QObject::connect(&storageInfo, &navihmi::StorageInfo::projectReplaced, rootObj,
                      [rootObj, &runtimeBus, &dataManager, &vncMirror]() {
-        loadAndInject(rootObj, runtimeBus, dataManager,
-                      navihmi::StorageInfo::defaultProjectPath(), &vncMirror);
+        QString tileBasePath;
+        const QString resolved = resolveProjectPackage(
+            navihmi::StorageInfo::defaultProjectPath(), tileBasePath);
+        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath);
     });
 
     qInfo().noquote() << "navigatorhmi-fw: 进入事件循环";   // 诊断(B6-8)

@@ -185,13 +185,15 @@ QString QmlGenerator::generateScreen(const Project& proj, const Screen& screen)
     ts << "    id: screenRoot\n";
     ts << "    width: " << screen.width << "\n";
     ts << "    height: " << screen.height << "\n";
+    // R2: 画面空白背景浅灰（否则透出主壳深蓝 #0F5278；z:-1 在控件之下；世界地图特殊画面不含此背景）
+    ts << "    Rectangle { anchors.fill: parent; color: \"#E8E8E8\"; z: -1 }\n";
     for (const auto& w : screen.widgets)
         generateWidget(ts, w);
     ts << "}\n";
     return out;
 }
 
-QString QmlGenerator::generateWorldMap(const Project& proj)
+QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileBasePath)
 {
     QString out;
     QTextStream ts(&out);
@@ -214,6 +216,9 @@ QString QmlGenerator::generateWorldMap(const Project& proj)
     ts << "    lngMin: " << lngMin << "\n";
     ts << "    lngMax: " << lngMax << "\n";
     ts << "    zoomLevel: " << proj.worldMap.zoomLevel << "\n";
+    // R3: 工程自带瓦片根目录（ZIP 工程包解压出的 tiles/）；空则组件用模拟底图
+    if (!tileBasePath.isEmpty())
+        ts << "    tileBasePath: \"" << qmlEsc(tileBasePath) << "\"\n";
     ts << "    showGlobalOverlay: " << (proj.worldMap.showGlobalOverlay ? "true" : "false") << "\n";
     ts << "    viewLocked: " << (proj.worldMap.viewLocked ? "true" : "false") << "\n";
     // 作业点

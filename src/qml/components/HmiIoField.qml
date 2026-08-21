@@ -76,7 +76,25 @@ Rectangle {
         verticalAlignment: Text.AlignVCenter
         onAccepted: {
             root.content = text
+            // R1: 输入提交写变量（状态持久化）
+            if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
+                dataManager.setValue(root.boundTag, root.content)
             root.hmiInput()
+        }
+    }
+
+    // R1: 状态持久化——初始化 + 外部跟随（仅变量变化时更新, 编辑中不打断）
+    Component.onCompleted: {
+        if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
+            var v = dataManager.value(root.boundTag)
+            if (v !== undefined && v !== null) root.content = String(v)
+        }
+    }
+    Connections {
+        target: dataManager
+        function onValueChanged(tagName, value) {
+            if (root.boundTag !== "" && tagName === root.boundTag && !input.activeFocus)
+                root.content = String(value)
         }
     }
 }

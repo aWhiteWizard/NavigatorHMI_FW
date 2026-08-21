@@ -81,8 +81,31 @@ Rectangle {
                 anchors.fill: parent
                 onClicked: {
                     list.currentIndex = index
+                    // R1: 交互写变量（状态持久化）
+                    if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
+                        dataManager.setValue(root.boundTag, index)
                     root.hmiValueChanged()
                 }
+            }
+        }
+    }
+
+    // R1: 状态持久化——初始化 + 外部跟随
+    Component.onCompleted: {
+        if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
+            var v = dataManager.value(root.boundTag)
+            if (v !== undefined && v !== null) {
+                var n = parseInt(String(v))
+                if (!isNaN(n)) list.currentIndex = n
+            }
+        }
+    }
+    Connections {
+        target: dataManager
+        function onValueChanged(tagName, value) {
+            if (root.boundTag !== "" && tagName === root.boundTag) {
+                var n = parseInt(String(value))
+                if (!isNaN(n)) list.currentIndex = n
             }
         }
     }

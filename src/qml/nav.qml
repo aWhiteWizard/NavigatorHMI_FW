@@ -260,19 +260,19 @@ Item {
             visible: bigBtn.showLogo
         }
 
-        // B6-12: 长按防误触（Timer 到时长按触发; 短按仅当 longPressMs=0）
-        Timer {
-            id: lpTimer
-            interval: bigBtn.longPressMs
-            repeat: false
-            onTriggered: bigBtn.clicked()
-        }
+        // B6-12 方案A: 长按防误触——onPressed 记按下时间戳, onReleased 校验时长(≥longPressMs 才触发)
+        // 原 Timer 方案: GT911 静止长按时 press/cancel 抖动会触发 onReleased → stop Timer → 3 秒凑不满 → 永不触发
+        // 时间差方案: 抖动不中断计时, 释放时一次性判定; 短按(<longPressMs)不触发 = 防误触
+        property double pressStartMs: 0
 
         MouseArea {
             id: mouse
             anchors.fill: parent
-            onPressed: if (bigBtn.longPressMs > 0) lpTimer.start()
-            onReleased: lpTimer.stop()
+            onPressed: bigBtn.pressStartMs = Date.now()
+            onReleased: {
+                if (bigBtn.longPressMs > 0 && Date.now() - bigBtn.pressStartMs >= bigBtn.longPressMs)
+                    bigBtn.clicked()
+            }
             onClicked: if (bigBtn.longPressMs <= 0) bigBtn.clicked()
         }
     }
