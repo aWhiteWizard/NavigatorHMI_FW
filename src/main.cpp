@@ -388,6 +388,9 @@ int main(int argc, char *argv[])
     // 平台后端：Linux 嵌入式按 FW_PLATFORM_BACKEND 设 QPA（linuxfb/eglfs，CMake -D 配置）
 #if !defined(Q_OS_WIN)
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral(FW_PLATFORM_BACKEND));
+    // R4: 启用 Qt VirtualKeyboard 屏上键盘输入法（数字→数字键盘 / 文字→全键盘含中英拼音）
+    // platforminputcontexts/libqtvirtualkeyboardplugin.so 由 fs-overlay 部署
+    qputenv("QT_IM_MODULE", QByteArrayLiteral("qtvirtualkeyboard"));
 #endif
 
     QCommandLineParser parser;
