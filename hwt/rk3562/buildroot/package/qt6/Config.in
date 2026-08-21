@@ -54,3 +54,12 @@ source "package/qt6/qt6declarative/Config.in"
 source "package/qt6/qt6shadertools/Config.in"
 
 endif
+
+# D cycle: Qt6 VirtualKeyboard (inline config; 放 if 块外, 用 depends 控制显示)
+config BR2_PACKAGE_QT6VIRTUALKEYBOARD
+    bool "qt6virtualkeyboard"
+    depends on BR2_PACKAGE_QT6
+    depends on BR2_PACKAGE_QT6BASE
+    depends on BR2_PACKAGE_QT6DECLARATIVE
+    select BR2_PACKAGE_QT6BASE_GUI
+    select BR2_PACKAGE_QT6BASE_NETWORK

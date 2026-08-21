@@ -260,19 +260,22 @@ Item {
             visible: bigBtn.showLogo
         }
 
-        // B6-12 方案A: 长按防误触——onPressed 记按下时间戳, onReleased 校验时长(≥longPressMs 才触发)
+        // B6-12 方案A: 长按防误触——onPressed 记按下时间戳, onReleased/onCanceled 校验时长(≥longPressMs 才触发)
         // 原 Timer 方案: GT911 静止长按时 press/cancel 抖动会触发 onReleased → stop Timer → 3 秒凑不满 → 永不触发
-        // 时间差方案: 抖动不中断计时, 释放时一次性判定; 短按(<longPressMs)不触发 = 防误触
+        // 时间差方案: 抖动不中断计时, 释放/取消时一次性判定; 短按(<longPressMs)不触发 = 防误触
+        // D-2: 补 onCanceled——GT911 长按结束可能触发 onCanceled 而非 onReleased（两路径都做时间差判定）
         property double pressStartMs: 0
 
         MouseArea {
             id: mouse
             anchors.fill: parent
             onPressed: bigBtn.pressStartMs = Date.now()
-            onReleased: {
+            function maybeTrigger() {
                 if (bigBtn.longPressMs > 0 && Date.now() - bigBtn.pressStartMs >= bigBtn.longPressMs)
                     bigBtn.clicked()
             }
+            onReleased: mouse.maybeTrigger()
+            onCanceled: mouse.maybeTrigger()
             onClicked: if (bigBtn.longPressMs <= 0) bigBtn.clicked()
         }
     }

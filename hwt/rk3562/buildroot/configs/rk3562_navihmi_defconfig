@@ -55,6 +55,8 @@ BR2_PACKAGE_QT6CORE5COMPAT=y
 # B-5: 去 _QUICK 子选项(defconfig 删了死选项, Config.in 已 select NETWORK)
 BR2_PACKAGE_QT6DECLARATIVE=y
 BR2_PACKAGE_QT6SHADERTOOLS=y
+# VirtualKeyboard (D 循环: 屏上键盘+拼音输入法; 依赖 declarative+svg)
+BR2_PACKAGE_QT6VIRTUALKEYBOARD=y
 
 # ---- protobuf (B-4 转换器依赖: .navihmi 解析) ----
 # 需要 host protoc (编译时生成 C++ 类) + target libprotobuf (运行时解析)

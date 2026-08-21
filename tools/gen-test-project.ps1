@@ -60,6 +60,10 @@ Write-Host "=== 报警 ===" -ForegroundColor Cyan
 Exec @("-p", $PROJ, "create-alarm", "--name", "高温报警", "--tag", "温度", "--type", "High", "--threshold", "80", "--severity", "Important", "--message", "温度超限")
 Exec @("-p", $PROJ, "create-alarm", "--name", "低压报警", "--tag", "压力", "--type", "Low", "--threshold", "0.5", "--severity", "Warning")
 
+# ---------- 3.5 列表（D-3: 模式列表供 textlist 引用）----------
+Write-Host "=== 列表 ===" -ForegroundColor Cyan
+Exec @("-p", $PROJ, "create-list", "--name", "模式列表", "--type", "text", "--items", "模式1|模式2|模式3|模式4")
+
 # ---------- 4. 画面A: 15 控件 + 3 窗口模板 ----------
 Write-Host "=== 画面A 控件 ===" -ForegroundColor Cyan
 # button_1
@@ -96,8 +100,12 @@ Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "-
 # checkbox_1
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "checkbox", "--x", "360", "--y", "100", "--width", "120", "--height", "30")
 Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "checkbox_12", "--key", "text", "--value", "启用")
-# textlist_1
+# textlist_1 (D-3: 配 list 引用, 有下拉窗口)
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "textlist", "--x", "360", "--y", "150", "--width", "120", "--height", "60")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "textlist_1", "--key", "listRef", "--value", "模式列表")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "textlist_1", "--key", "defaultIndex", "--value", "0")
+# iofield_2 (D-3: 绑开关1, 外部动作 tag_toggle/set_bit 改 Bool 可观测)
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "360", "--y", "220", "--width", "120", "--height", "40", "--bound-tag", "开关1")
 # frame_1
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "frame", "--x", "360", "--y", "230", "--width", "160", "--height", "100")
 Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "frame_14", "--key", "title", "--value", "框架")

@@ -1,0 +1,18 @@
+config BR2_PACKAGE_QT6VIRTUALKEYBOARD
+	bool "qt6virtualkeyboard"
+	depends on BR2_PACKAGE_QT6
+	depends on BR2_PACKAGE_QT6BASE
+	depends on BR2_PACKAGE_QT6DECLARATIVE
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_NETWORK
+	help
+	  Qt6 VirtualKeyboard module (on-screen keyboard with IME).
+	  D 循环移植: 迅为 SDK buildroot(2024.02) 无此包, 按 qt6declarative
+	  移植先例手写。版本对齐 qt6base 6.4.3。
+	  依赖: qt6base + qt6declarative + qt6svg (Quick/Svg 必需)。
+	  内置输入法: pinyin(拼音, 含 3rdparty 词库) / tcime / hangul / thai /
+	  openwnn / hunspell(需 libhunspell) / cerence(商业) / myscript(商业)。
+	  中文拼音: pinyin 插件自带 dict_pinyin.dat + rawdict_utf16_65105_freq.txt,
+	  无需额外词库。
+
+	  https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html

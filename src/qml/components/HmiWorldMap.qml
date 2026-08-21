@@ -98,12 +98,14 @@ Rectangle {
             return Math.floor((1.0 - Math.log(Math.tan(r) + 1.0 / Math.cos(r)) / Math.PI) / 2.0 * Math.pow(2, z))
         }
         // 该瓦片在屏幕上的位置（世界坐标 → 视口偏移）
+        // 标准 Web Mercator 瓦片世界坐标（x 范围 [0,2πR] 从 180°W 起）→ 转 root 的 mercX/mercY 系（±πR，0 经线为中心）
+        // 平移：x 减 0.5 个世界宽；y 用 0.5- 翻转（瓦片 ty 北大南小，世界 y 北大南小）
         function tileScreenX(tx, z) {
-            var world = tx / Math.pow(2, z) * 2 * Math.PI * root.earthRadius
+            var world = (tx / Math.pow(2, z) - 0.5) * 2 * Math.PI * root.earthRadius
             return (world - root.viewMinX) / root.resolution
         }
         function tileScreenY(ty, z) {
-            var world = ty / Math.pow(2, z) * 2 * Math.PI * root.earthRadius
+            var world = (0.5 - ty / Math.pow(2, z)) * 2 * Math.PI * root.earthRadius
             return (root.viewMinY - world) / root.resolution + root.height
         }
         function tilePixelSize(z) {
