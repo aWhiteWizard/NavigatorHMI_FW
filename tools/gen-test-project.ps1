@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # B-4 测试工程生成脚本 v3 (UTF-8 BOM; 2026-08-20 修订)
 # 覆盖: 15 基础控件 + 3 窗口模板 + 19 事件 + 17 动作 + 世界地图(成都)
 #       + 全局画面(Stop 唯一名 btn_stop) + 画面间双向跳转
@@ -157,7 +157,6 @@ Exec @("-p", $PROJ, "add-widget", "--screen", "画面B", "--type", "text", "--x"
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面B", "--type", "button", "--x", "900", "--y", "90", "--width", "100", "--height", "40")
 Exec @("-p", $PROJ, "set-property", "--screen", "画面B", "--widget", "button_2", "--key", "text", "--value", "返回地图")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面B", "--widget", "button_2", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=世界地图")
-Exec @("-p", $PROJ, "add-event", "--screen", "画面B", "--widget", "button_2", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面A")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面B", "--widget", "button_2", "--event", "onSystemShutdown", "--action", "send_notification", "--params", "topic=shutdown,message=关机")
 
 # ---------- 7. 世界地图: 成都作业点/范围/配置/跳转 ----------
