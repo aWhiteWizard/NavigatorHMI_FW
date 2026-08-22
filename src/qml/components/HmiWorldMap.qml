@@ -50,6 +50,12 @@ Rectangle {
     // 经纬度 → 屏幕坐标
     function toScreenX(lng) { return (mercX(lng) - centerX) / resolution + width / 2 }
     function toScreenY(lat) { return (centerY - mercY(lat)) / resolution + height / 2 }
+    // 屏幕坐标 → 经纬度（toScreenX/Y 反函数, 瓦片范围计算用）
+    function screenToLng(sx) { return ((sx - width / 2) * resolution + centerX) * 180.0 / (earthRadius * Math.PI) }
+    function screenToLat(sy) {
+        var y = centerY - (sy - height / 2) * resolution
+        return Math.atan(Math.sinh(y / earthRadius)) * 180.0 / Math.PI
+    }
 
     // ── B6-9: 作业点坐标——boundTag 非空时取 DataManager 变量值（"lng,lat"，DMS 或十进制），否则 fixedPoint ──
     // DMS 例: "(E104°8'32.28\", N30°37'45.84\")" → 104.1423 / 30.6294; W/S 为负
@@ -100,13 +106,14 @@ Rectangle {
         // 该瓦片在屏幕上的位置（世界坐标 → 视口偏移）
         // 标准 Web Mercator 瓦片世界坐标（x 范围 [0,2πR] 从 180°W 起）→ 转 root 的 mercX/mercY 系（±πR，0 经线为中心）
         // 平移：x 减 0.5 个世界宽；y 用 0.5- 翻转（瓦片 ty 北大南小，世界 y 北大南小）
+        // 屏幕定位基准必须与 root.toScreenX/Y 一致（centerX/centerY + width/2），不能混用 viewMinX（D+ 修复错位）
         function tileScreenX(tx, z) {
             var world = (tx / Math.pow(2, z) - 0.5) * 2 * Math.PI * root.earthRadius
-            return (world - root.viewMinX) / root.resolution
+            return (world - root.centerX) / root.resolution + root.width / 2
         }
         function tileScreenY(ty, z) {
             var world = (0.5 - ty / Math.pow(2, z)) * 2 * Math.PI * root.earthRadius
-            return (root.viewMinY - world) / root.resolution + root.height
+            return (root.centerY - world) / root.resolution + root.height / 2
         }
         function tilePixelSize(z) {
             // 单瓦片 256px; 世界宽 2^z*256 → 每瓦片世界米
@@ -114,15 +121,21 @@ Rectangle {
             return worldPerTile / root.resolution
         }
 
-        // 可见瓦片集合（按 zoomLevel 取整层; 动态重算）
+        // 可见瓦片集合（按屏幕四角经纬度反推, 覆盖全屏; 动态重算）
         property var tiles: []
         function rebuildTiles() {
             if (root.tileBasePath === "") { tiles = []; return }
             var z = root.zoomLevel
             if (z < 1) z = 1
             var list = []
-            var tx0 = tileX(root.lngMin, z), tx1 = tileX(root.lngMax, z)
-            var ty0 = tileY(root.latMax, z), ty1 = tileY(root.latMin, z)   // y 北小南大
+            // 屏幕四角经纬度（视口实际覆盖范围, 比 bounds 更准确——bounds 只到 104.15,
+            // 但视口 1024 宽对应更宽的经度范围, 只按 bounds 算会缺右列瓦片 → 右 1/3 灰）
+            var lngLeft = root.screenToLng(0)
+            var lngRight = root.screenToLng(root.width)
+            var latTop = root.screenToLat(0)
+            var latBottom = root.screenToLat(root.height)
+            var tx0 = tileX(lngLeft, z), tx1 = tileX(lngRight, z)
+            var ty0 = tileY(latTop, z), ty1 = tileY(latBottom, z)
             for (var tx = tx0; tx <= tx1; tx++) {
                 for (var ty = ty0; ty <= ty1; ty++) {
                     list.push({ z: z, x: tx, y: ty })
@@ -132,7 +145,19 @@ Rectangle {
         }
         // tileBasePath 在生成 QML 时固定（ZIP 解压路径不变），onCompleted 一次重建即可；
         // reload 替换工程时 main.qml 重建整屏 → 组件重新实例化 → onCompleted 再跑
-        Component.onCompleted: rebuildTiles()
+        Component.onCompleted: {
+            rebuildTiles()
+            // 临时调试: 打印瓦片层状态（D+ 排查瓦片不显示）
+            console.log("[TILE] tileBasePath=" + root.tileBasePath + " tiles=" + tileLayer.tiles.length
+                        + " zoom=" + root.zoomLevel + " lngMin=" + root.lngMin + " lngMax=" + root.lngMax)
+            if (tileLayer.tiles.length > 0) {
+                var t0 = tileLayer.tiles[0]
+                console.log("[TILE] 首片 z=" + t0.z + " x=" + t0.x + " y=" + t0.y
+                            + " screenX=" + tileLayer.tileScreenX(t0.x, t0.z)
+                            + " screenY=" + tileLayer.tileScreenY(t0.y, t0.z)
+                            + " size=" + tileLayer.tilePixelSize(t0.z))
+            }
+        }
 
         Repeater {
             model: tileLayer.tiles
@@ -143,6 +168,13 @@ Rectangle {
                 height: tileLayer.tilePixelSize(modelData.z)
                 source: "file://" + root.tileBasePath + "/" + modelData.z + "/" + modelData.x + "/" + modelData.y + ".png"
                 fillMode: Image.PreserveAspectFit
+                // 临时调试: Image 加载状态（D+ 排查瓦片不显示）
+                onStatusChanged: {
+                    if (status === Image.Error)
+                        console.log("[TILE] Image 加载失败: " + source)
+                    else if (status === Image.Ready && modelData.x === 3230)
+                        console.log("[TILE] Image 加载成功: " + source + " (" + paintedWidth + "x" + paintedHeight + ")")
+                }
             }
         }
     }

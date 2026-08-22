@@ -93,3 +93,11 @@ __pycache__/
 # B-4: fs-overlay Ô¤±àÒë¶ş½øÖÆ (ÓÉ build-rk3562.sh ×¢Èë, ²»Èë¿â)
 hwt/rk3562/buildroot/fs-overlay/usr/bin/navigatorhmi-fw
 hwt/rk3562/buildroot/fs-overlay/usr/bin/qt-test
+
+# Då¾ªç¯: ç“¦ç‰‡æ•°æ®(é«˜å¾·åœ°å›¾ç“¦ç‰‡, ä½“ç§¯å¤§ä¸å…¥åº“, ç”± download-amap-tiles.py é‡æ–°ä¸‹è½½)
+tiles-demo/
+*.navihmi
+
+# .NET build outputs (temp verifier caches like dto-verify, never commit)
+bin/
+obj/

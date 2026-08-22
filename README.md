@@ -1,195 +1,98 @@
-<!--
- * @Author: aWhiteWizard www.123518341@qq.com
- * @Date: 2026-07-09 23:19:00
- * @LastEditors: aWhiteWizard www.123518341@qq.com
- * @LastEditTime: 2026-07-09 23:53:27
- * @FilePath: \NavigatorHMI_FW\README.md
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
--->
-
 # NavigatorHMI_FW
 
-Embedded device code for NavigatorHMI (i.MX6ULL ARM)
+NavigatorHMI 设备端运行时（HMI panel，RK3562 / Qt 6.4.3 / QML）。
 
-## RK3562（子任务 B，HMI panel）
+输入：PC 组态软件（navigator_hmi 仓库）编译的 `.navihmi` 工程（proto3 二进制，或含瓦片地图的 ZIP 工程包）。
+输出：设备屏上的 HMI 运行画面（世界地图 + 多画面 + 导航页），支持 VNC 远程镜像、触摸校准、屏上虚拟键盘。
 
-RK3562 平台（迅为 6.1 SDK + Qt 6.4.3）的编译/部署/迁移说明见 **[doc/rk3562-build-deploy.md](doc/rk3562-build-deploy.md)**：
-
-- 编译：`docker-build-rk3562.ps1`（镜像 `rk3562-builder-env:v1.0-ubuntu20` + SDK 卷挂载）
-- **换电脑迁移（方案 A）**：编译产物打 tar 存档 D 盘 → 新电脑拷贝 SDK + 解压产物 → 增量编译（无需重编 2-3h），详见文档 §5
-
-> 本 README 其余章节为 i.MX6ULL 平台（子任务历史）说明。
-
-## 环境要求
-
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)（Windows）
-- PowerShell 5.1+
-
-## 项目结构
+## 当前架构（2026-08 版）
 
 ```
-NavigatorHMI_FW/
-├── .devcontainer/
-│   └── Dockerfile                    # 编译镜像定义（内含 Linux/U-Boot 源码压缩包）
-├── .github/workflows/
-│   └── build-project.yml             # GitHub Actions CI 配置
-├── hwt/
-│   ├── linux/
-│   │   ├── arch/arm/configs/         # Linux 内核配置（linux_hwt_defconfig）
-│   │   └── arch/arm/boot/dts/        # 自定义 dts
-│   ├── uboot/
-│   │   ├── configs/                  # U-Boot 配置（uboot_hwt_defconfig）
-│   │   └── board/freescale/mx6ullevk/    # 自定义板级配置（imximage.cfg）
-│   └── qt/
-│       └── mkspecs/linux-arm-gnueabihf-g++/  # Qt 交叉编译 mkspec
-├── src/                              # NavigatorHMI_FW 应用源码
-├── cmake/
-│   └── arm-linux-gnueabihf-toolchain.cmake
-├── buildroot/                        # Buildroot 自定义配置（可选）
-├── cmake/                            # CMake 交叉编译工具链
-├── docker-push.ps1                   # 构建镜像并推送到华为云 SWR
-├── docker-build.ps1                  # 编译脚本（Windows PowerShell）
-├── build-linux-uboot.sh              # 容器内编译脚本
-├── BUILD_GUIDE.md                    # 详细编译指南
-└── CMakeLists.txt
+PC 组态软件 ──compile──> .navihmi（proto3 二进制）或 ZIP 工程包（app.navihmi + tiles/ 瓦片）
+                              │ 下载到设备 /mnt/user/userdata/
+                              ▼
+NavigatorHMI_FW（本仓库）
+  src/main.cpp             主壳：解析工程包（ZIP 解压 / 纯二进制）→ 生成 QML → 注入运行
+  src/converter/           转换器：.navihmi → 每画面 QML 文件
+    projectparser.*        proto 解析 → navihmi::Project 运行时模型
+    qmlgenerator.*         模型 → QML 文本（画面/控件/事件/世界地图）
+  src/runtime/             运行时服务（C++，QML 经 context property 访问）
+    runtimebus.*           事件总线：QML emitEvent → 按工程配置执行动作（画面切换/变量写/系统命令）
+    datamanager.*          变量中心（TagStore 雏形）：变量值存储/读写/变化通知
+    deviceinfo.*           设备信息（IP/MAC/版本/内核/运行时间，真实读取）
+    storageinfo.*          存储管理（SD/USB/内存检测、工程扫描/替换默认工程）
+    vncmirror.*            VNC 镜像服务（RFB 3.3，脏矩形增量 + 心跳帧率，远程显示/输入）
+    projectmodel.*         运行时模型定义（枚举/结构，与 proto 对齐）
+  src/qml/                 QML 界面
+    main.qml               主壳：画面 Loader + overlay + 导航 + 3 秒自动进工程 + InputPanel 虚拟键盘
+    nav.qml                导航页（首页/设备信息/存储管理/通信控制 + 日/夜主题）
+    components/            Hmi* 组件库（19 控件：Button/Text/Label/.../WorldMap，与 PC 端控件一一对应）
+  src/qml.qrc              QML 资源打包
+  proto/navihmi.proto      契约：.navihmi 二进制格式（与 PC 端 NavihmiDto 严格对齐）
+  hwt/rk3562/              Buildroot 覆盖（内核 dtb / buildroot 配置 / fs-overlay 固化产物）
+  cmake/                   交叉编译工具链（aarch64 buildroot sysroot）
+  tools/                   工具脚本（测试工程生成 gen-test-project.ps1 / 瓦片下载 download-amap-tiles.py / 升级工具）
 ```
 
-## 首次使用：构建镜像并推送到华为云 SWR
+## 模块职责
+
+| 模块 | 职责 | 关键机制 |
+|------|------|---------|
+| **main.cpp** | 启动入口 | `--project` 接受**纯 .navihmi 或 ZIP 工程包**（PK 魔数识别 → 解压 /tmp/navihmi_pkg）；`--convert` 转模型摘要；`--genqml` 生成 QML；QML 引擎 + context property 注入（runtimeBus/dataManager/deviceInfo/storageInfo/vncMirror）；`QT_IM_MODULE=qtvirtualkeyboard` 启用屏上键盘 |
+| **converter** | .navihmi → QML | projectparser 解 proto（protobuf LITE）；qmlgenerator 生成每画面 QML（控件属性并集输出 + 事件信号绑定）；世界地图输出 bounds/作业点/范围点/tileBasePath |
+| **runtimebus** | 事件路由 | QML `runtimeBus.emitEvent(obj, type)` → 按工程配置匹配控件事件 → 执行动作（screen_switch/tag_write/tag_add/.../run_command）；⑪同名事件限当前+上一+全局画面；TraceLog（NAVIHMI_TRACE） |
+| **datamanager** | 变量中心 | 变量值存储（baseValue 初始化）；`value/setValue/hasTag`；valueChanged 通知（同值跳过防回环）；交互控件绑定（R1） |
+| **vncmirror** | VNC 镜像 | 生产端 markDirty 报告（西门子 dirty-rect 模式）+ 局部读回 + 心跳帧率；切页分条带；NAVIHMI_VNC 开关 |
+| **QML 组件库** | 19 控件 | 与 PC 端控件契约对齐（属性并集容忍）；交互控件 boundTag 绑 DataManager（状态持久化） |
+| **hwt** | 板级覆盖 | buildroot 配置（rk3562_navihmi_defconfig：Qt6.4.3 + protobuf + openssh）；fs-overlay（navigatorhmi-fw / VNC 键盘模块 / logo 素材） |
+
+## 工程包格式（ZIP 模式）
+
+```
+xxx.navihmi（实际是 ZIP）
+├── app.navihmi   ← 工程二进制（proto3）
+└── tiles/        ← 地图瓦片 z/x/y.png（高德街道图，世界地图显示区域）
+```
+
+设备端 `--project xxx.navihmi` → 检测 ZIP 魔数 → 解压到 `/tmp/navihmi_pkg/` → 加载 `app.navihmi` + 注入 `tileBasePath` → 世界地图铺贴瓦片。纯二进制 .navihmi 向后兼容。
+
+## 编译 / 部署 / 上板验证
+
+### 编译（Docker 容器交叉编译）
 
 ```powershell
-.\docker-push.ps1
+docker run --rm -v "D:\workspace\code\NavigatorHMI_FW:/workspace" -v "D:\workspace\rk3562-sdk\rk3562-linux-6.1:/sdk" `
+  -e BR2_DL_DIR="/sdk/buildroot/dl" -e FORCE_UNSAFE_CONFIGURE=1 -w /workspace `
+  swr.cn-southwest-2.myhuaweicloud.com/image-linuxenv/rk3562-builder-env:v1.1-ubuntu20 `
+  /bin/bash -c "cd /workspace/build/rk3562/fw-app && cmake -DCMAKE_TOOLCHAIN_FILE=/workspace/cmake/aarch64-buildroot-toolchain.cmake -DCMAKE_PREFIX_PATH=/sdk/buildroot/output/rk3562_navihmi/host/aarch64-buildroot-linux-gnu/sysroot/usr -DProtobuf_PROTOC_EXECUTABLE=/sdk/buildroot/output/rk3562_navihmi/host/bin/protoc /workspace && make -j8"
+# 产物: build/rk3562/fw-app/bin/NavigatorHMI_FW（aarch64 ELF）
 ```
 
-> 将 `tarballs/` 下的源码压缩包打包进 Docker 镜像，推送到华为云 SWR。
-> 后续编译直接使用该镜像，不再需要本地 `tarballs/` 目录。
+### 部署（SSH 上板）
 
-## 编译命令
+- 二进制 → `/usr/bin/navigatorhmi-fw`（旧版先备份）
+- 工程 → `/mnt/user/userdata/`（app.navihmi 或 demo.navihmi ZIP）
+- VNC 键盘模块（fs-overlay 固化，或 SSH 手动部署）→ `/usr/qml/QtQuick/VirtualKeyboard/` + `/usr/lib/libQt6VirtualKeyboard.so*` + `/usr/plugins/platforminputcontexts/`
 
-### 编译全部（Linux Kernel + U-Boot + 应用 + Rootfs）
+### 启动 / 验证
 
-```powershell
-.\docker-build.ps1
+```bash
+# 板端（S99 自启或手动）
+export QT_QPA_PLATFORM=eglfs QT_QPA_PLATFORM_PLUGIN_PATH=/usr/plugins/platforms \
+       QT_PLUGIN_PATH=/usr/plugins QML_IMPORT_PATH=/usr/qml QML2_IMPORT_PATH=/usr/qml
+navigatorhmi-fw --project /mnt/user/userdata/demo.navihmi   # ZIP 工程包（含瓦片）
+# 日志: /tmp/navihmi-mirror.log（VNC 模式）; NAVIHMI_VNC=2 强制开 VNC 5900
+# 验证: 世界地图瓦片显示 / 画面切换 / 触摸校准长按 / 虚拟键盘 / VNC 远程
 ```
 
-### 选择编译目标
+## 测试
 
-```powershell
-.\docker-build.ps1                      # 全部编译（内核 + U-Boot + 应用 + rootfs）
-.\docker-build.ps1 -Target linux        # 只编译 Linux Kernel 6.6
-.\docker-build.ps1 -Target uboot        # 只编译 U-Boot 2020.04
-.\docker-build.ps1 -Target app          # 只编译应用
-.\docker-build.ps1 -Target linux+app    # 编译 Linux + 应用（跳过 U-Boot）
-.\docker-build.ps1 -Target rootfs       # 编译应用 + Buildroot Rootfs（应用自动打包进 rootfs）
-.\docker-build.ps1 -Target image        # 编译应用 + Rootfs + 完整 SD 卡镜像 (sdcard.img)
-.\docker-build.ps1 -Target qt           # 交叉编译 Qt 5.12.9（仅首次需要，约 1~2 小时）
-```
+- **测试工程生成**：`tools/gen-test-project.ps1`（PC 端 navihmi.exe CLI + 输出到 D:\workspace\test_project）——世界地图 + 画面A/B + 19 控件 + 事件/动作全覆盖
+- **转换器自测**：`navigatorhmi-fw --convert <工程>`（解析并打印模型摘要）/ `--genqml <工程> <outdir>`
 
-### 其他选项
+## 文档
 
-```powershell
-.\docker-build.ps1 -BuildType Release   # Release 模式
-.\docker-build.ps1 -Clean               # 清理后重新编译
-.\docker-build.ps1 -Jobs 8              # 8 线程并行编译
-.\docker-build.ps1 -SkipLogin           # 跳过 SWR 登录（已登录时使用）
-.\docker-build.ps1 -Help                # 查看完整帮助信息
-```
+- 构建/部署/迁移详见 `doc/rk3562-build-deploy.md`
+- 知识库（4_bugs/5_sessions/2_system rk3562 层）记录踩坑与归档
 
-### 交互式配置（Menuconfig）
-
-进入 Linux 或 U-Boot 的 menuconfig 图形化配置界面，修改后自动保存到 `hwt/` 目录：
-
-```powershell
-.\docker-build.ps1 -Menuconfig linux   # Linux Kernel menuconfig
-.\docker-build.ps1 -Menuconfig uboot   # U-Boot menuconfig
-```
-
-**工作流程**：解压源码 → 应用 `hwt/` 补丁 → 加载现有配置 → 进入 menuconfig → **退出时自动保存**
-- Linux 配置保存到 `hwt/linux/arch/arm/configs/linux_hwt_defconfig`
-- U-Boot 配置保存到 `hwt/uboot/configs/uboot_hwt_defconfig`
-- 修改后直接生效，无需手动复制
-
-> **注意**：Menuconfig 为交互式界面，需要终端支持（PowerShell 直接运行即可）。
-
-## CI 构建（GitHub Actions）
-
-项目配置了 GitHub Actions CI，提交代码后可在 Actions 页面手动触发构建：
-
-1. 进入 GitHub 仓库 → **Actions** → **Build NavigatorHMI_FW (ARM)**
-2. 点击 **Run workflow**
-3. 选择目标（同本地 `-Target` 参数）和构建类型
-4. 等待构建完成，自动上传编译产物（linux/uboot/rootfs 按需上传）
-
-CI 使用与本地相同的 Docker 编译镜像，保证构建环境一致。
-
-## 编译产物
-
-```
-build/
-├── linux/
-│   ├── zImage                      # Linux 6.6.144 内核镜像
-│   ├── imx6ull-14x14-evk.dtb       # 设备树文件
-│   ├── lib/modules/                # 内核模块
-│   └── bin/
-│       └── NavigatorHMI_FW         # 应用可执行文件
-├── uboot/
-│   └── u-boot-dtb.imx              # U-Boot i.MX 格式（带 imx header，推荐使用）
-├── rootfs/
-│   ├── rootfs.tar                  # Rootfs 压缩包（已含 NavigatorHMI_FW 应用）
-│   └── sdcard.img                  # 完整 SD 卡镜像（image 目标）
-├── qt5.12.9-arm/                   # ARM 版 Qt 5.12.9（qt 目标产物，CMake find_package 使用）
-└── buildroot/
-    └── dl/                         # Buildroot 下载缓存（自动复用）
-```
-
-## 编译流程说明
-
-`build-linux-uboot.sh` 在容器内根据 `-Target` 选择性执行：
-
-| 目标 | 执行顺序 |
-|------|---------|
-| `all` | build_linux → build_uboot → build_app → collect_artifacts → build_rootfs |
-| `linux` | build_linux |
-| `uboot` | build_uboot |
-| `app` | build_app → collect_artifacts |
-| `linux+app` | build_linux → build_app → collect_artifacts |
-| `rootfs` | build_app → build_rootfs（应用自动打包进 rootfs） |
-| `image` | build_app → build_rootfs → build_image（生成 sdcard.img） |
-| `qt` | build_qt（交叉编译 Qt 5.12.9，结果缓存在 build/qt5.12.9-arm） |
-
-各阶段功能：
-1. **解压源码** — 从镜像内 `/root/source/` 解压源码到 `/tmp/`
-2. **应用 HWT 覆盖** — 从挂载的 `/workspace/hwt/` 将自定义配置/补丁覆盖到源码
-3. **交叉编译** — 使用 `arm-linux-gnueabihf-` 工具链编译
-4. **收集产物** — 应用自动复制到 `build/linux/bin/`
-5. **构建 Rootfs** — 应用自动打包进 rootfs-overlay 的 `/usr/bin/` 目录
-
-## Qt 5.12.9 交叉编译
-
-**首次使用先编译 Qt**（每台开发机只需一次，约 1~2 小时）：
-
-```powershell
-.\docker-build.ps1 -Target qt
-```
-
-- **源码**：镜像内 `/root/source/qt-everywhere-src-5.12.9.tar.xz`
-- **mkspec**：`hwt/qt/mkspecs/linux-arm-gnueabihf-g++/`（hard-float 工具链）
-- **配置要点**：linuxfb（i.MX6ULL 无 GPU，软件渲染）、`-no-opengl`、第三方库全用 Qt 内置版（无需 sysroot）
-- **保留模块**：qtbase、qtdeclarative、qtquickcontrols2、qtgraphicaleffects、qtsvg、qtimageformats、qtserialport、qtxmlpatterns
-- **产物**：`build/qt5.12.9-arm/`（staging，跨容器持久化）
-- **重新编译**：删除 `build/qt5.12.9-arm/` 和 `build/.qt5.12.9-done` 后再执行 `-Target qt`
-
-编译 `rootfs` / `image` 目标时，若检测到已编译的 Qt，会自动把 Qt 运行时（lib/plugins/qml，剔除开发文件）注入目标机 `/opt/qt5.12.9`，环境变量由 overlay 中的 `/etc/profile.d/qt.sh` 设置。
-
-**应用链接 Qt**（CMakeLists.txt）：
-
-```cmake
-find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets)
-target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Gui Qt5::Widgets)
-```
-
-工具链文件检测到 `build/qt5.12.9-arm` 存在时会自动设置 `CMAKE_PREFIX_PATH`。
-
-**目标机注意事项**：
-- **字体**：linuxfb 无 fontconfig，需把 ttf 字体放入 `/opt/qt5.12.9/lib/fonts/`（中文显示需中文字体，如 DroidSansFallback）
-- **触摸**：默认 `evdevtouch:/dev/input/event1`，event 号不对时在目标机上修改 `/etc/profile.d/qt.sh`
-- **rootfs 分区**：已扩容到 256M 以容纳 Qt 运行时
+> 历史：早期 i.MX6ULL / Qt 5.12 平台代码已废弃（遗留文件清理见 commit 记录）。

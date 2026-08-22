@@ -5,8 +5,10 @@
  *               Windows 仿真: 返回占位值（保持仿真器可用）
  */
 #include "runtime/deviceinfo.h"
+#include <QDir>
 #include <QFile>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QRegularExpression>
 
 namespace navihmi {
@@ -135,8 +137,33 @@ void DeviceInfo::runCalibrate()
     qInfo() << "触摸校准: 仿真器无 tslib（跳过）";
 #else
     // B6-12: tslib 触摸校准（startDetached 不阻塞 HMI）
+    // D+ 修复: ts_calibrate 需 TSLIB_TSDEVICE 指向触摸设备——板子触摸是 ft5x06 (/dev/input/event3,
+    // 非 GT911)；自动探测 input 设备名含 touch/ft5x06 的 event 节点，探测失败回退 event3
     qInfo() << "触摸校准: 启动 ts_calibrate";
-    const bool ok = QProcess::startDetached(QStringLiteral("ts_calibrate"));
+    QString tsDevice = QStringLiteral("/dev/input/event3");   // 默认 ft5x06
+    QDir inputDir(QStringLiteral("/sys/class/input"));
+    const auto events = inputDir.entryList(QStringList() << QStringLiteral("event*"), QDir::Dirs);
+    for (const auto& ev : events) {
+        QFile nameFile(inputDir.filePath(ev + QStringLiteral("/device/name")));
+        if (nameFile.open(QIODevice::ReadOnly)) {
+            const QString name = QString::fromUtf8(nameFile.readAll()).trimmed().toLower();
+            if (name.contains(QStringLiteral("touch")) || name.contains(QStringLiteral("ft5x06"))) {
+                tsDevice = QStringLiteral("/dev/input/") + ev;
+                break;
+            }
+        }
+    }
+    qInfo().noquote() << "触摸校准: tslib 设备 =" << tsDevice;
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("TSLIB_TSDEVICE"), tsDevice);
+    env.insert(QStringLiteral("TSLIB_CONFFILE"), QStringLiteral("/etc/ts.conf"));
+    env.insert(QStringLiteral("TSLIB_CALIBFILE"), QStringLiteral("/etc/pointercal"));
+    QProcess p;
+    p.setProgram(QStringLiteral("ts_calibrate"));
+    p.setProcessEnvironment(env);
+    // 审查修复(2b3d04bd): p.startDetached("ts_calibrate") 命中静态重载(p 从未启动,
+    // p.state() 恒 NotRunning → ok 恒 false 误报失败)；改成员无参版, 用已设置的 program/env
+    const bool ok = p.startDetached();
     if (!ok)
         qWarning() << "触摸校准: ts_calibrate 启动失败（rootfs 是否安装 tslib？）";
 #endif

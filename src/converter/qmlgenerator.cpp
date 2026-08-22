@@ -69,8 +69,9 @@ void appendProp(QTextStream& out, const QString& name, bool val)
         out << "    " << name << ": true\n";
 }
 
-// 生成单控件 QML（事件信号占位）
-void generateWidget(QTextStream& out, const Widget& w)
+// 生成单控件 QML（事件信号占位）；proj 用于 TextList 的 listRef → content 展开（列表项拼入 content,
+// HmiTextList 用 content.split(",") 渲染——列表数据源在工程模型 ListDef 里）
+void generateWidget(QTextStream& out, const Widget& w, const Project& proj)
 {
     const QString type = widgetQmlType(w.type);
     out << "    " << type << " {\n";
@@ -80,8 +81,36 @@ void generateWidget(QTextStream& out, const Widget& w)
     appendProp(out, "width", w.width);
     appendProp(out, "height", w.height);
     appendProp(out, "boundTag", w.boundTag);
+    // D+ 审查修复(2b3d04bd)+用户 2026-08-22: IOField 键盘按绑定变量类型区分——
+    // 整型→纯数字(ImhDigitsOnly)、浮点/坐标→数字+小数点(ImhFormattedNumbersOnly)、
+    // 布尔→双按钮选择(isBoolean, 非文本输入)、字符串/其它→全键盘(默认)
+    if (w.type == WidgetType::IoField && !w.boundTag.isEmpty()) {
+        const Tag* tg = proj.tagByName(w.boundTag);
+        if (tg) {
+            switch (tg->dataType) {
+            case TagDataType::Int16: case TagDataType::Uint16:
+            case TagDataType::Int32:
+                out << "    inputMethodHints: Qt.ImhDigitsOnly\n";
+                break;
+            case TagDataType::Float:
+            case TagDataType::Gps:
+                out << "    inputMethodHints: Qt.ImhFormattedNumbersOnly\n";
+                break;
+            case TagDataType::Bool:
+                out << "    isBoolean: true\n";
+                break;
+            default: break;  // String/DateTime → 全键盘(默认)
+            }
+        }
+    }
     appendProp(out, "text", w.text);
-    appendProp(out, "content", w.content);
+    // D+: TextList 且未显式设 content 时, 按 listRef 从工程列表展开为逗号分隔项（供 HmiTextList 渲染）
+    QString content = w.content;
+    if (w.type == WidgetType::TextList && content.isEmpty() && !w.listRef.isEmpty()) {
+        const ListDef* ld = proj.listByName(w.listRef);
+        if (ld) content = ld->items.join(QLatin1Char(','));
+    }
+    appendProp(out, "content", content);
     appendProp(out, "hAlign", w.hAlign);
     appendProp(out, "fontFamily", w.fontFamily);
     appendProp(out, "fontSize", w.fontSize);
@@ -188,7 +217,7 @@ QString QmlGenerator::generateScreen(const Project& proj, const Screen& screen)
     // R2: 画面空白背景浅灰（否则透出主壳深蓝 #0F5278；z:-1 在控件之下；世界地图特殊画面不含此背景）
     ts << "    Rectangle { anchors.fill: parent; color: \"#E8E8E8\"; z: -1 }\n";
     for (const auto& w : screen.widgets)
-        generateWidget(ts, w);
+        generateWidget(ts, w, proj);
     ts << "}\n";
     return out;
 }
@@ -312,7 +341,7 @@ QString QmlGenerator::generateOverlay(const Project& proj)
     for (const auto& sc : proj.screens) {
         if (sc.type == ScreenType::Template) {
             for (const auto& w : sc.widgets)
-                generateWidget(ts, w);
+                generateWidget(ts, w, proj);
         }
     }
     ts << "}\n";

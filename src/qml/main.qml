@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.VirtualKeyboard
 import "components"
 
 // ═══════════════════════════════════════════════════════════
@@ -60,9 +61,12 @@ Window {
     }
 
     // ── 画面区（Loader 加载当前画面 QML）──
+    // 用户 2026-08-22: 键盘弹出时画面上移(kbOffset)让输入框不被键盘挡住; 关闭恢复
     Loader {
         id: screenLoader
         anchors.fill: parent
+        y: -mainShell.kbOffset
+        Behavior on y { NumberAnimation { duration: 150 } }
     }
 
     // ── 全局叠加层（每画面可见: Stop Runtime 等）──
@@ -78,6 +82,8 @@ Window {
     Loader {
         id: navLoader
         anchors.fill: parent
+        y: -mainShell.kbOffset
+        Behavior on y { NumberAnimation { duration: 150 } }
         source: "nav.qml"
         visible: source !== "" && !mainShell.runtimeActive
         // 接线导航按钮回调 + 设备尺寸传递
@@ -170,6 +176,62 @@ Window {
             }
         }
     }
+
+    // ── D+8: 点击空白处 → 退出输入状态 + 关键盘 ──
+    // 屏幕 QML 根是 Item(无背景 MouseArea), 空白点击事件穿透到本层；
+    // z:-50 置于所有画面控件之下, 仅接收未被控件消费的点击
+    // 审查修复(2b3d04bd): 不写 inputPanel.active(它是 alias→Keyboard.active→Qt.inputMethod.visible
+    // 的绑定属性, 赋值会销毁绑定导致键盘再无法弹出), 仅 Qt.inputMethod.hide() 经 visible 绑定自然收起
+    MouseArea {
+        id: dismissKeyboardArea
+        anchors.fill: parent
+        z: -50
+        onClicked: mainShell.dismissKeyboard()
+    }
+
+    function dismissKeyboard() {
+        Qt.inputMethod.hide()
+        // 用户 2026-08-22: 键盘收起时编辑模式一并退出(失焦)——hide() 保留焦点, 需让渡焦点使 TextInput 失焦;
+        // 提交仍仅回车触发(点击空白不提交, 编辑内容保留)
+        if (screenLoader.item) screenLoader.item.forceActiveFocus()
+        if (navLoader.item) navLoader.item.forceActiveFocus()
+    }
+
+    // ── R4: Qt VirtualKeyboard 屏上键盘（数字→数字键盘 / 文字→全键盘含中英拼音）
+    // 需显式声明 InputPanel 才会显示（QT_IM_MODULE=qtvirtualkeyboard 由 C++ 设置）
+    // z 序置顶：键盘盖在画面之上；锚定底部：输入控件聚焦时自动弹出
+    InputPanel {
+        id: inputPanel
+        z: 200
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: active
+        // 用户 2026-08-22: 键盘弹出 → 画面上移让输入框可见; 关闭恢复
+        onActiveChanged: {
+            if (active) mainShell.adjustForKeyboard()
+            else mainShell.restoreForKeyboard()
+        }
+    }
+
+    // 键盘弹出时画面上移量（0 = 不动）
+    property int kbOffset: 0
+    function adjustForKeyboard() {
+        var kbTop = height - inputPanel.height   // 键盘顶边(窗口坐标)
+        var fi = activeFocusItem
+        if (!fi || !fi.mapToItem) { kbOffset = 0; return }
+        var pos = fi.mapToItem(mainShell.contentItem, 0, fi.height)  // 输入框底边
+        var bottom = pos.y
+        if (bottom > kbTop) {
+            var off = bottom - kbTop + 10        // 上移到键盘上方留 10px
+            var top = pos.y - fi.height          // 输入框顶边
+            if (off > top - 10) off = Math.max(0, top - 10)   // 防移出屏幕: 顶边至少留 10px
+            kbOffset = off
+        } else {
+            kbOffset = 0                         // 未被遮挡不动
+        }
+    }
+    function restoreForKeyboard() { kbOffset = 0 }
 
     Component.onCompleted: {
         // B6-8: 有工程由 autoStartTimer（running 绑定 hasProject && !userInteracted）3 秒后自动进入；

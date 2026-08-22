@@ -1,6 +1,15 @@
 /*
  * @FilePath: \NavigatorHMI_FW\src\converter\projectparser.cpp
  * @Description: .navihmi → HMIProject 运行时模型（protobuf 解析 + 字段映射）
+ *
+ * 数据流：PC 组态软件 compile → .navihmi（proto3 二进制，proto/navihmi.proto 契约）
+ *   → parseFile/parseBytes 解析 → navihmi::Project 运行时模型
+ *   → qmlgenerator 生成每画面 QML → QML 引擎加载运行
+ *
+ * 关键点：
+ * - 契约版本校验（format_version=1）：版本不匹配拒绝加载，防旧/新产物静默错读
+ * - 字段映射与 PC 端 NavihmiDto（protobuf-net）严格对齐（字段号一致）
+ * - protoc 生成类命名空间 navihmi_pb（与运行时模型 navihmi 区分）
  */
 #include "converter/projectparser.h"
 #include "navihmi.pb.h"   // protoc 生成（命名空间 navihmi_pb）
@@ -338,6 +347,8 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
 
 bool ProjectParser::parseFile(const QString& path, Project& out)
 {
+    // 读取 .navihmi 文件 → parseBytes（纯二进制 proto；ZIP 工程包的解压由 main.cpp resolveProjectPackage 处理，
+    // 此处只收解压后的 app.navihmi 或纯单文件）
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
         return false;

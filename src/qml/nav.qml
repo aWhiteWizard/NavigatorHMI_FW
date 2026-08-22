@@ -226,7 +226,7 @@ Item {
         id: bigBtn
         radius: 12
         // B6-14 主题色体系（白天 #1382B1 / 夜间 #1B5E85——与 contentArea #0E3A52 拉开层次）
-        color: mouse.pressed ? (isDark ? "#0E3A52" : "#0F5278") : (isDark ? "#1B5E85" : "#1382B1")
+        color: mouseArea.pressed ? (isDark ? "#0E3A52" : "#0F5278") : (isDark ? "#1B5E85" : "#1382B1")
         border.color: isDark ? "#1B5E85" : "#4FA8D0"
         border.width: 1
 
@@ -264,19 +264,36 @@ Item {
         // 原 Timer 方案: GT911 静止长按时 press/cancel 抖动会触发 onReleased → stop Timer → 3 秒凑不满 → 永不触发
         // 时间差方案: 抖动不中断计时, 释放/取消时一次性判定; 短按(<longPressMs)不触发 = 防误触
         // D-2: 补 onCanceled——GT911 长按结束可能触发 onCanceled 而非 onReleased（两路径都做时间差判定）
+        // D+-2: 临时日志——定位长按事件序列（onPressed/onReleased/onCanceled/onClicked 哪个触发）
         property double pressStartMs: 0
 
         MouseArea {
-            id: mouse
+            id: mouseArea
             anchors.fill: parent
-            onPressed: bigBtn.pressStartMs = Date.now()
-            function maybeTrigger() {
-                if (bigBtn.longPressMs > 0 && Date.now() - bigBtn.pressStartMs >= bigBtn.longPressMs)
-                    bigBtn.clicked()
+            onPressed: {
+                bigBtn.pressStartMs = Date.now()
+                // D+-2: 按下即视为用户操作 → 取消 3 秒自动进工程（否则长按校准 3 秒恰好撞上
+                // autoStartTimer 触发 startProject 切走导航页 → 校准按钮消失 → "长按没反应"）
+                // 此前 userAction 只在导航项点击时发射，BigButton 按下漏发——补上
+                if (navRoot) navRoot.userAction()
+                console.log("[CALIB] onPressed t=" + bigBtn.pressStartMs + " longPressMs=" + bigBtn.longPressMs)
             }
-            onReleased: mouse.maybeTrigger()
-            onCanceled: mouse.maybeTrigger()
-            onClicked: if (bigBtn.longPressMs <= 0) bigBtn.clicked()
+            function maybeTrigger() {
+                var now = Date.now()
+                var elapsed = now - bigBtn.pressStartMs
+                // 记录实际长按时长（毫秒）——诊断用，确认手指按了多久
+                var valid = bigBtn.longPressMs > 0 && elapsed >= bigBtn.longPressMs
+                console.log("[CALIB] 实际长按 " + elapsed + "ms (需 >= " + bigBtn.longPressMs + "ms, 判定=" + (valid ? "有效" : "不足") + ")")
+                if (valid) {
+                    console.log("[CALIB] 长按有效 → 触发 clicked()")
+                    bigBtn.clicked()
+                }
+            }
+            // 注意: 不能用 `mouse.maybeTrigger()`——MouseArea 信号隐式参数也叫 mouse（QQuickMouseEvent），
+            // 遮蔽组件 id → TypeError。D+-2 排查三轮长按失败的真根因即此。改用 id `mouseArea` 引用。
+            onReleased: { console.log("[CALIB] onReleased"); mouseArea.maybeTrigger() }
+            onCanceled: { console.log("[CALIB] onCanceled"); mouseArea.maybeTrigger() }
+            onClicked: { console.log("[CALIB] onClicked longPressMs=" + bigBtn.longPressMs); if (bigBtn.longPressMs <= 0) bigBtn.clicked() }
         }
     }
 
@@ -655,11 +672,9 @@ Item {
         property bool isDark: false
         property bool mqttOn: true
         property bool netOn: true
-        // B6-11: 网络设置脏检测 + 应用结果 + 数字键盘
+        // B6-11: 网络设置脏检测 + 应用结果（D+7: 删自制数字键盘, 统一 Qt VirtualKeyboard）
         property bool netDirty: false
         property string applyResult: ""
-        property bool numpadVisible: false
-        property var numpadRow: null
         function applyNet() {
             var ip = netIpRow.segValues.join(".")
             var mask = netMaskRow.segValues.join(".")
@@ -668,8 +683,6 @@ Item {
             netDirty = false
             console.log("网络设置应用: " + applyResult)
         }
-        function openNumpad(row) { numpadRow = row; numpadVisible = true }
-        function numpadKey(k) { if (numpadRow) numpadRow.numpadKey(k) }
 
         Column {
             anchors.fill: parent
@@ -763,59 +776,9 @@ Item {
                 }
             }
         }
-
-        // ── 自制数字小键盘 overlay（B6-11: 设备端无实体键盘——用户 2026-08-19 定）──
-        Rectangle {
-            id: numpad
-            z: 200
-            width: 320; height: 240
-            radius: 10
-            color: networkPageRoot.isDark ? "#222222" : "#F0F0F0"
-            border.color: "#888"
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 10
-            visible: networkPageRoot.numpadVisible
-
-            Column {
-                anchors.fill: parent
-                anchors.margins: 12
-                spacing: 6
-                Text { text: "数字输入（0-255）"; color: networkPageRoot.isDark ? "#EEE" : "#333"
-                       font.pixelSize: 12; font.bold: true }
-                Grid {
-                    columns: 3
-                    spacing: 6
-                    width: parent.width
-                    Repeater {
-                        model: ["1","2","3","4","5","6","7","8","9","⌫","0","完成"]
-                        delegate: Rectangle {
-                            width: (parent.width - 12) / 3
-                            height: 40
-                            radius: 6
-                            color: modelData === "完成" ? "#1382B1"
-                                   : (networkPageRoot.isDark ? "#3D3D3D" : "white")
-                            border.color: "#999"
-                            Text { anchors.centerIn: parent; text: modelData
-                                   color: modelData === "完成" ? "white"
-                                          : (networkPageRoot.isDark ? "#EEE" : "#333")
-                                   font.pixelSize: 16 }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: {
-                                    if (modelData === "⌫") networkPageRoot.numpadKey("back")
-                                    else if (modelData === "完成") networkPageRoot.numpadVisible = false
-                                    else networkPageRoot.numpadKey(modelData)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
-    // ── 网络 4 段数字输入行（B6-11: label + 4 个数字输入框, 点分隔）──
+    // ── 网络 4 段数字输入行（D+7: 改由 Qt VirtualKeyboard 输入, 与工程输入统一；删自制数字键盘）──
     component NetRow: Row {
         id: netRow
         spacing: 5
@@ -823,24 +786,7 @@ Item {
         property var segments: ["0", "0", "0", "0"]
         property var segValues: []
         property bool initialized: false
-        property var numpadTarget: null   // B6-11: 当前输入 TextField（自制数字键盘）
         signal changed()
-
-        // B6-11: 数字键盘输入（设备端无实体键盘——用户定自制数字小键盘）
-        function openNumpad(field) {
-            numpadTarget = field
-            networkPageRoot.openNumpad(netRow)
-        }
-        function numpadKey(k) {
-            if (!numpadTarget) return
-            if (k === "back") {
-                if (numpadTarget.text.length > 0)
-                    numpadTarget.text = numpadTarget.text.slice(0, -1)
-            } else {
-                if (numpadTarget.text.length < 3)   // 0-255 最多 3 位
-                    numpadTarget.text += k
-            }
-        }
 
         Component.onCompleted: {
             if (segValues.length === 0)
@@ -859,18 +805,18 @@ Item {
                     id: field
                     width: 44; height: 26; font.pixelSize: 13
                     text: modelData
-                    readOnly: true   // B6-11: 数字键盘输入（设备端无实体键盘/输入法）
+                    // D+7: 可编辑 + 数字键盘布局 → 点击聚焦弹 Qt VirtualKeyboard(与工程输入统一)
                     validator: IntValidator { bottom: 0; top: 255 }
+                    inputMethodHints: Qt.ImhDigitsOnly
                     onTextChanged: {
                         netRow.segValues[index] = text
                         if (netRow.initialized) netRow.changed()
                     }
-                }
-                // 点击 → 弹数字键盘（readOnly TextField 自身无输入法, 由键盘 overlay 输入）
-                MouseArea {
-                    anchors.fill: field
-                    z: 1
-                    onClicked: netRow.openNumpad(field)
+                    // D+8: 回车确认 → 退出输入态 + 关键盘
+                    onAccepted: {
+                        field.focus = false
+                        Qt.inputMethod.hide()
+                    }
                 }
                 Text { text: index < 3 ? "." : ""; width: 5; height: 26; anchors.left: parent.right
                        verticalAlignment: Text.AlignVCenter; color: "#888"; font.pixelSize: 13 }

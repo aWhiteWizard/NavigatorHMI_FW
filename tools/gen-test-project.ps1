@@ -13,22 +13,12 @@ $DIR = "D:\workspace\test_project"
 $PROJ = "B4_测试工程.hmiproj"
 $P = "-p $PROJ"
 
+# D+6: 生成新工程前彻底删除旧工程目录（不并存, 不做兼容）
+if (Test-Path $DIR) {
+    Remove-Item $DIR -Recurse -Force
+}
 New-Item -ItemType Directory -Path $DIR -Force | Out-Null
 Set-Location $DIR
-
-# 清空旧工程
-Remove-Item "$PROJ" -ErrorAction SilentlyContinue
-Remove-Item "output" -Recurse -Force -ErrorAction SilentlyContinue
-
-# 画面内控件计数器
-$script:screenCounters = @{}
-
-function NextName([string]$screen, [string]$type) {
-    $key = "$screen|$type"
-    if (-not $script:screenCounters.ContainsKey($key)) { $script:screenCounters[$key] = 0 }
-    $script:screenCounters[$key]++
-    return "${type}_$($script:screenCounters[$key])"
-}
 
 # 执行 CLI (参数数组展开调用)
 function Exec([string[]]$argList) {
@@ -54,6 +44,7 @@ Exec @("-p", $PROJ, "create-tag", "--name", "GPS_1", "--type", "GPS", "--base-va
 Exec @("-p", $PROJ, "create-tag", "--name", "GPS_2", "--type", "GPS", "--base-value", "104.1423,30.6294")
 Exec @("-p", $PROJ, "create-tag", "--name", "GPS_3", "--type", "GPS", "--base-value", "103.9471,30.5785")
 Exec @("-p", $PROJ, "create-tag", "--name", "GPS_4", "--type", "GPS", "--base-value", "104.0727,30.7000")
+Exec @("-p", $PROJ, "create-tag", "--name", "名称", "--type", "STRING", "--base-value", "设备A")
 
 # ---------- 3. 报警 ----------
 Write-Host "=== 报警 ===" -ForegroundColor Cyan
@@ -100,29 +91,33 @@ Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "-
 # checkbox_1
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "checkbox", "--x", "360", "--y", "100", "--width", "120", "--height", "30")
 Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "checkbox_12", "--key", "text", "--value", "启用")
-# textlist_1 (D-3: 配 list 引用, 有下拉窗口)
+# textlist_1 (D-3: 配 list 引用, 有下拉窗口; D+-4: 控件名=全局序数 textlist_13)
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "textlist", "--x", "360", "--y", "150", "--width", "120", "--height", "60")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "textlist_1", "--key", "listRef", "--value", "模式列表")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "textlist_1", "--key", "defaultIndex", "--value", "0")
-# iofield_2 (D-3: 绑开关1, 外部动作 tag_toggle/set_bit 改 Bool 可观测)
-Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "360", "--y", "220", "--width", "120", "--height", "40", "--bound-tag", "开关1")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "textlist_13", "--key", "listRef", "--value", "模式列表")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "textlist_13", "--key", "defaultIndex", "--value", "0")
+# iofield_2 (D-3: 绑开关1; D+-5: 控件名=iofield_14, 移到 (200,360) 避开 frame_15 覆盖; 2026-08-22: BOOL→双按钮)
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "200", "--y", "360", "--width", "120", "--height", "40", "--bound-tag", "开关1")
+# 2026-08-22: 测浮点/坐标/字符串 iofield 键盘 (FLOAT→数字+小数点, GPS→坐标, STRING→全键盘)
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "40", "--y", "360", "--width", "120", "--height", "40", "--bound-tag", "温度")
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "40", "--y", "420", "--width", "160", "--height", "40", "--bound-tag", "GPS_1")
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "200", "--y", "420", "--width", "160", "--height", "40", "--bound-tag", "名称")
 # frame_1
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "frame", "--x", "360", "--y", "230", "--width", "160", "--height", "100")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "frame_14", "--key", "title", "--value", "框架")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "frame_15", "--key", "title", "--value", "框架")
 # progressbar_1
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "progressbar", "--x", "360", "--y", "350", "--width", "160", "--height", "30")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "progressbar_15", "--key", "value", "--value", "60")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "progressbar_16", "--key", "value", "--value", "60")
 # 3 窗口模板
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--x", "560", "--y", "40", "--width", "200", "--height", "120", "--window-type", "userview")
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--x", "560", "--y", "180", "--width", "200", "--height", "120", "--window-type", "alarmview")
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--x", "560", "--y", "320", "--width", "200", "--height", "120", "--window-type", "robotlist")
 # 返回地图按钮 button_19 (y=90 避开全局 Stop 900,10~50)
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "900", "--y", "90", "--width", "100", "--height", "40")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_19", "--key", "text", "--value", "返回地图")
-# 切到画面B 按钮 button_20 (右下角显眼)
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_20", "--key", "text", "--value", "返回地图")
+# 切到画面B 按钮 button_21 (右下角显眼)
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "700", "--y", "520", "--width", "140", "--height", "40")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_20", "--key", "text", "--value", "切到画面B")
-Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_20", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_21", "--key", "text", "--value", "切到画面B")
+Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_21", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
 
 # ---------- 5. 画面A: 事件绑定 (19 事件) ----------
 Write-Host "=== 画面A 事件 ===" -ForegroundColor Cyan
@@ -140,10 +135,10 @@ Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_1",
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "iofield_11", "--event", "onInput", "--action", "tag_write", "--params", "tag_name=数值1")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "switch_7", "--event", "onOn", "--action", "set_bit", "--params", "tag_name=开关1")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "switch_7", "--event", "onOff", "--action", "reset_bit", "--params", "tag_name=开关1")
-Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "progressbar_15", "--event", "onProgressComplete", "--action", "send_notification", "--params", "topic=progress,message=完成")
+Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "progressbar_16", "--event", "onProgressComplete", "--action", "send_notification", "--params", "topic=progress,message=完成")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "circle_9", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "ellipse_10", "--event", "onClick", "--action", "show_popup", "--params", "title=提示,message=椭圆点击")
-Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_19", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=世界地图")
+Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_20", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=世界地图")
 
 # 17 动作全覆盖 (onClick 累积)
 Write-Host "=== 画面A 动作全覆盖 ===" -ForegroundColor Cyan

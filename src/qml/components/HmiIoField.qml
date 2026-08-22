@@ -15,6 +15,12 @@ Rectangle {
     property string boundTag: ""
     property string content: ""
     property bool isReadOnly: false
+    // D+ 审查修复(2b3d04bd): 生成器按 boundTag 类型输出 inputMethodHints(整型→数字/浮点坐标→数字+小数点/字符串→全键盘)
+    property int inputMethodHints: 0
+    // 用户 2026-08-22: 布尔变量 → 双按钮选择(开/关), 非文本输入; 生成器对 Bool tag 输出 true
+    property bool isBoolean: false
+    // 用户 2026-08-22: 点击空白不改用户已输入内容——编辑中标记, 变量回写不覆盖用户输入(提交后恢复跟随)
+    property bool editing: false
     property string textColor: "#000000"
     property double fontSize: 14
     property string fontFamily: ""
@@ -64,8 +70,52 @@ Rectangle {
     signal hmiSystemShutdown()
     signal hmiValueChanged()
 
+    // ── 布尔模式（isBoolean=true）: 两个按钮 [开][关]（用户 2026-08-22: BOOL 变量不该文本输入）──
+    Row {
+        id: boolRow
+        visible: root.isBoolean
+        anchors.fill: parent
+        Rectangle {
+            width: parent.width / 2
+            height: parent.height
+            color: root.isOn ? "#4CAF50" : "#EEEEEE"
+            border.color: "#999999"
+            border.width: 1
+            Text {
+                anchors.centerIn: parent
+                text: "开"
+                color: root.isOn ? "white" : "#333333"
+                font.pixelSize: root.fontSize
+                font.bold: true
+            }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.setBoolean(true)
+            }
+        }
+        Rectangle {
+            width: parent.width / 2
+            height: parent.height
+            color: !root.isOn ? "#D32F2F" : "#EEEEEE"
+            border.color: "#999999"
+            border.width: 1
+            Text {
+                anchors.centerIn: parent
+                text: "关"
+                color: !root.isOn ? "white" : "#333333"
+                font.pixelSize: root.fontSize
+                font.bold: true
+            }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.setBoolean(false)
+            }
+        }
+    }
+
     TextInput {
         id: input
+        visible: !root.isBoolean
         anchors.fill: parent
         anchors.margins: 6
         text: root.content
@@ -73,28 +123,55 @@ Rectangle {
         font.pixelSize: root.fontSize
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
         readOnly: root.isReadOnly
+        inputMethodHints: root.inputMethodHints
         verticalAlignment: Text.AlignVCenter
+        onTextEdited: root.editing = true  // 用户 2026-08-22: 用户编辑标记——变量回写不覆盖输入
         onAccepted: {
             root.content = text
             // R1: 输入提交写变量（状态持久化）
             if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
                 dataManager.setValue(root.boundTag, root.content)
             root.hmiInput()
+            root.editing = false  // 提交后恢复变量跟随
+            // D+8: 回车确认 → 退出输入态 + 关键盘（用户: 回车/点击空白即关闭键盘; 提交仅回车触发）
+            input.focus = false
+            Qt.inputMethod.hide()
         }
     }
 
-    // R1: 状态持久化——初始化 + 外部跟随（仅变量变化时更新, 编辑中不打断）
+    // 布尔按钮选择 → 写变量
+    function setBoolean(v) {
+        root.isOn = v
+        if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
+            dataManager.setValue(root.boundTag, v)
+        root.hmiValueChanged()
+        root.hmiInput()
+    }
+    function boolFromValue(v) {
+        return (v === true || String(v) === "true" || String(v) === "1")
+    }
+
+    // R1: 状态持久化——初始化 + 外部跟随（用户 2026-08-22: 编辑中(editing)不覆盖用户输入, 提交后恢复跟随）
     Component.onCompleted: {
         if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
             var v = dataManager.value(root.boundTag)
-            if (v !== undefined && v !== null) root.content = String(v)
+            if (v !== undefined && v !== null) {
+                if (root.isBoolean) root.isOn = root.boolFromValue(v)
+                else root.content = String(v)
+            }
         }
     }
     Connections {
         target: dataManager
         function onValueChanged(tagName, value) {
-            if (root.boundTag !== "" && tagName === root.boundTag && !input.activeFocus)
-                root.content = String(value)
+            if (root.boundTag !== "" && tagName === root.boundTag) {
+                if (root.isBoolean) {
+                    root.isOn = root.boolFromValue(value)
+                } else if (!root.editing) {
+                    root.content = String(value)
+                    input.text = root.content  // 编辑未进行时同步显示（text 绑定可能已因用户编辑破坏）
+                }
+            }
         }
     }
 }
