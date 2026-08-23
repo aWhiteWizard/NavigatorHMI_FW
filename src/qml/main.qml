@@ -116,6 +116,8 @@ Window {
         currentIndex = index
         // ⑪候选A: 当前画面同步唯一入口（startProject/switchToName/switchTo 全路径经此）
         if (runtimeBus) runtimeBus.setCurrentScreenByName(screenFiles[index].name)
+        // G-0: ObjectManager 当前画面同步（空 screenName 寻址的默认上下文）
+        if (objectManager) objectManager.setCurrentScreen(screenFiles[index].name)
         screenLoader.source = "file://" + screenFiles[index].file
         // VNC 脏矩形：切页 → 全屏报告（西门子 dirty-rect 模式；QML 生产端报告变化区域）
         if (vncMirror) vncMirror.markDirty(0, 0, deviceWidth, deviceHeight)
@@ -137,6 +139,8 @@ Window {
         runtimeActive = false
         screenLoader.source = ""
         if (runtimeBus) runtimeBus.resetScreens()   // ⑪候选A: 清画面匹配, 防旧画面索引幽灵匹配
+        // G-0: ObjectManager 画面上下文清空（控件注销由各控件 onDestruction 完成）
+        if (objectManager) objectManager.setCurrentScreen("")
         // VNC 脏矩形：回导航 → 全屏报告
         if (vncMirror) vncMirror.markDirty(0, 0, deviceWidth, deviceHeight)
     }

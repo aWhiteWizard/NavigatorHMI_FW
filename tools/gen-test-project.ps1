@@ -55,6 +55,25 @@ Exec @("-p", $PROJ, "create-alarm", "--name", "低压报警", "--tag", "压力",
 Write-Host "=== 列表 ===" -ForegroundColor Cyan
 Exec @("-p", $PROJ, "create-list", "--name", "模式列表", "--type", "text", "--items", "模式1|模式2|模式3|模式4")
 
+# ---------- 3.6 G 循环: 用户配置（G-1a UserView 测试: 登录/权限/管理）----------
+Write-Host "=== 用户配置 (G-1a) ===" -ForegroundColor Cyan
+Exec @("-p", $PROJ, "create-group", "--group-name", "访客", "--permissions", "")
+Exec @("-p", $PROJ, "create-user", "--user-name", "admin", "--password", "admin", "--group-name", "管理员")
+Exec @("-p", $PROJ, "create-user", "--user-name", "operator", "--password", "123456", "--group-name", "操作员")
+
+# ---------- 3.7 G 循环: 机器人变量（G-1c RobotList 固定变量绑定 + iofield 修改观察）----------
+Write-Host "=== 机器人变量 (G-1c) ===" -ForegroundColor Cyan
+Exec @("-p", $PROJ, "create-tag", "--name", "R01_id", "--type", "STRING", "--base-value", "01")
+Exec @("-p", $PROJ, "create-tag", "--name", "R01_status", "--type", "INT16", "--base-value", "1")
+Exec @("-p", $PROJ, "create-tag", "--name", "R01_loc", "--type", "STRING", "--base-value", "A区-1号位")
+Exec @("-p", $PROJ, "create-tag", "--name", "R01_detail", "--type", "STRING", "--base-value", '{"category":"drone","model":"X100","production_date":"2026-01-01","task":"巡检","params":{"speed":"5m/s"}}')
+Exec @("-p", $PROJ, "create-tag", "--name", "R01_oper", "--type", "STRING", "--base-value", "")
+Exec @("-p", $PROJ, "create-tag", "--name", "R02_id", "--type", "STRING", "--base-value", "02")
+Exec @("-p", $PROJ, "create-tag", "--name", "R02_status", "--type", "INT16", "--base-value", "0")
+Exec @("-p", $PROJ, "create-tag", "--name", "R02_loc", "--type", "STRING", "--base-value", "B区-2号位")
+Exec @("-p", $PROJ, "create-tag", "--name", "R02_detail", "--type", "STRING", "--base-value", '{"category":"wheel","model":"M200","production_date":"2026-02-01","task":"运输","params":{"load":"50kg"}}')
+Exec @("-p", $PROJ, "create-tag", "--name", "R02_oper", "--type", "STRING", "--base-value", "")
+
 # ---------- 4. 画面A: 15 控件 + 3 窗口模板 ----------
 Write-Host "=== 画面A 控件 ===" -ForegroundColor Cyan
 # button_1
@@ -111,6 +130,9 @@ Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "progress
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--x", "560", "--y", "40", "--width", "200", "--height", "120", "--window-type", "userview")
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--x", "560", "--y", "180", "--width", "200", "--height", "120", "--window-type", "alarmview")
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--x", "560", "--y", "320", "--width", "200", "--height", "120", "--window-type", "robotlist")
+# G-1c: RobotList 槽位绑定（window_22 = 第 3 个窗口控件）
+Exec @("-p", $PROJ, "bind-robot-slot", "--screen", "画面A", "--widget", "window_22", "--slot", "0", "--id-tag", "R01_id", "--status-tag", "R01_status", "--location-tag", "R01_loc", "--detail-tag", "R01_detail", "--oper-tag", "R01_oper")
+Exec @("-p", $PROJ, "bind-robot-slot", "--screen", "画面A", "--widget", "window_22", "--slot", "1", "--id-tag", "R02_id", "--status-tag", "R02_status", "--location-tag", "R02_loc", "--detail-tag", "R02_detail", "--oper-tag", "R02_oper")
 # 返回地图按钮 button_19 (y=90 避开全局 Stop 900,10~50)
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "900", "--y", "90", "--width", "100", "--height", "40")
 Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_23", "--key", "text", "--value", "返回地图")
@@ -118,6 +140,8 @@ Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_2
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "700", "--y", "520", "--width", "140", "--height", "40")
 Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_24", "--key", "text", "--value", "切到画面B")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_24", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
+# G-1c: 状态修改 iofield（robotlist 下方——改 R01_status 观察卡片 运行↔空闲↔故障）
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "560", "--y", "450", "--width", "120", "--height", "40", "--bound-tag", "R01_status")
 
 # ---------- 5. 画面A: 事件绑定 (19 事件) ----------
 Write-Host "=== 画面A 事件 ===" -ForegroundColor Cyan

@@ -4,6 +4,7 @@
  */
 #include "runtime/runtimebus.h"
 #include "runtime/datamanager.h"
+#include "runtime/objectmanager.h"
 
 #include <QDebug>
 #include <QMetaObject>
@@ -26,6 +27,11 @@ void RuntimeBus::setProject(const Project& proj)
 void RuntimeBus::setDataManager(DataManager* dm)
 {
     m_dataManager = dm;
+}
+
+void RuntimeBus::setObjectManager(ObjectManager* om)
+{
+    m_objectManager = om;
 }
 
 void RuntimeBus::setCurrentScreenByName(const QString& name)
@@ -65,7 +71,7 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType)
             if (ev.type == et) {
                 ++hit;
                 for (const auto& action : ev.actions)
-                    executeAction(action, nullptr);
+                    executeAction(action, nullptr, QStringLiteral("__worldmap__"));
             }
         }
         if (trace)
@@ -91,7 +97,7 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType)
                             qInfo().noquote() << "[TRACE]   screen=" << sc.name
                                               << "widget=" << w.objectName << "type=" << int(et);
                         for (const auto& action : ev.actions)
-                            executeAction(action, &w);
+                            executeAction(action, &w, sc.name);   // G-0: 事件源画面传入动作上下文
                     }
                 }
             }
@@ -103,7 +109,7 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType)
                           << " previous=" << (m_previousScreen >= 0 ? m_project.screens[m_previousScreen].name : "-") << ")";
 }
 
-void RuntimeBus::executeAction(const EventAction& action, const Widget* widget)
+void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, const QString& sourceScreen)
 {
     Q_UNUSED(widget)
     const auto& p = action.parameters;
@@ -157,10 +163,26 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget)
     case ActionType::SendNotification:
         qInfo() << "RuntimeBus: send_notification" << p.value("topic") << p.value("message");
         break;
-    case ActionType::SetProperty:
-        // B-5: 属性修改——跨组件寻址后续（ObjectManager）；当前记录目标
-        qInfo() << "RuntimeBus: set_property" << p.value("widget") << p.value("key") << p.value("value");
+    case ActionType::SetProperty: {
+        // G-0: 属性修改实装——经 ObjectManager 跨画面寻址设置 QML 控件属性
+        // 参数契约：screen_name(可选, 空=事件源画面[审查 M2: 与 RuntimeBus 当前+上一+Template
+        // 匹配口径对齐, 防"切画面后 OnScreenUnload 事件写错到新画面同名控件"]) + widget_name/widget(兼容旧键) + key + value
+        const QString screenName = p.value("screen_name").isEmpty() ? sourceScreen : p.value("screen_name");
+        const QString widgetName = p.value("widget_name").isEmpty() ? p.value("widget") : p.value("widget_name");
+        const QString key = p.value("key");
+        const QString value = p.value("value");
+        if (m_objectManager && !widgetName.isEmpty() && !key.isEmpty()) {
+            const bool ok = m_objectManager->setProperty(screenName, widgetName, key, value);
+            // 审查 N-4/N-5(复审): 未加载画面控件/已注销(上一画面幽灵匹配)属正常生命周期,
+            // 失败降 qInfo 不刷告警; 真错误（拼错控件名/未知键）靠 NAVIHMI_TRACE=1 排查
+            if (!ok)
+                qInfo().noquote() << "RuntimeBus: set_property 未生效(控件未加载/已注销/未知键) screen="
+                                  << screenName << "widget=" << widgetName << "key=" << key << "value=" << value;
+        } else {
+            qInfo() << "RuntimeBus: set_property" << widgetName << key << value;
+        }
         break;
+    }
     case ActionType::TagAdd:
     case ActionType::TagSubtract: {
         const QString tagName = p.value("tag_name");

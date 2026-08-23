@@ -71,7 +71,8 @@ void appendProp(QTextStream& out, const QString& name, bool val)
 
 // 生成单控件 QML（事件信号占位）；proj 用于 TextList 的 listRef → content 展开（列表项拼入 content,
 // HmiTextList 用 content.split(",") 渲染——列表数据源在工程模型 ListDef 里）
-void generateWidget(QTextStream& out, const Widget& w, const Project& proj)
+// screenName: 所属画面名（G-0: 控件加载/销毁时向 ObjectManager 注册/注销, 跨画面寻址依据）
+void generateWidget(QTextStream& out, const Widget& w, const Project& proj, const QString& screenName)
 {
     const QString type = widgetQmlType(w.type);
     out << "    " << type << " {\n";
@@ -161,6 +162,19 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj)
         appendProp(out, "cardShowStatus", w.cardShowStatus);
         appendProp(out, "cardShowLocation", w.cardShowLocation);
         appendProp(out, "boundDevice", w.boundDevice);
+        // G-1c: robotSlots 逐组变量绑定（每组: id/status/location/detail/oper 变量名）
+        if (!w.robotSlots.isEmpty()) {
+            out << "    robotSlots: [\n";
+            for (const auto& slot : w.robotSlots) {
+                out << "        { id: \"" << qmlEsc(slot.value("id")) << "\""
+                    << ", status: \"" << qmlEsc(slot.value("status")) << "\""
+                    << ", location: \"" << qmlEsc(slot.value("location")) << "\""
+                    << ", detail: \"" << qmlEsc(slot.value("detail")) << "\""
+                    << ", oper: \"" << qmlEsc(slot.value("oper")) << "\" }";
+                out << (slot == w.robotSlots.last() ? "\n" : ",\n");
+            }
+            out << "    ]\n";
+        }
     }
     // Polygon 顶点（仅 W_POLYGON 类型, QML 数组 [{x,y},...]）
     if (w.type == WidgetType::Polygon && !w.points.isEmpty()) {
@@ -203,6 +217,12 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj)
         out << "        " << signalName << ": function() { runtimeBus.emitEvent(\""
             << qmlEsc(w.objectName) << "\", " << int(ev.type) << "); }\n";
     }
+    // G-0: 控件注册/注销（ObjectManager 跨画面寻址依据；加载完成注册, 销毁注销）
+    // 全局画面(overlay)控件 screenName 用所属 Template 画面名, 与 RuntimeBus 事件匹配口径一致
+    out << "        Component.onCompleted: { if (objectManager) objectManager.registerObject(\""
+        << qmlEsc(screenName) << "\", \"" << qmlEsc(w.objectName) << "\", this) }\n";
+    out << "        Component.onDestruction: { if (objectManager) objectManager.unregisterObject(\""
+        << qmlEsc(screenName) << "\", \"" << qmlEsc(w.objectName) << "\") }\n";
     out << "    }\n";
 }
 
@@ -224,7 +244,7 @@ QString QmlGenerator::generateScreen(const Project& proj, const Screen& screen)
     // R2: 画面空白背景浅灰（否则透出主壳深蓝 #0F5278；z:-1 在控件之下；世界地图特殊画面不含此背景）
     ts << "    Rectangle { anchors.fill: parent; color: \"#E8E8E8\"; z: -1 }\n";
     for (const auto& w : screen.widgets)
-        generateWidget(ts, w, proj);
+        generateWidget(ts, w, proj, screen.name);
     ts << "}\n";
     return out;
 }
@@ -348,7 +368,7 @@ QString QmlGenerator::generateOverlay(const Project& proj)
     for (const auto& sc : proj.screens) {
         if (sc.type == ScreenType::Template) {
             for (const auto& w : sc.widgets)
-                generateWidget(ts, w, proj);
+                generateWidget(ts, w, proj, sc.name);
         }
     }
     ts << "}\n";

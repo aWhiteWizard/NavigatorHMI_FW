@@ -32,6 +32,10 @@
 #if defined(HAVE_QT_QML)
 #include "runtime/runtimebus.h"
 #include "runtime/datamanager.h"
+#include "runtime/objectmanager.h"
+#include "runtime/usersystem.h"
+#include "runtime/alarmengine.h"
+#include "runtime/datalogger.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"
@@ -226,7 +230,10 @@ static bool loadAndInject(QObject* rootObj,
                           navihmi::RuntimeBus& runtimeBus, navihmi::DataManager& dataManager,
                           const QString& projectPath,
                           navihmi::VncMirror* vncMirror = nullptr,
-                          const QString& tileBasePath = QString())
+                          const QString& tileBasePath = QString(),
+                          navihmi::UserSystem* userSystem = nullptr,
+                          navihmi::AlarmEngine* alarmEngine = nullptr,
+                          navihmi::DataLogger* dataLogger = nullptr)
 {
     navihmi::Project proj;
     if (!projectPath.isEmpty() && !navihmi::ProjectParser::parseFile(projectPath, proj)) {
@@ -235,10 +242,25 @@ static bool loadAndInject(QObject* rootObj,
     }
     runtimeBus.setProject(proj);      // 内部重置画面匹配状态（⑪候选A）
     dataManager.setProject(proj);
+    // G-1a: 用户系统注入工程用户/组/安全配置（含初始管理员兜底）
+    if (userSystem)
+        userSystem->setProject(proj);
+    // G-1b: 报警引擎注入报警规则（变量阈值驱动）
+    if (alarmEngine)
+        alarmEngine->setProject(proj);
+    // G-2: 数据记录建表 + 定时采样（工程变量）
+    if (dataLogger)
+        dataLogger->setProject(proj);
 
     // 生成画面 QML 到临时目录（每画面 + overlay + 主壳）
     QDir genDir(QDir::tempPath() + "/navihmi_gen");
     genDir.mkpath(".");
+    // 审查 M3(2026-08-23 G-0): overlay 文件名带递增序号——工程重载时同路径 source 相等
+    // Loader 不重载, 旧 Template 控件残留注册; 序号保证每次路径不同强制重载
+    // 审查 N-7(复审): 双文件轮换(a/b)封顶 2 文件, 防进程内多次替换累积
+    static int s_overlaySeq = 0;
+    const QString overlayName = QStringLiteral("overlay_%1.qml")
+        .arg((++s_overlaySeq % 2) ? QStringLiteral("a") : QStringLiteral("b"));
     QStringList screenFiles;
     QStringList screenNames;
     int genIdx = 0;
@@ -259,7 +281,7 @@ static bool loadAndInject(QObject* rootObj,
             fname = QStringLiteral("screen_%1.qml").arg(genIdx);
             content = navihmi::QmlGenerator::generateWorldMap(proj, tileBasePath);   // R3: 工程自带瓦片
         } else if (sc.type == navihmi::ScreenType::Template) {
-            fname = QStringLiteral("overlay.qml");
+            fname = overlayName;
             content = navihmi::QmlGenerator::generateOverlay(proj);
         } else {
             fname = QStringLiteral("screen_%1.qml").arg(genIdx);
@@ -317,13 +339,13 @@ static bool loadAndInject(QObject* rootObj,
     bool hasTemplate = false;
     for (const auto& sc : proj.screens)
         if (sc.type == navihmi::ScreenType::Template) { hasTemplate = true; break; }
-    QFile overlayFile(genDir.filePath("overlay.qml"));
+    QFile overlayFile(genDir.filePath(overlayName));
     if (!hasTemplate) {
         overlayFile.open(QIODevice::WriteOnly | QIODevice::Truncate);
         overlayFile.write("import QtQuick 2.15\nItem { width: 1024; height: 600 }\n");
         overlayFile.close();
     }
-    rootObj->setProperty("overlayFile", genDir.filePath("overlay.qml"));
+    rootObj->setProperty("overlayFile", genDir.filePath(overlayName));
     return true;
 }
 #endif
@@ -444,29 +466,59 @@ int main(int argc, char *argv[])
     // ═══════ QML 引擎 ═══════
 #if defined(HAVE_QT_QML)
     qInfo().noquote() << "navigatorhmi-fw: 启动 projectPath=" << projectPath;   // 诊断(B6-8)
-    QQmlApplicationEngine engine;
-
+    // 审查 M1(2026-08-23 G-0): 全部 setContextProperty 服务对象必须在 engine 之前构造——
+    // engine 析构时销毁 QML 对象, 生成控件的 onDestruction 处理器（unregisterObject/emitEvent）
+    // 会打到服务对象; 栈上对象逆序销毁 → engine 最后构造最先销毁, 服务对象存活到 engine 之后
     // 运行时事件总线（QML 只发事件，C++ 执行动作；工程注入见 loadAndInject）
     navihmi::RuntimeBus runtimeBus;
 
     // 数据管理器（TagStore 雏形：变量实时值中心, QML 组件绑定显示）
     navihmi::DataManager dataManager;
-    runtimeBus.setDataManager(&dataManager);
-    engine.rootContext()->setContextProperty("runtimeBus", &runtimeBus);
-    engine.rootContext()->setContextProperty("dataManager", &dataManager);
+
+    // G-0: 对象管理器（架构三件套之一）——全局对象注册表 + 跨画面寻址
+    // 系统对象注册：dataManager/runtimeBus（三件套数据访问统一入口, 西门子 Proxy 模式）
+    navihmi::ObjectManager objectManager;
+
+    // G-1a: 用户系统（登录/注销/权限/管理；三件套 UserView 数据源）
+    navihmi::UserSystem userSystem;
+
+    // G-1b: 报警引擎（模拟报警源——变量阈值驱动；三件套 AlarmView 数据源）
+    navihmi::AlarmEngine alarmEngine;
+    alarmEngine.setDataManager(&dataManager);
+
+    // G-2: 数据记录（SQLite tag_history + alarm_history）
+    navihmi::DataLogger dataLogger;
+    dataLogger.setDataManager(&dataManager);
 
     // 设备信息（B6-6: IP/MAC/版本/内核/运行时间真实读取, 导航页显示）
     navihmi::DeviceInfo deviceInfo;
-    engine.rootContext()->setContextProperty("deviceInfo", &deviceInfo);
 
     // 存储信息（B6-7: SD/USB 真实检测 + 工程扫描/替换）
     navihmi::StorageInfo storageInfo;
-    engine.rootContext()->setContextProperty("storageInfo", &storageInfo);
 
     // 触摸校准引擎（E 循环集成进 FW: 校准 overlay 在 FW 主窗口内渲染 → VNC 全程不断;
     // 坐标走 Qt 层(QML MouseArea)采集 → VNC 注入鼠标事件也能操作校准）
     // 注: 必须在 engine.load 之前注入——main.qml 顶层绑定引用 touchCalibrator
     navihmi::TouchCalibrator touchCalibrator;
+
+    QQmlApplicationEngine engine;
+
+    // ── 服务初始化 + context property 注入（engine.load 之前）──
+    runtimeBus.setDataManager(&dataManager);
+    runtimeBus.setObjectManager(&objectManager);
+    objectManager.registerSystemObject("dataManager", &dataManager);
+    objectManager.registerSystemObject("runtimeBus", &runtimeBus);
+    objectManager.registerSystemObject("userSystem", &userSystem);
+    objectManager.registerSystemObject("alarmEngine", &alarmEngine);
+    objectManager.registerSystemObject("dataLogger", &dataLogger);
+    engine.rootContext()->setContextProperty("runtimeBus", &runtimeBus);
+    engine.rootContext()->setContextProperty("dataManager", &dataManager);
+    engine.rootContext()->setContextProperty("objectManager", &objectManager);
+    engine.rootContext()->setContextProperty("userSystem", &userSystem);
+    engine.rootContext()->setContextProperty("alarmEngine", &alarmEngine);
+    engine.rootContext()->setContextProperty("dataLogger", &dataLogger);
+    engine.rootContext()->setContextProperty("deviceInfo", &deviceInfo);
+    engine.rootContext()->setContextProperty("storageInfo", &storageInfo);
     touchCalibrator.setProjectPath(projectPath);   // FW 自重启(--project)用原始工程路径
     engine.rootContext()->setContextProperty("touchCalibrator", &touchCalibrator);
 
@@ -488,9 +540,23 @@ int main(int argc, char *argv[])
     // R3: --project 是 ZIP 工程包时整包解压 → 内部 app.navihmi + tiles/ 瓦片
     QString tileBasePath;
     const QString resolvedProject = resolveProjectPackage(projectPath, tileBasePath);
-    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath))
+    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger))
         return 1;
     qInfo().noquote() << "navigatorhmi-fw: loadAndInject 完成";   // 诊断(B6-8)
+
+    // G-2: 报警事件 → alarm_history（AlarmEngine 触发/确认联动 DataLogger）
+    QObject::connect(&alarmEngine, &navihmi::AlarmEngine::alarmTriggered,
+                     [&dataLogger](const QString& rule, const QString& tag, int level, const QString& msg) {
+        dataLogger.recordAlarmEvent(rule, tag, level, msg, QStringLiteral("TRIGGER"));
+    });
+    QObject::connect(&alarmEngine, &navihmi::AlarmEngine::alarmAcked,
+                     [&dataLogger](const QString& rule, const QString& tag, int level, const QString& msg) {
+        dataLogger.recordAlarmEvent(rule, tag, level, msg, QStringLiteral("ACK"));
+    });
+    QObject::connect(&alarmEngine, &navihmi::AlarmEngine::alarmCleared,
+                     [&dataLogger](const QString& rule, const QString& tag, int level, const QString& msg) {
+        dataLogger.recordAlarmEvent(rule, tag, level, msg, QStringLiteral("CLEAR"));
+    });
 
     // 画面切换（主壳 switchToName 调用）——⑪候选A: 当前画面同步在 QML switchTo 内完成（单一入口,
     // 覆盖 startProject/switchToName/switchTo 全路径; 此处不再重复同步, 避免覆盖 previous）
@@ -503,7 +569,7 @@ int main(int argc, char *argv[])
     };
     // 存储管理替换默认工程后 → 重新加载注入（B6-8: 替换即时生效, 开始工程打开新工程）
     QObject::connect(&storageInfo, &navihmi::StorageInfo::projectReplaced, rootObj,
-                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator]() {
+                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger]() {
         QString tileBasePath;
         const QString defaultPath = navihmi::StorageInfo::defaultProjectPath();
         const QString resolved = resolveProjectPackage(defaultPath, tileBasePath);
@@ -511,7 +577,11 @@ int main(int argc, char *argv[])
         // 拉起的是替换前的旧工程
         touchCalibrator.setProjectPath(defaultPath);
         qputenv("NAVIHMI_PROJECT", defaultPath.toUtf8());
-        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath);
+        // 审查 M3(2026-08-23 G-0): 工程重载前清理 ObjectManager 画面上下文与注册表——
+        // 防旧工程画面控件残留注册, 新工程 set_property 按旧画面名寻址到幽灵控件
+        objectManager.setCurrentScreen(QString());
+        objectManager.clearScreens();
+        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger);
     });
 
     qInfo().noquote() << "navigatorhmi-fw: 进入事件循环";   // 诊断(B6-8)
