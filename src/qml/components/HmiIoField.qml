@@ -69,48 +69,109 @@ Rectangle {
     signal hmiSystemStart()
     signal hmiSystemShutdown()
     signal hmiValueChanged()
+    signal hmiClicked()
+    signal hmiPressed()
+    signal hmiReleased()
+    signal hmiScreenLoad()
+    signal hmiScreenUnload()
+    signal hmiOn()
+    signal hmiOff()
+    signal hmiProgressComplete()
+    signal hmiUserChanged()
+    signal hmiAck()
+    signal hmiSelect()
 
-    // ── 布尔模式（isBoolean=true）: 两个按钮 [开][关]（用户 2026-08-22: BOOL 变量不该文本输入）──
-    Row {
-        id: boolRow
+    // ── 布尔模式（isBoolean=true）: 显示当前值(0/1), 点击弹二值键盘(0/1 两键) ──
+    // 用户 2026-08-22 澄清: 控件保持显示, 弹出的"键盘"只有 0/1 两个键(非控件变双按钮)
+    property var contentRoot: root.Window ? root.Window.contentItem : null  // 声明处缓存(JS handler 用)
+
+    Text {
+        id: boolText
         visible: root.isBoolean
         anchors.fill: parent
-        Rectangle {
-            width: parent.width / 2
-            height: parent.height
-            color: root.isOn ? "#4CAF50" : "#EEEEEE"
-            border.color: "#999999"
-            border.width: 1
-            Text {
-                anchors.centerIn: parent
-                text: "开"
-                color: root.isOn ? "white" : "#333333"
-                font.pixelSize: root.fontSize
-                font.bold: true
+        anchors.margins: 6
+        text: root.isOn ? "1" : "0"
+        color: root.textColor
+        font.pixelSize: root.fontSize
+        font.bold: true
+        verticalAlignment: Text.AlignVCenter
+        elide: Text.ElideRight
+    }
+    MouseArea {
+        id: boolClick
+        visible: root.isBoolean
+        anchors.fill: parent
+        onClicked: root.showBoolPad()
+    }
+
+    // ── 二值键盘（0/1 两键, 挂窗口 contentItem, 同 textlist 自建下拉模式）──
+    Rectangle {
+        id: boolPad
+        visible: false
+        z: 10000
+        width: 160
+        height: 72
+        color: "#F0F0F0"
+        border.color: "#888888"
+        border.width: 1
+        radius: 6
+        clip: true
+        Row {
+            anchors.fill: parent
+            anchors.margins: 4
+            spacing: 4
+            Rectangle {
+                width: (parent.width - 4) / 2
+                height: parent.height
+                radius: 4
+                color: !root.isOn ? "#D32F2F" : "#EEEEEE"
+                border.color: "#999999"
+                Text { anchors.centerIn: parent; text: "0"; color: !root.isOn ? "white" : "#333333"; font.pixelSize: 22; font.bold: true }
+                MouseArea { anchors.fill: parent; onClicked: root.pickBoolean(false) }
             }
-            MouseArea {
-                anchors.fill: parent
-                onClicked: root.setBoolean(true)
+            Rectangle {
+                width: (parent.width - 4) / 2
+                height: parent.height
+                radius: 4
+                color: root.isOn ? "#4CAF50" : "#EEEEEE"
+                border.color: "#999999"
+                Text { anchors.centerIn: parent; text: "1"; color: root.isOn ? "white" : "#333333"; font.pixelSize: 22; font.bold: true }
+                MouseArea { anchors.fill: parent; onClicked: root.pickBoolean(true) }
             }
         }
-        Rectangle {
-            width: parent.width / 2
-            height: parent.height
-            color: !root.isOn ? "#D32F2F" : "#EEEEEE"
-            border.color: "#999999"
-            border.width: 1
-            Text {
-                anchors.centerIn: parent
-                text: "关"
-                color: !root.isOn ? "white" : "#333333"
-                font.pixelSize: root.fontSize
-                font.bold: true
-            }
-            MouseArea {
-                anchors.fill: parent
-                onClicked: root.setBoolean(false)
-            }
-        }
+    }
+    // 全屏关闭层（面板打开时挂 contentItem, 点外部关闭）
+    MouseArea {
+        id: boolDismiss
+        visible: false
+        z: 9999
+        onClicked: root.hideBoolPad()
+    }
+
+    function showBoolPad() {
+        if (!contentRoot) return
+        boolPad.parent = contentRoot
+        boolDismiss.parent = contentRoot
+        boolDismiss.x = 0; boolDismiss.y = 0
+        boolDismiss.width = contentRoot.width
+        boolDismiss.height = contentRoot.height
+        var p = root.mapToItem(null, 0, 0)
+        boolPad.x = p.x
+        boolPad.y = p.y + root.height
+        if (boolPad.y + boolPad.height > contentRoot.height)
+            boolPad.y = Math.max(0, p.y - boolPad.height)
+        boolPad.x = Math.max(0, Math.min(boolPad.x, contentRoot.width - boolPad.width))
+        boolPad.visible = true
+        boolDismiss.visible = true
+    }
+    function hideBoolPad() {
+        boolPad.visible = false
+        boolDismiss.visible = false
+    }
+    Component.onDestruction: {
+        hideBoolPad()
+        if (boolPad.parent !== root) boolPad.parent = root
+        if (boolDismiss.parent !== root) boolDismiss.parent = root
     }
 
     TextInput {
@@ -139,11 +200,12 @@ Rectangle {
         }
     }
 
-    // 布尔按钮选择 → 写变量
-    function setBoolean(v) {
+    // 二值键盘选择(0/1) → 写变量 + 关面板
+    function pickBoolean(v) {
         root.isOn = v
         if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
             dataManager.setValue(root.boundTag, v)
+        root.hideBoolPad()
         root.hmiValueChanged()
         root.hmiInput()
     }

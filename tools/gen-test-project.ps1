@@ -113,11 +113,11 @@ Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "window", "--x", "560", "--y", "320", "--width", "200", "--height", "120", "--window-type", "robotlist")
 # 返回地图按钮 button_19 (y=90 避开全局 Stop 900,10~50)
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "900", "--y", "90", "--width", "100", "--height", "40")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_20", "--key", "text", "--value", "返回地图")
-# 切到画面B 按钮 button_21 (右下角显眼)
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_23", "--key", "text", "--value", "返回地图")
+# 切到画面B 按钮 button_24 (右下角显眼)
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "700", "--y", "520", "--width", "140", "--height", "40")
-Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_21", "--key", "text", "--value", "切到画面B")
-Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_21", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_24", "--key", "text", "--value", "切到画面B")
+Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_24", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
 
 # ---------- 5. 画面A: 事件绑定 (19 事件) ----------
 Write-Host "=== 画面A 事件 ===" -ForegroundColor Cyan
@@ -138,7 +138,7 @@ Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "switch_7",
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "progressbar_16", "--event", "onProgressComplete", "--action", "send_notification", "--params", "topic=progress,message=完成")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "circle_9", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "ellipse_10", "--event", "onClick", "--action", "show_popup", "--params", "title=提示,message=椭圆点击")
-Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_20", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=世界地图")
+Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_23", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=世界地图")
 
 # 17 动作全覆盖 (onClick 累积)
 Write-Host "=== 画面A 动作全覆盖 ===" -ForegroundColor Cyan

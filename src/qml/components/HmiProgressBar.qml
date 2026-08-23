@@ -31,6 +31,17 @@ Rectangle {
     signal hmiSystemStart()
     signal hmiSystemShutdown()
     signal hmiValueChanged()
+    signal hmiClicked()
+    signal hmiPressed()
+    signal hmiReleased()
+    signal hmiScreenLoad()
+    signal hmiScreenUnload()
+    signal hmiInput()
+    signal hmiOn()
+    signal hmiOff()
+    signal hmiUserChanged()
+    signal hmiAck()
+    signal hmiSelect()
 
     // 绑定变量 → DataManager 实时值作为进度
     property double boundValue: boundTag !== "" && dataManager !== undefined && dataManager !== null

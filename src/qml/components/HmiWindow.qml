@@ -60,6 +60,22 @@ Rectangle {
     signal hmiUserChanged()
     signal hmiAck()
     signal hmiSelect()
+    signal hmiClicked()
+    signal hmiPressed()
+    signal hmiReleased()
+    signal hmiValueChanged()
+    signal hmiAlarmTrigger()
+    signal hmiAlarmAck()
+    signal hmiAlarmClear()
+    signal hmiTimer()
+    signal hmiSystemStart()
+    signal hmiSystemShutdown()
+    signal hmiScreenLoad()
+    signal hmiScreenUnload()
+    signal hmiInput()
+    signal hmiOn()
+    signal hmiOff()
+    signal hmiProgressComplete()
 
     // 标题栏
     Rectangle {

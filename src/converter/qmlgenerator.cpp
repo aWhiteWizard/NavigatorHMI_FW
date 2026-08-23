@@ -168,6 +168,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj)
     }
 
     // 事件占位：onClick 等 → 信号处理器（联动 ActionRunner 后续循环接入）
+    // E 循环: 组件已统一声明全 19 事件信号(审查修复)——任意事件输出不会 Cannot assign
     for (const auto& ev : w.events) {
         QString signalName;
         switch (ev.type) {

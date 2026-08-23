@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.VirtualKeyboard
+import QtQuick.VirtualKeyboard.Settings
 import "components"
 
 // ═══════════════════════════════════════════════════════════
@@ -62,10 +63,13 @@ Window {
 
     // ── 画面区（Loader 加载当前画面 QML）──
     // 用户 2026-08-22: 键盘弹出时画面上移(kbOffset)让输入框不被键盘挡住; 关闭恢复
+    // 注意: 不能用 anchors.fill(会覆盖 y 绑定)——手动 width/height + y 绑定
     Loader {
         id: screenLoader
-        anchors.fill: parent
+        x: 0
         y: -mainShell.kbOffset
+        width: parent.width
+        height: parent.height
         Behavior on y { NumberAnimation { duration: 150 } }
     }
 
@@ -81,15 +85,22 @@ Window {
     // ── 导航界面（无工程 / 未进入运行时 时显示——B6-8: 冷启动有工程也先显示导航页 3 秒）──
     Loader {
         id: navLoader
-        anchors.fill: parent
+        x: 0
         y: -mainShell.kbOffset
+        width: parent.width
+        height: parent.height
         Behavior on y { NumberAnimation { duration: 150 } }
         source: "nav.qml"
         visible: source !== "" && !mainShell.runtimeActive
         // 接线导航按钮回调 + 设备尺寸传递
         onLoaded: {
             navLoader.item.startProjectHandler = function() { mainShell.startProject() }
-            navLoader.item.calibrateHandler = function() { mainShell.userInteracted = true; if (deviceInfo) deviceInfo.runCalibrate() }
+            navLoader.item.calibrateHandler = function() {
+                mainShell.userInteracted = true
+                // E 循环: 校准集成进 FW——overlay 在 FW 主窗口内渲染, VNC 全程不断;
+                // 进入校准模式后由 CalibrationOverlay 采集 5 点(Qt 层坐标, 本地/VNC 统一)
+                if (touchCalibrator) touchCalibrator.startCalibration(mainShell.deviceWidth, mainShell.deviceHeight)
+            }
             navLoader.item.deviceInfoHandler = function() { console.log("设备信息: 待实现") }
             navLoader.item.systemManageHandler = function() { console.log("系统管理: 待实现") }
             navLoader.item.deviceWidth = mainShell.deviceWidth
@@ -214,6 +225,47 @@ Window {
         }
     }
 
+    // E 循环（2026-08-22 用户）: 语言切换按钮——键盘激活时显示右上角, 点击切换中/英
+    // 用户: "直接点地球图标切换就行"——画地球图形(圆+经纬线, 无字体依赖), 点击 VirtualKeyboardSettings.locale 切换
+    Rectangle {
+        id: langSwitchBtn
+        visible: inputPanel.active
+        width: 46; height: 40
+        radius: 6
+        color: "#333333"
+        border.color: "#666666"
+        z: 300
+        anchors.top: parent.top
+        anchors.topMargin: 8
+        anchors.right: parent.right
+        anchors.rightMargin: 8
+        // 地球图标
+        Item {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 3
+            width: 20; height: 20
+            Rectangle { anchors.fill: parent; radius: 10; color: "transparent"; border.color: "white"; border.width: 1.5 }
+            Rectangle { x: 10 - 0.75; y: 0; width: 1.5; height: 20; color: "white" }
+            Rectangle { x: 0; y: 10 - 0.75; width: 20; height: 1.5; color: "white" }
+        }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 2
+            text: VirtualKeyboardSettings.locale === "zh_CN" ? "中" : "EN"
+            color: "#DDDDDD"
+            font.pixelSize: 9
+            font.bold: true
+        }
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                VirtualKeyboardSettings.locale = (VirtualKeyboardSettings.locale === "zh_CN") ? "en_US" : "zh_CN"
+            }
+        }
+    }
+
     // 键盘弹出时画面上移量（0 = 不动）
     property int kbOffset: 0
     function adjustForKeyboard() {
@@ -236,5 +288,210 @@ Window {
     Component.onCompleted: {
         // B6-8: 有工程由 autoStartTimer（running 绑定 hasProject && !userInteracted）3 秒后自动进入；
         // 注入晚于 onCompleted（hasProject 此时仍 false），无需在此启动 Timer
+        // E 循环（2026-08-22 用户）: 键盘语言只保留中文/英文——activeLocales 控制键盘切换的语言
+        // （多语言时键盘底部显示 globe 切换键; 去掉韩/日/泰等多余语言）
+        VirtualKeyboardSettings.activeLocales = ["zh_CN", "en_US"]
+        VirtualKeyboardSettings.locale = "zh_CN"
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // E 循环（2026-08-22 用户拍板: 校准集成进 FW, VNC 全程不断）:
+    // 触摸校准 overlay——渲染在 FW 主窗口内 → VncMirror frameSwapped 抓帧天然覆盖 → VNC 可见;
+    // 坐标采集走 Qt 层(QML MouseArea 点击坐标): 本地触摸(evdevtouch)与 VNC 注入
+    // (QWindowSystemInterface)统一到达 → 远程(经 VNC)也能点十字完成校准。
+    // 5 点(四角+中心) → C++ TouchCalibrator 最小二乘 → 质量门(误差<=20px) →
+    // 矩阵≈单位不写 pointercal(保持直读) / 否则写入并重启 FW 让 tslib 生效。
+    // ═══════════════════════════════════════════════════════════
+    Rectangle {
+        id: calibOverlay
+        anchors.fill: parent
+        z: 1000          // 高于键盘(200)/语言按钮(300), 校准期间屏蔽一切下层交互
+        color: "#F5F5F5"
+        visible: touchCalibrator ? touchCalibrator.active : false
+
+        // 审查 7e0143b8: 校准状态变化(进校准/十字移动/结果页)必须报告 VNC 脏矩形——
+        // 否则 VNC 远程端延迟 ≤1.5s 才见变化(且触发全帧兜底读回 792ms 阻塞渲染线程,
+        // 正是 nav.qml 长按节流 2.5x 的来源)。stateChanged 一处覆盖全部状态变化
+        Connections {
+            target: touchCalibrator
+            function onStateChanged() {
+                if (vncMirror) vncMirror.markDirty(0, 0, mainShell.deviceWidth, mainShell.deviceHeight)
+            }
+        }
+
+        // ── 顶部标题 + 提示 ──
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 90
+            color: "#1382B1"
+            Column {
+                anchors.centerIn: parent
+                spacing: 4
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "触摸校准"
+                    color: "white"
+                    font.pixelSize: 24
+                    font.bold: true
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: touchCalibrator ? touchCalibrator.statusText : ""
+                    color: "#EAF5FA"
+                    font.pixelSize: 14
+                }
+            }
+        }
+
+        // ── 点数进度 ──
+        Text {
+            anchors.top: parent.top
+            anchors.topMargin: 100
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: (touchCalibrator && touchCalibrator.active && !touchCalibrator.done)
+                  ? (touchCalibrator.pointIndex + 1) + " / " + touchCalibrator.pointCount : ""
+            color: "#666666"
+            font.pixelSize: 18
+            font.bold: true
+        }
+
+        // ── 取消按钮（校准采集阶段可取消; 完成页用下方结果按钮）──
+        Rectangle {
+            id: calibCancelBtn
+            z: 3
+            anchors.top: parent.top
+            anchors.topMargin: 100
+            anchors.right: parent.right
+            anchors.rightMargin: 20
+            width: 90; height: 36
+            radius: 6
+            color: "#DDDDDD"
+            visible: touchCalibrator && touchCalibrator.active && !touchCalibrator.done
+            Text {
+                anchors.centerIn: parent
+                text: "取消"
+                color: "#333333"
+                font.pixelSize: 14
+            }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (touchCalibrator) touchCalibrator.cancelCalibration()
+                    if (vncMirror) vncMirror.markDirty(0, 0, mainShell.deviceWidth, mainShell.deviceHeight)
+                }
+            }
+        }
+
+        // ── 采集 MouseArea（全屏, 点十字即采集; 取消按钮 z 更高不受影响）──
+        MouseArea {
+            id: calibCaptureArea
+            anchors.fill: parent
+            z: 1
+            enabled: touchCalibrator && touchCalibrator.active && !touchCalibrator.done
+            // 本地触摸 / VNC 注入鼠标事件统一在此采集（Qt 层坐标 = 设备原始坐标, 无 pointercal 时直读）
+            // 全屏采集: 触摸偏移的设备(需校准的)点十字时 Qt 层坐标偏离目标, 若加"距十字 60px 忽略"
+            // 校验会挡住偏移>60px 的设备永远无法校准; 偏移触摸点 5 十字→拟合偏移矩阵→质量门(残差)把关
+            onClicked: {
+                if (touchCalibrator) touchCalibrator.captureAt(mouse.x, mouse.y)
+            }
+        }
+
+        // ── 当前十字（中心点 + 十字线 + 外圆, 深色可见于白底）──
+        Item {
+            z: 2
+            x: (touchCalibrator ? touchCalibrator.pointX : 0) - 40
+            y: (touchCalibrator ? touchCalibrator.pointY : 0) - 40
+            width: 80; height: 80
+            visible: touchCalibrator && touchCalibrator.active && !touchCalibrator.done
+            Rectangle {
+                x: 40 - 25
+                y: 40 - 1
+                width: 50; height: 2
+                color: "#222222"
+            }
+            Rectangle {
+                x: 40 - 1
+                y: 40 - 25
+                width: 2; height: 50
+                color: "#222222"
+            }
+            Rectangle {
+                x: 0; y: 0
+                width: 80; height: 80
+                radius: 40
+                color: "transparent"
+                border.color: "#E03030"
+                border.width: 3
+            }
+        }
+
+        // ── 结果页（done: 显示质量/写入结论 + 确定/重启按钮）──
+        Rectangle {
+            z: 4
+            anchors.centerIn: parent
+            width: parent.width * 0.8
+            height: 200
+            radius: 10
+            color: "white"
+            border.color: "#DDDDDD"
+            border.width: 1
+            visible: touchCalibrator && touchCalibrator.done
+            Column {
+                anchors.centerIn: parent
+                spacing: 20
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width * 0.9
+                    text: touchCalibrator ? touchCalibrator.resultText : ""
+                    color: "#333333"
+                    font.pixelSize: 16
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 16
+                    // 重启生效（写入 pointercal 后; 重启后 main 读 pointercal 启用 tslib, VNC 由新进程恢复）
+                    Rectangle {
+                        width: 120; height: 40; radius: 6
+                        color: "#1382B1"
+                        visible: touchCalibrator && touchCalibrator.restartNeeded
+                        Text {
+                            anchors.centerIn: parent
+                            text: "重启生效"
+                            color: "white"
+                            font.pixelSize: 15
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (touchCalibrator) touchCalibrator.restartFw()
+                            }
+                        }
+                    }
+                    // 确定（未写文件 / 质量差: 直接退出校准模式回 HMI）
+                    Rectangle {
+                        width: 120; height: 40; radius: 6
+                        color: touchCalibrator && touchCalibrator.restartNeeded ? "#999999" : "#1382B1"
+                        Text {
+                            anchors.centerIn: parent
+                            text: touchCalibrator && touchCalibrator.restartNeeded ? "稍后重启" : "确定"
+                            color: "white"
+                            font.pixelSize: 15
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (touchCalibrator) touchCalibrator.cancelCalibration()
+                                if (vncMirror) vncMirror.markDirty(0, 0, mainShell.deviceWidth, mainShell.deviceHeight)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

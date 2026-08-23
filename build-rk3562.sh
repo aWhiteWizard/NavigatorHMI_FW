@@ -243,11 +243,11 @@ build_qt() {
     fi
 
     cd /workspace
-    mkdir -p build/rk3562/app
-    cd build/rk3562/app
-    ${QMAKE} /workspace/src/NavigatorHMI_FW.pro
-    make -j${JOBS}
-    echo ">>> Qt 应用完成: /workspace/build/rk3562/app/"
+    # E 循环修正: FW 应用改用 CMake(fw-app) 构建——qmake(qt5) 遗留路径已弃(NavigatorHMI_FW.pro 不存在)
+    # 编译: docker 内 cd build/rk3562/fw-app && make (产物 bin/NavigatorHMI_FW)
+    echo ">>> FW 应用构建(CMake): cd build/rk3562/fw-app && make -j${JOBS}"
+    echo "    产物: bin/NavigatorHMI_FW → scp 部署 /usr/bin/"
+    echo "    触摸校准: 已集成进 FW(2026-08-23 用户拍板), 独立 touch-calibrate 程序已删除"
 }
 
 # ============================================================

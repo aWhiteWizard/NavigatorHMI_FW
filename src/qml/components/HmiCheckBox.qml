@@ -61,6 +61,17 @@ Rectangle {
     signal hmiSystemStart()
     signal hmiSystemShutdown()
     signal hmiValueChanged()
+    signal hmiPressed()
+    signal hmiReleased()
+    signal hmiScreenLoad()
+    signal hmiScreenUnload()
+    signal hmiInput()
+    signal hmiOn()
+    signal hmiOff()
+    signal hmiProgressComplete()
+    signal hmiUserChanged()
+    signal hmiAck()
+    signal hmiSelect()
 
     Rectangle {
         id: box

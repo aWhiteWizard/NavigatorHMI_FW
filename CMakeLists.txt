@@ -64,13 +64,14 @@ endif()
 # ============================================================
 # 源文件 + proto 生成
 # ============================================================
-file(GLOB_RECURSE SOURCES
+# 审查 7e0143b8: GLOB 加 CONFIGURE_DEPENDS——新增源文件自动触发重配置, 免手动重跑 cmake
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.cpp
     ${CMAKE_SOURCE_DIR}/src/*.c
 )
 # 排除 src/tests/（qt-test 独立目标，不并入主程序）
 list(FILTER SOURCES EXCLUDE REGEX ".*/src/tests/.*")
-file(GLOB_RECURSE HEADERS
+file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.h
     ${CMAKE_SOURCE_DIR}/src/*.hpp
 )

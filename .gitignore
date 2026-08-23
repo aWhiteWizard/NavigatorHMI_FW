@@ -101,3 +101,4 @@ tiles-demo/
 # .NET build outputs (temp verifier caches like dto-verify, never commit)
 bin/
 obj/
+hwt/rk3562/buildroot/fs-overlay/usr/bin/touch-calibrate

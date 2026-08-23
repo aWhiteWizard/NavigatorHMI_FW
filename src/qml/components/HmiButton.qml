@@ -70,6 +70,13 @@ Rectangle {
     signal hmiSystemShutdown()
     signal hmiScreenLoad()
     signal hmiScreenUnload()
+    signal hmiInput()
+    signal hmiOn()
+    signal hmiOff()
+    signal hmiProgressComplete()
+    signal hmiUserChanged()
+    signal hmiAck()
+    signal hmiSelect()
 
     Text {
         id: label

@@ -30,6 +30,18 @@ Rectangle {
     signal hmiTimer()
     signal hmiSystemStart()
     signal hmiSystemShutdown()
+    signal hmiPressed()
+    signal hmiReleased()
+    signal hmiValueChanged()
+    signal hmiScreenLoad()
+    signal hmiScreenUnload()
+    signal hmiInput()
+    signal hmiOn()
+    signal hmiOff()
+    signal hmiProgressComplete()
+    signal hmiUserChanged()
+    signal hmiAck()
+    signal hmiSelect()
 
     // ── Web Mercator 换算 (与 PC 端 MapViewportMath 一致) ──
     readonly property double earthRadius: 6378137.0

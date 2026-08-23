@@ -35,6 +35,7 @@
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"
+#include "runtime/touchcalibrator.h"
 #endif
 
 // ═══════ 工程包解析（R3: 工程=单个 ZIP, 内含工程信息 + 瓦片地图）═══════
@@ -379,6 +380,36 @@ int main(int argc, char *argv[])
     // platforminputcontexts/libqtvirtualkeyboardplugin.so 由 fs-overlay 部署
 #if !defined(Q_OS_WIN)
     qputenv("QT_IM_MODULE", QByteArrayLiteral("qtvirtualkeyboard"));
+    // E 循环（2026-08-22）: 触摸校准生效链——eglfs 用 tslib 输入插件(ts_read 自动应用
+    // /etc/pointercal)；必须在 app 构造前设置（qeglfsintegration 启动时选插件）。
+    // 复审 42933353: 仅当 pointercal 已存在才启用 tslib——无 pointercal 时 tslib linear
+    // 模块初始化失败会导致触摸全灭(无法长按进校准的死锁), 回退 evdevtouch 保持触摸可用
+    // 2026-08-22 修复: 空 pointercal(0 字节)会误触 tslib 分支导致触摸全灭——须存在且非空
+    const bool havePointercal = QFileInfo(QStringLiteral("/etc/pointercal")).size() > 0;
+    if (havePointercal) {
+        qputenv("QT_QPA_EGLFS_TSLIB", QByteArrayLiteral("1"));
+        // 2026-08-22: tslib 明确指向触摸设备(防 ts_setup 自动探测失败导致触摸全灭)——
+        // 探测 sysfs input name 含 touch/ft5x06, 兜底 event3
+        QString tsDev = QStringLiteral("/dev/input/event3");
+        QDir inputDir(QStringLiteral("/sys/class/input"));
+        const auto events = inputDir.entryList(QStringList() << QStringLiteral("event*"), QDir::Dirs);
+        for (const auto& ev : events) {
+            QFile nameFile(inputDir.filePath(ev + QStringLiteral("/device/name")));
+            if (nameFile.open(QIODevice::ReadOnly)) {
+                const QString name = QString::fromUtf8(nameFile.readAll()).trimmed().toLower();
+                if (name.contains(QStringLiteral("touch")) || name.contains(QStringLiteral("ft5x06"))) {
+                    tsDev = QStringLiteral("/dev/input/") + ev;
+                    break;
+                }
+            }
+        }
+        qputenv("TSLIB_TSDEVICE", tsDev.toUtf8());
+        qInfo().noquote() << "触摸校准: tslib 启用, 设备=" << tsDev;
+    } else {
+        // 2026-08-22 修复: 覆盖外部环境残留的 QT_QPA_EGLFS_TSLIB=1(S99 曾 export)——
+        // 无 pointercal 时必须回退 evdevtouch, 否则 eglfs 用 tslib(无配置)触摸全灭
+        qputenv("QT_QPA_EGLFS_TSLIB", QByteArrayLiteral("0"));
+    }
 #endif
 
     QGuiApplication app(argc, argv);
@@ -406,6 +437,10 @@ int main(int argc, char *argv[])
 
     const QString projectPath = parser.value(QStringLiteral("project"));
 
+    // E 循环: 工程路径进进程环境——校准完成写 pointercal 后 FW 自重启(restartFw)时子进程继承,
+    // 重启后 main 读到非空 /etc/pointercal → 自动启用 tslib 应用校准
+    qputenv("NAVIHMI_PROJECT", projectPath.toUtf8());
+
     // ═══════ QML 引擎 ═══════
 #if defined(HAVE_QT_QML)
     qInfo().noquote() << "navigatorhmi-fw: 启动 projectPath=" << projectPath;   // 诊断(B6-8)
@@ -427,6 +462,13 @@ int main(int argc, char *argv[])
     // 存储信息（B6-7: SD/USB 真实检测 + 工程扫描/替换）
     navihmi::StorageInfo storageInfo;
     engine.rootContext()->setContextProperty("storageInfo", &storageInfo);
+
+    // 触摸校准引擎（E 循环集成进 FW: 校准 overlay 在 FW 主窗口内渲染 → VNC 全程不断;
+    // 坐标走 Qt 层(QML MouseArea)采集 → VNC 注入鼠标事件也能操作校准）
+    // 注: 必须在 engine.load 之前注入——main.qml 顶层绑定引用 touchCalibrator
+    navihmi::TouchCalibrator touchCalibrator;
+    touchCalibrator.setProjectPath(projectPath);   // FW 自重启(--project)用原始工程路径
+    engine.rootContext()->setContextProperty("touchCalibrator", &touchCalibrator);
 
     engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     if (engine.rootObjects().isEmpty()) {
@@ -461,10 +503,14 @@ int main(int argc, char *argv[])
     };
     // 存储管理替换默认工程后 → 重新加载注入（B6-8: 替换即时生效, 开始工程打开新工程）
     QObject::connect(&storageInfo, &navihmi::StorageInfo::projectReplaced, rootObj,
-                     [rootObj, &runtimeBus, &dataManager, &vncMirror]() {
+                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator]() {
         QString tileBasePath;
-        const QString resolved = resolveProjectPackage(
-            navihmi::StorageInfo::defaultProjectPath(), tileBasePath);
+        const QString defaultPath = navihmi::StorageInfo::defaultProjectPath();
+        const QString resolved = resolveProjectPackage(defaultPath, tileBasePath);
+        // 审查 7e0143b8: 替换工程后同步校准重启路径, 否则校准写 pointercal 后"重启生效"
+        // 拉起的是替换前的旧工程
+        touchCalibrator.setProjectPath(defaultPath);
+        qputenv("NAVIHMI_PROJECT", defaultPath.toUtf8());
         loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath);
     });
 

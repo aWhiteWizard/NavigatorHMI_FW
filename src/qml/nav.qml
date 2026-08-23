@@ -264,36 +264,51 @@ Item {
         // 原 Timer 方案: GT911 静止长按时 press/cancel 抖动会触发 onReleased → stop Timer → 3 秒凑不满 → 永不触发
         // 时间差方案: 抖动不中断计时, 释放/取消时一次性判定; 短按(<longPressMs)不触发 = 防误触
         // D-2: 补 onCanceled——GT911 长按结束可能触发 onCanceled 而非 onReleased（两路径都做时间差判定）
-        // D+-2: 临时日志——定位长按事件序列（onPressed/onReleased/onCanceled/onClicked 哪个触发）
+        // 2026-08-22 用户: "按住 3 秒就能进去(不等松开)"——改 Timer 到点触发; 短按松开 stop Timer 不触发(防误触保留)
+        // 2026-08-23 修复: eglfs+VNC 在线时渲染线程推帧节流 GUI 事件循环 ~2.5x——3000ms 单次 Timer
+        // 被拖到 ~7.5s 才触发(3 秒按压内永不触发), 改 100ms 轮询检查时间戳(节流后仍 ~250ms 一次,
+        // 3 秒内必然触发); 松开即 stop 保持防误触
         property double pressStartMs: 0
+
+        Timer {
+            id: longPressTimer
+            interval: 100
+            running: false
+            repeat: true
+            onTriggered: {
+                if (!mouseArea.pressed) { longPressTimer.stop(); return }
+                const held = Date.now() - bigBtn.pressStartMs
+                if (held >= bigBtn.longPressMs) {
+                    longPressTimer.stop()
+                    bigBtn.clicked()
+                }
+            }
+        }
 
         MouseArea {
             id: mouseArea
             anchors.fill: parent
             onPressed: {
                 bigBtn.pressStartMs = Date.now()
-                // D+-2: 按下即视为用户操作 → 取消 3 秒自动进工程（否则长按校准 3 秒恰好撞上
+                // 按下即视为用户操作 → 取消 3 秒自动进工程（否则长按校准 3 秒恰好撞上
                 // autoStartTimer 触发 startProject 切走导航页 → 校准按钮消失 → "长按没反应"）
-                // 此前 userAction 只在导航项点击时发射，BigButton 按下漏发——补上
                 if (navRoot) navRoot.userAction()
-                console.log("[CALIB] onPressed t=" + bigBtn.pressStartMs + " longPressMs=" + bigBtn.longPressMs)
+                // 长按: 按住计时, 到点触发(不等松开); 短按(无 longPressMs)不启动
+                if (bigBtn.longPressMs > 0) longPressTimer.start()
             }
-            function maybeTrigger() {
-                var now = Date.now()
-                var elapsed = now - bigBtn.pressStartMs
-                // 记录实际长按时长（毫秒）——诊断用，确认手指按了多久
-                var valid = bigBtn.longPressMs > 0 && elapsed >= bigBtn.longPressMs
-                console.log("[CALIB] 实际长按 " + elapsed + "ms (需 >= " + bigBtn.longPressMs + "ms, 判定=" + (valid ? "有效" : "不足") + ")")
-                if (valid) {
-                    console.log("[CALIB] 长按有效 → 触发 clicked()")
-                    bigBtn.clicked()
-                }
+            onReleased: {
+                longPressTimer.stop()
+                // 短按(无 longPressMs)触发; 长按由 Timer 已触发, 此处不重复
+                if (bigBtn.longPressMs <= 0) bigBtn.clicked()
             }
-            // 注意: 不能用 `mouse.maybeTrigger()`——MouseArea 信号隐式参数也叫 mouse（QQuickMouseEvent），
-            // 遮蔽组件 id → TypeError。D+-2 排查三轮长按失败的真根因即此。改用 id `mouseArea` 引用。
-            onReleased: { console.log("[CALIB] onReleased"); mouseArea.maybeTrigger() }
-            onCanceled: { console.log("[CALIB] onCanceled"); mouseArea.maybeTrigger() }
-            onClicked: { console.log("[CALIB] onClicked longPressMs=" + bigBtn.longPressMs); if (bigBtn.longPressMs <= 0) bigBtn.clicked() }
+            onCanceled: {
+                longPressTimer.stop()
+                if (bigBtn.longPressMs <= 0) bigBtn.clicked()
+            }
+            onClicked: {
+                // 长按(longPressMs>0)由 Timer 触发, 此处忽略防双触发
+                if (bigBtn.longPressMs <= 0) bigBtn.clicked()
+            }
         }
     }
 

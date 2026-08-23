@@ -66,6 +66,16 @@ Rectangle {
     signal hmiSystemShutdown()
     signal hmiOn()
     signal hmiOff()
+    signal hmiClicked()
+    signal hmiPressed()
+    signal hmiReleased()
+    signal hmiScreenLoad()
+    signal hmiScreenUnload()
+    signal hmiInput()
+    signal hmiProgressComplete()
+    signal hmiUserChanged()
+    signal hmiAck()
+    signal hmiSelect()
 
     Text {
         id: swText
