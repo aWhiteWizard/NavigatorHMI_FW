@@ -19,6 +19,11 @@ Rectangle {
     property int inputMethodHints: 0
     // 用户 2026-08-22: 布尔变量 → 双按钮选择(开/关), 非文本输入; 生成器对 Bool tag 输出 true
     property bool isBoolean: false
+    // F 循环(2026-08-23 用户): GPS 坐标 iofield——显示态转度分秒+方位(如 30°15'30"N),
+    // 编辑态回小数可输入, 提交双格式解析; 生成器对 Gps tag 输出 true
+    property bool isGps: false
+    // GPS 编辑中(聚焦)显示小数, 非编辑显示度分秒——避免用户输入时被格式转换打断
+    property bool gpsEditing: false
     // 用户 2026-08-22: 点击空白不改用户已输入内容——编辑中标记, 变量回写不覆盖用户输入(提交后恢复跟随)
     property bool editing: false
     property string textColor: "#000000"
@@ -174,21 +179,148 @@ Rectangle {
         if (boolDismiss.parent !== root) boolDismiss.parent = root
     }
 
+    // ── GPS 度分秒转换（F 循环 2026-08-23，对齐 PC 端 GeoPoint 契约）──
+    // 契约（NavigatorHMI.Core/Models/GeoPoint.cs）：坐标对 经度,纬度（WGS84 小数度内部存储）；
+    // DMS 方向前缀放最前、经度在前纬度在后："E104°3'30\", N30°40'20\"";
+    // 基准值括号包裹 "(E104°3'30\", N30°40'20\")"; 小数度 "104.0583, 30.6722"; 秒 2 位小数。
+    // 生成器对 Gps tag 输出 isGps: true；本组件显示态转 DMS 前缀式, 编辑态回小数, 提交双格式解析。
+
+    // 格式化单个坐标：方向前缀 + 度分秒（秒 2 位小数, 60 进位——与 GeoPoint.FormatCoord 一致）
+    function formatCoord(value, isLongitude) {
+        var prefix = value >= 0 ? (isLongitude ? "E" : "N") : (isLongitude ? "W" : "S")
+        var abs = Math.abs(value)
+        var deg = Math.floor(abs)
+        var minF = (abs - deg) * 60
+        var min = Math.floor(minF)
+        var sec = Math.round((minF - min) * 6000) / 100
+        if (sec >= 60) { sec = 0; min++ }
+        if (min >= 60) { min = 0; deg++ }
+        return prefix + deg + "°" + min + "'" + sec.toFixed(2) + '"'
+    }
+
+    // 解析单个坐标（DMS 或小数度，可带方向前缀；经度 ±180 / 纬度 ±90 校验——对齐 GeoPoint.TryParseCoord）
+    function parseCoord(s, isLongitude) {
+        var str = String(s).trim()
+        if (str.length === 0) return null
+        var sign = 1
+        var idx = 0
+        var c0 = str.charAt(0)
+        if (isLongitude) {
+            if (c0 === "W" || c0 === "w") { sign = -1; idx = 1 }
+            else if (c0 === "E" || c0 === "e") { idx = 1 }
+        } else {
+            if (c0 === "S" || c0 === "s") { sign = -1; idx = 1 }
+            else if (c0 === "N" || c0 === "n") { idx = 1 }
+        }
+        // 前缀与位置错配（经度位 N/S、纬度位 E/W）：不消费前缀, 后续含字母解析失败 → 拒绝
+        var numPart = str.substring(idx).trim()
+        if (numPart.length === 0) return null
+        var result = null
+        if (numPart.indexOf("°") >= 0 || numPart.indexOf("度") >= 0) {
+            result = parseDms(numPart)
+        } else {
+            // 整串校验后 parseFloat（对齐 PC 端 double.TryParse 严格性——parseFloat 宽容接受尾部垃圾）
+            if (!/^-?\d+(?:\.\d+)?$/.test(numPart.trim())) return null
+            var n = parseFloat(numPart)
+            if (!isNaN(n)) result = n
+        }
+        if (result === null) return null
+        var v = sign * result
+        return (isLongitude ? (v >= -180 && v <= 180) : (v >= -90 && v <= 90)) ? v : null
+    }
+
+    // 解析度分秒：度°分'秒" / 度°分' / 度°（含中文变体）
+    function parseDms(s) {
+        var m = s.match(/^\s*(\d+(?:\.\d+)?)\s*[°度]\s*(\d+(?:\.\d+)?)\s*['′分]\s*(\d+(?:\.\d+)?)\s*["″秒]\s*$/)
+        var deg, min = 0, sec = 0
+        if (m) {
+            deg = parseFloat(m[1]); min = parseFloat(m[2]); sec = parseFloat(m[3])
+        } else {
+            m = s.match(/^\s*(\d+(?:\.\d+)?)\s*[°度]\s*(\d+(?:\.\d+)?)\s*['′分]\s*$/)
+            if (m) { deg = parseFloat(m[1]); min = parseFloat(m[2]) }
+            else {
+                m = s.match(/^\s*(\d+(?:\.\d+)?)\s*[°度]\s*$/)
+                if (!m) return null
+                deg = parseFloat(m[1])
+            }
+        }
+        if (min >= 60 || sec >= 60) return null
+        return deg + min / 60 + sec / 3600
+    }
+
+    // 显示：content(基准值/小数度) → DMS 前缀式 "E104°3'30\", N30°40'20\""
+    function toDms(v) {
+        var g = parseGpsPair(v)
+        if (!g) return v                    // 无法解析原样显示（不破坏用户输入）
+        return formatCoord(g.lng, true) + ", " + formatCoord(g.lat, false)
+    }
+    // 解析坐标对（基准值括号/小数度逗号分隔），成功返回 {lng, lat} 否则 null
+    function parseGpsPair(v) {
+        var s = String(v).trim()
+        if (s.charAt(0) === "(" && s.charAt(s.length - 1) === ")")
+            s = s.substring(1, s.length - 1).trim()
+        var parts = s.split(/[,，]/)
+        if (parts.length !== 2) return null
+        var lng = parseCoord(parts[0].trim(), true)
+        var lat = parseCoord(parts[1].trim(), false)
+        if (lng === null || lat === null) return null
+        return { lng: lng, lat: lat }
+    }
+    // 提交解析：DMS/小数度（可带括号）→ 基准值括号格式 "(E104°3'30\", N30°40'20\")"（对齐 GeoPoint.ToBaseValue）
+    function fromDms(s) {
+        var g = parseGpsPair(s)
+        if (!g) return s                    // 无法解析原样返回（校验由 PC 端/数据层把关）
+        return "(" + formatCoord(g.lng, true) + ", " + formatCoord(g.lat, false) + ")"
+    }
+    // 编辑态小数显示：content(括号基准值/DMS/小数度) → "lng,lat" 小数（可编辑; 精度 8 位与生成器一致）
+    function toDecimal(v) {
+        var g = parseGpsPair(v)
+        if (!g) return v
+        return g.lng.toFixed(8).replace(/\.?0+$/, "") + "," + g.lat.toFixed(8).replace(/\.?0+$/, "")
+    }
+    // 显示文本统一入口: GPS 编辑态显示小数(可输入), 非编辑态显示 DMS 前缀式, 其余原样
+    function displayText() {
+        if (root.isGps) {
+            if (root.gpsEditing) return root.toDecimal(root.content)
+            return root.toDms(root.content)
+        }
+        return root.content
+    }
+
     TextInput {
         id: input
         visible: !root.isBoolean
         anchors.fill: parent
         anchors.margins: 6
-        text: root.content
+        text: root.displayText()
         color: root.textColor
         font.pixelSize: root.fontSize
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
         readOnly: root.isReadOnly
         inputMethodHints: root.inputMethodHints
         verticalAlignment: Text.AlignVCenter
+        // F 循环: GPS 编辑态切换——聚焦显示小数(可输入), 失焦转回度分秒;
+        // 用户编辑会破坏 text 绑定(见 4_bugs qml-binding-assign-destroys), 故 GPS 模式
+        // 焦点切换直接手动同步显示, 不依赖绑定重算;
+        // editing 守卫(D+ 规则: 点击空白不提交、编辑内容保留): 有未提交编辑时失焦不覆盖
+        onFocusChanged: {
+            if (root.isGps) {
+                var wasEditing = root.gpsEditing
+                root.gpsEditing = (focus && !root.isReadOnly)
+                if (root.isReadOnly) return
+                if (focus) {
+                    if (!root.editing) input.text = root.toDecimal(root.content)
+                } else if (wasEditing && !root.editing) {
+                    input.text = root.toDms(root.content)
+                }
+            }
+        }
         onTextEdited: root.editing = true  // 用户 2026-08-22: 用户编辑标记——变量回写不覆盖输入
         onAccepted: {
-            root.content = text
+            // F 循环: GPS 提交双格式解析(度分秒 或 纯小数); 写变量统一存括号基准值格式
+            // "(E104°3'30\", N30°40'20\")"——对齐 PC 端 BaseValueValidator.Normalize→GeoPoint.ToBaseValue
+            if (root.isGps) root.content = root.fromDms(text)
+            else root.content = text
             // R1: 输入提交写变量（状态持久化）
             if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag))
                 dataManager.setValue(root.boundTag, root.content)
@@ -231,7 +363,11 @@ Rectangle {
                     root.isOn = root.boolFromValue(value)
                 } else if (!root.editing) {
                     root.content = String(value)
-                    input.text = root.content  // 编辑未进行时同步显示（text 绑定可能已因用户编辑破坏）
+                    // F 循环: GPS 回写——聚焦编辑态显示小数, 非编辑态显示度分秒+方位;
+                    // （text 绑定可能已因用户编辑破坏, 手动同步）
+                    input.text = root.isGps
+                            ? (root.gpsEditing ? root.toDecimal(root.content) : root.toDms(root.content))
+                            : root.content
                 }
             }
         }

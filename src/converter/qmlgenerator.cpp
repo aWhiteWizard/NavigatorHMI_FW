@@ -93,8 +93,14 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj)
                 out << "    inputMethodHints: Qt.ImhDigitsOnly\n";
                 break;
             case TagDataType::Float:
-            case TagDataType::Gps:
                 out << "    inputMethodHints: Qt.ImhFormattedNumbersOnly\n";
+                break;
+            case TagDataType::Gps:
+                // F 循环(2026-08-23 用户): GPS 坐标 iofield——isGps 标记启用度分秒显示/解析
+                // (对齐 PC 端 GeoPoint 契约: 坐标对 经度,纬度, DMS 前缀式 "E104°3'30\", N30°40'20\"";
+                // 显示态转 DMS, 编辑态回小数, 提交双格式解析写回括号基准值); 键盘仍数字+小数点
+                out << "    inputMethodHints: Qt.ImhFormattedNumbersOnly\n";
+                out << "    isGps: true\n";
                 break;
             case TagDataType::Bool:
                 out << "    isBoolean: true\n";

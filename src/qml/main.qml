@@ -225,51 +225,17 @@ Window {
         }
     }
 
-    // E 循环（2026-08-22 用户）: 语言切换按钮——键盘激活时显示右上角, 点击切换中/英
-    // 用户: "直接点地球图标切换就行"——画地球图形(圆+经纬线, 无字体依赖), 点击 VirtualKeyboardSettings.locale 切换
-    Rectangle {
-        id: langSwitchBtn
-        visible: inputPanel.active
-        width: 46; height: 40
-        radius: 6
-        color: "#333333"
-        border.color: "#666666"
-        z: 300
-        anchors.top: parent.top
-        anchors.topMargin: 8
-        anchors.right: parent.right
-        anchors.rightMargin: 8
-        // 地球图标
-        Item {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: parent.top
-            anchors.topMargin: 3
-            width: 20; height: 20
-            Rectangle { anchors.fill: parent; radius: 10; color: "transparent"; border.color: "white"; border.width: 1.5 }
-            Rectangle { x: 10 - 0.75; y: 0; width: 1.5; height: 20; color: "white" }
-            Rectangle { x: 0; y: 10 - 0.75; width: 20; height: 1.5; color: "white" }
-        }
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 2
-            text: VirtualKeyboardSettings.locale === "zh_CN" ? "中" : "EN"
-            color: "#DDDDDD"
-            font.pixelSize: 9
-            font.bold: true
-        }
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {
-                VirtualKeyboardSettings.locale = (VirtualKeyboardSettings.locale === "zh_CN") ? "en_US" : "zh_CN"
-            }
-        }
-    }
-
     // 键盘弹出时画面上移量（0 = 不动）
     property int kbOffset: 0
     function adjustForKeyboard() {
-        var kbTop = height - inputPanel.height   // 键盘顶边(窗口坐标)
+        // F 循环(2026-08-23): 候选词栏不计入 inputPanel.height(qtvk Keyboard.qml L71
+        // 仅 wordCandidateList.alwaysVisible 时计入; 默认 false 候选词栏以 y:-height 上浮在
+        // 键盘顶边之上)——上移量需额外让出候选词栏高度, 否则中文拼音候选词行压住输入框
+        var wcv = inputPanel.keyboard ? inputPanel.keyboard.wordCandidateView : null
+        // alwaysVisible=true 时键盘高度已含候选词栏(Keyboard.qml L71), 需排除避免双计
+        var alwaysVisible = VirtualKeyboardSettings.wordCandidateList && VirtualKeyboardSettings.wordCandidateList.alwaysVisible
+        var candidateH = (wcv && wcv.visibleCondition && !alwaysVisible) ? wcv.height : 0
+        var kbTop = height - inputPanel.height - candidateH   // 键盘顶边(含候选词栏, 窗口坐标)
         var fi = activeFocusItem
         if (!fi || !fi.mapToItem) { kbOffset = 0; return }
         var pos = fi.mapToItem(mainShell.contentItem, 0, fi.height)  // 输入框底边
@@ -284,6 +250,13 @@ Window {
         }
     }
     function restoreForKeyboard() { kbOffset = 0 }
+    // F 循环(2026-08-23): 候选词栏在拼音输入过程中动态出现/消失(高度/可见性变化),
+    // 联动重算上移量——否则候选词栏出现后输入框又被压住
+    Connections {
+        target: inputPanel.keyboard ? inputPanel.keyboard.wordCandidateView : null
+        function onHeightChanged() { if (inputPanel.active) mainShell.adjustForKeyboard() }
+        function onVisibleConditionChanged() { if (inputPanel.active) mainShell.adjustForKeyboard() }
+    }
 
     Component.onCompleted: {
         // B6-8: 有工程由 autoStartTimer（running 绑定 hasProject && !userInteracted）3 秒后自动进入；
@@ -292,6 +265,20 @@ Window {
         // （多语言时键盘底部显示 globe 切换键; 去掉韩/日/泰等多余语言）
         VirtualKeyboardSettings.activeLocales = ["zh_CN", "en_US"]
         VirtualKeyboardSettings.locale = "zh_CN"
+        // F 循环(2026-08-23): styleLoader 同步加载(Keyboard 实例化即就绪)——兜底显式置
+        // languagePopupListEnabled=false(默认已 false, 保险), 与 onStyleChanged 双保险
+        if (inputPanel.keyboard && inputPanel.keyboard.style)
+            inputPanel.keyboard.style.languagePopupListEnabled = false
+    }
+    // F 循环(2026-08-23 用户): 语言切换去右上角自绘按钮, 改键盘自带 ChangeLanguageKey(地球图标)
+    // 直接点击切换中/英——languagePopupListEnabled=false 时 ChangeLanguageKey 点击走
+    // changeInputLanguage() 在 activeLocales 间循环切换(qtvk Keyboard.qml L1768-1778)
+    Connections {
+        target: inputPanel.keyboard
+        function onStyleChanged() {
+            if (inputPanel.keyboard.style)
+                inputPanel.keyboard.style.languagePopupListEnabled = false
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
