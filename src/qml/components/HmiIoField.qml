@@ -292,6 +292,10 @@ Rectangle {
         visible: !root.isBoolean
         anchors.fill: parent
         anchors.margins: 6
+        // H-4(2026-08-24 用户 Check): 经纬度显示溢出框外——clip 限制内容在框内,
+        // horizontalAlignment 绑 hAlign（默认左对齐, 从头显示; TextInput 无 elide, clip 右侧截断即可）
+        clip: true
+        horizontalAlignment: root.hAlign === "Right" ? Text.AlignRight : Text.AlignLeft
         text: root.displayText()
         color: root.textColor
         font.pixelSize: root.fontSize

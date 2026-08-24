@@ -73,6 +73,9 @@ Exec @("-p", $PROJ, "create-tag", "--name", "R02_status", "--type", "INT16", "--
 Exec @("-p", $PROJ, "create-tag", "--name", "R02_loc", "--type", "STRING", "--base-value", "B区-2号位")
 Exec @("-p", $PROJ, "create-tag", "--name", "R02_detail", "--type", "STRING", "--base-value", '{"category":"wheel","model":"M200","production_date":"2026-02-01","task":"运输","params":{"load":"50kg"}}')
 Exec @("-p", $PROJ, "create-tag", "--name", "R02_oper", "--type", "STRING", "--base-value", "")
+# H-8: modbus 采集变量（source=modbus://从站/寄存器; 模拟从站验证用）
+Exec @("-p", $PROJ, "create-tag", "--name", "mb_temp", "--type", "FLOAT", "--base-value", "0", "--source", "modbus://1/0", "--scan-interval", "1000", "--deadband", "0.5")
+Exec @("-p", $PROJ, "create-tag", "--name", "mb_pressure", "--type", "INT16", "--base-value", "0", "--source", "modbus://1/1", "--scan-interval", "1000")
 
 # ---------- 4. 画面A: 15 控件 + 3 窗口模板 ----------
 Write-Host "=== 画面A 控件 ===" -ForegroundColor Cyan
@@ -142,6 +145,8 @@ Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_2
 Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_24", "--event", "onClick", "--action", "screen_switch", "--params", "target_screen=画面B")
 # G-1c: 状态修改 iofield（robotlist 下方——改 R01_status 观察卡片 运行↔空闲↔故障）
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "560", "--y", "450", "--width", "120", "--height", "40", "--bound-tag", "R01_status")
+# H-8: modbus 变量画面显示（numeric 绑 mb_temp——模拟从站改值观察实时刷新）
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "numeric", "--x", "760", "--y", "520", "--width", "120", "--height", "40", "--bound-tag", "mb_temp")
 
 # ---------- 5. 画面A: 事件绑定 (19 事件) ----------
 Write-Host "=== 画面A 事件 ===" -ForegroundColor Cyan

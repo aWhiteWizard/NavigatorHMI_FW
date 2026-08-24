@@ -26,6 +26,7 @@ void AlarmEngine::setProject(const Project& proj)
     m_active.clear();
     m_triggered.clear();
     m_triggeredTime.clear();
+    m_overThresholdMs.clear();   // 审查 MINOR-2: 工程重载清 delayMs 计时（防同名规则残留旧时间戳）
     emit alarmsChanged();
 }
 
@@ -37,9 +38,13 @@ void AlarmEngine::setDataManager(DataManager* dm)
 QVariantList AlarmEngine::activeAlarms() const
 {
     QVariantList list;
-    // 时间倒序（最新在前）
-    for (int i = m_active.size() - 1; i >= 0; --i) {
-        const auto& a = m_active[i];
+    // H-5(M9): 时间倒序为主, 同时间按 priority 降序（DESIGN: 报警排序=时间倒序, 同时间按优先级）
+    QList<ActiveAlarm> sorted = m_active;
+    std::stable_sort(sorted.begin(), sorted.end(), [](const ActiveAlarm& a, const ActiveAlarm& b) {
+        if (a.time == b.time) return a.priority > b.priority;
+        return a.time > b.time;   // HH:mm:ss 字符串倒序即时间倒序
+    });
+    for (const auto& a : sorted) {
         QVariantMap m;
         m.insert("id", a.id);
         m.insert("time", a.time);
@@ -123,8 +128,20 @@ void AlarmEngine::poll()
                            : rule.type == AlarmType::Low  ? value < rule.threshold
                            : false;   // RateChange/Deviation 模拟源不处理（首版范围）
         const bool wasTriggered = m_triggered.value(rule.name, false);
+        // H-5(M9): deadband 回差——触发后恢复阈值 = 触发阈值 ∓ deadband（防抖, DESIGN 卖点）
+        const bool inRecover = rule.type == AlarmType::High
+                               ? value < rule.threshold - rule.deadband
+                               : rule.type == AlarmType::Low
+                                 ? value > rule.threshold + rule.deadband
+                                 : false;
 
         if (inAlarm && !wasTriggered) {
+            // H-5(M9): delayMs 延迟触发——触发条件持续 delayMs 才触发（记录首次超时时间）
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            const qint64 firstMs = m_overThresholdMs.value(rule.name, nowMs);
+            m_overThresholdMs.insert(rule.name, firstMs);
+            if (rule.delayMs > 0 && nowMs - firstMs < rule.delayMs)
+                continue;   // 未到延迟, 等待下一轮
             // 触发
             ActiveAlarm a;
             a.id = rule.name;
@@ -132,38 +149,65 @@ void AlarmEngine::poll()
             a.level = int(rule.level);
             a.message = rule.message.isEmpty() ? rule.name : rule.message;
             a.tag = rule.tagName;
+            a.priority = rule.priority;
+            // 复审 MAJOR-3 修复(2026-08-24): 免确认置位必须在 append **之前**——
+            // m_active.append(a) 是值拷贝, append 后再改 a.acked 只改局部副本, 列表项仍未确认（伪修复）
+            const bool autoAck = !rule.ackRequired || rule.category == AlarmCategory::System;
+            a.acked = autoAck;
             m_active.append(a);
             m_triggered.insert(rule.name, true);
             m_triggeredTime.insert(rule.name, now);
+            m_overThresholdMs.remove(rule.name);
             changed = true;
             qInfo().noquote() << "AlarmEngine: 触发报警" << rule.name
                               << "tag=" << rule.tagName << "值=" << value
                               << "阈值=" << rule.threshold;
             emit alarmTriggered(rule.name, rule.tagName, int(rule.level),
                                 rule.message.isEmpty() ? rule.name : rule.message);
+            // H-5(M9): ackRequired=false 或 System 类别 → 免确认（触发即确认, 审计记录）
+            if (autoAck)
+                emit alarmAcked(a.id, a.tag, a.level, a.message);
         } else if (!inAlarm && wasTriggered) {
-            // 清除（审查 M2: 活动列表只含未确认报警——恢复即从列表移除, 历史由 G-2 alarm_history 承载;
-            // 审查 M1: 已确认/未确认的恢复均发 CLEAR——完整生命周期 TRIGGER→ACK→CLEAR）
-            m_triggered.insert(rule.name, false);
-            QString msg = rule.message.isEmpty() ? rule.name : rule.message;
-            int lv = int(rule.level);
-            QString tg = rule.tagName;
-            for (int i = 0; i < m_active.size(); ++i) {
-                if (m_active[i].id == rule.name) {
-                    msg = m_active[i].message;
-                    lv = m_active[i].level;
-                    tg = m_active[i].tag;
-                    m_active.removeAt(i);
-                    break;
+            // H-5(M9): deadband 恢复判定——deadband>0 时值须回到恢复阈值才清除,
+            // 否则 deadband 内波动保持触发（防抖）
+            if (rule.deadband > 0) {
+                if (inRecover) {
+                    changed = doClear(rule, value) || changed;
                 }
+            } else {
+                changed = doClear(rule, value) || changed;
             }
-            changed = true;
-            qInfo().noquote() << "AlarmEngine: 报警恢复" << rule.name;
-            emit alarmCleared(rule.name, tg, lv, msg);
+        } else if (!inAlarm && !wasTriggered) {
+            m_overThresholdMs.remove(rule.name);   // 未超阈值, 清延迟计时
         }
     }
     if (changed)
         emit alarmsChanged();
+}
+
+// H-5: 报警恢复统一处理（deadband 达标后: 移出活动列表 + CLEAR 审计）；返回是否发生变化
+bool AlarmEngine::doClear(const AlarmRule& rule, double value)
+{
+    if (!m_triggered.value(rule.name, false))
+        return false;
+    m_triggered.insert(rule.name, false);
+    m_overThresholdMs.remove(rule.name);
+    QString msg = rule.message.isEmpty() ? rule.name : rule.message;
+    int lv = int(rule.level);
+    QString tg = rule.tagName;
+    for (int i = 0; i < m_active.size(); ++i) {
+        if (m_active[i].id == rule.name) {
+            msg = m_active[i].message;
+            lv = m_active[i].level;
+            tg = m_active[i].tag;
+            m_active.removeAt(i);
+            break;
+        }
+    }
+    qInfo().noquote() << "AlarmEngine: 报警恢复" << rule.name
+                      << "值=" << value;
+    emit alarmCleared(rule.name, tg, lv, msg);
+    return true;
 }
 
 } // namespace navihmi

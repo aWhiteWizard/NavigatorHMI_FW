@@ -36,6 +36,7 @@
 #include "runtime/usersystem.h"
 #include "runtime/alarmengine.h"
 #include "runtime/datalogger.h"
+#include "runtime/acquisition.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"
@@ -233,7 +234,8 @@ static bool loadAndInject(QObject* rootObj,
                           const QString& tileBasePath = QString(),
                           navihmi::UserSystem* userSystem = nullptr,
                           navihmi::AlarmEngine* alarmEngine = nullptr,
-                          navihmi::DataLogger* dataLogger = nullptr)
+                          navihmi::DataLogger* dataLogger = nullptr,
+                          navihmi::Acquisition* acquisition = nullptr)
 {
     navihmi::Project proj;
     if (!projectPath.isEmpty() && !navihmi::ProjectParser::parseFile(projectPath, proj)) {
@@ -251,6 +253,9 @@ static bool loadAndInject(QObject* rootObj,
     // G-2: 数据记录建表 + 定时采样（工程变量）
     if (dataLogger)
         dataLogger->setProject(proj);
+    // H-8: 数据采集注入 modbus 源（Tag.source = modbus://slave/reg）
+    if (acquisition)
+        acquisition->setProject(proj);
 
     // 生成画面 QML 到临时目录（每画面 + overlay + 主壳）
     QDir genDir(QDir::tempPath() + "/navihmi_gen");
@@ -490,6 +495,10 @@ int main(int argc, char *argv[])
     navihmi::DataLogger dataLogger;
     dataLogger.setDataManager(&dataManager);
 
+    // H-8: 数据采集引擎（Modbus TCP 轮询读 + 写通道; 无 modbus 变量时零开销）
+    navihmi::Acquisition acquisition;
+    acquisition.setDataManager(&dataManager);
+
     // 设备信息（B6-6: IP/MAC/版本/内核/运行时间真实读取, 导航页显示）
     navihmi::DeviceInfo deviceInfo;
 
@@ -540,9 +549,15 @@ int main(int argc, char *argv[])
     // R3: --project 是 ZIP 工程包时整包解压 → 内部 app.navihmi + tiles/ 瓦片
     QString tileBasePath;
     const QString resolvedProject = resolveProjectPackage(projectPath, tileBasePath);
-    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger))
+    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition))
         return 1;
     qInfo().noquote() << "navigatorhmi-fw: loadAndInject 完成";   // 诊断(B6-8)
+
+    // H-8: 写通道联动——DataManager 写 modbus 来源变量 → 同步写设备
+    QObject::connect(&dataManager, &navihmi::DataManager::valueChanged, &acquisition,
+                     [&acquisition](const QString& tagName, const QVariant& value) {
+        acquisition.handleValueWritten(tagName, value);
+    });
 
     // G-2: 报警事件 → alarm_history（AlarmEngine 触发/确认联动 DataLogger）
     QObject::connect(&alarmEngine, &navihmi::AlarmEngine::alarmTriggered,
@@ -569,7 +584,7 @@ int main(int argc, char *argv[])
     };
     // 存储管理替换默认工程后 → 重新加载注入（B6-8: 替换即时生效, 开始工程打开新工程）
     QObject::connect(&storageInfo, &navihmi::StorageInfo::projectReplaced, rootObj,
-                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger]() {
+                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger, &acquisition]() {
         QString tileBasePath;
         const QString defaultPath = navihmi::StorageInfo::defaultProjectPath();
         const QString resolved = resolveProjectPackage(defaultPath, tileBasePath);
@@ -581,7 +596,7 @@ int main(int argc, char *argv[])
         // 防旧工程画面控件残留注册, 新工程 set_property 按旧画面名寻址到幽灵控件
         objectManager.setCurrentScreen(QString());
         objectManager.clearScreens();
-        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger);
+        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
     });
 
     qInfo().noquote() << "navigatorhmi-fw: 进入事件循环";   // 诊断(B6-8)

@@ -43,6 +43,8 @@ public:
 
     // ── 用户管理（设备端 ⚙ 弹窗；需 UserManage 权限）──
     Q_INVOKABLE bool canManage() const;
+    /// 当前登录用户是否初始兜底 admin（H-3: 默认 admin 禁改自己的组, 防把唯一管理员降权锁死）
+    Q_INVOKABLE bool isDefaultAdmin() const;
     Q_INVOKABLE QStringList userNames() const;
     Q_INVOKABLE QStringList groupNames() const;
     /// 查询指定用户的所属组（管理弹窗预填用；不存在返回空串）
@@ -69,6 +71,7 @@ private:
 
     Project m_project;
     QString m_currentUser;
+    QString m_defaultAdminName;    // H-3: 初始兜底 admin 用户名（改名时跟随）——禁改自己的组
     // 设备端本地持久化覆盖（工程 users 之上；key=用户当前名, oldName=改名前的名字）
     // 审查 B1(2026-08-23 G-1a): setProject 时合并回 m_project.users——否则"只写不读",
     // 重启后改密/改组/改名全部失效且旧密码仍可登录

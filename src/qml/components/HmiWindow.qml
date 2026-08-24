@@ -34,6 +34,10 @@ Rectangle {
     property string boundDevice: ""
     // G-1c: robotSlots 逐组变量绑定（每组 {id,status,location,detail,oper} = 变量名）
     property var robotSlots: []
+    // H-7(M8): 事件 payload——确认报警时写入报警编号 / 点卡片时写入机器人编号
+    // （生成器 onHmiAck/onHmiSelect 处理器读取此属性传给 runtimeBus.emitEvent）
+    property string ackPayload: ""
+    property string selectPayload: ""
     // 通用字段（生成器并集输出; proto:36 title 复用承载边框色）
     property string fillColor: ""
     property string strokeColor: ""
@@ -236,28 +240,51 @@ Rectangle {
                 }
             }
 
-            // 操作按钮（按登录态切换：未登录→[登录]，已登录→[注销]）
-            Rectangle {
-                id: loginBtn
+            // 操作按钮（未登录→[登录]；登录态→[注销][改密]——H-3 自助改密入口, 仅登录用户可见）
+            Row {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 5
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: 60; height: 22
-                radius: 4
-                color: (userSystem && userSystem.loggedIn) ? "#E53935" : "#1565C0"
-                Text {
-                    anchors.centerIn: parent
-                    text: (userSystem && userSystem.loggedIn) ? "注销" : "登录"
-                    color: "white"
-                    font.pixelSize: 10
+                spacing: 6
+                Rectangle {
+                    id: loginBtn
+                    width: 60; height: 22
+                    radius: 4
+                    color: (userSystem && userSystem.loggedIn) ? "#E53935" : "#1565C0"
+                    Text {
+                        anchors.centerIn: parent
+                        text: (userSystem && userSystem.loggedIn) ? "注销" : "登录"
+                        color: "white"
+                        font.pixelSize: 10
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (userSystem && userSystem.loggedIn) {
+                                userSystem.logout()
+                            } else {
+                                loginDialog.openDialog()
+                            }
+                        }
+                    }
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: {
-                        if (userSystem && userSystem.loggedIn) {
-                            userSystem.logout()
-                        } else {
-                            loginDialog.openDialog()
+                // H-3: 自助改密（普通用户/管理员均可改自己的用户名+密码; 组下拉仅管理员且非默认 admin 显示）
+                Rectangle {
+                    width: 46; height: 22
+                    radius: 4
+                    color: "#1565C0"
+                    visible: userSystem && userSystem.loggedIn
+                    Text {
+                        anchors.centerIn: parent
+                        text: "改密"
+                        color: "white"
+                        font.pixelSize: 10
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            selfEditDialog.userName = userSystem.currentUserName()
+                            selfEditDialog.openDialog()
                         }
                     }
                 }
@@ -400,6 +427,7 @@ Rectangle {
                             anchors.fill: parent
                             onClicked: {
                                 if (alarmEngine) alarmEngine.ackAlarm(alarmData.id)
+                                root.ackPayload = alarmData.id   // H-7(M8): 确认报警携带编号
                                 root.hmiAck()
                             }
                         }
@@ -443,6 +471,7 @@ Rectangle {
                             // 审查 M3: 表头全选=确认全部活动报警（含不可见行; 逐条 ACK 由 AlarmEngine 发）
                             if (alarmEngine) alarmEngine.ackAll()
                             headerCheck.checked = false
+                            root.ackPayload = ""   // 审查 MINOR-1: 批量确认不携带单行编号
                             root.hmiAck()
                         }
                     }
@@ -470,10 +499,22 @@ Rectangle {
                     var idVal = (dataManager && s.id !== "") ? dataManager.value(s.id) : ""
                     var statusVal = (dataManager && s.status !== "") ? dataManager.value(s.status) : ""
                     var locVal = (dataManager && s.location !== "") ? dataManager.value(s.location) : ""
+                    // H-6(M6): 详情 JSON 解析 category → 图标分类（解析失败默认图标兜底）
+                    var category = ""
+                    if (s.detail !== "") {
+                        var raw = dataManager ? dataManager.value(s.detail) : ""
+                        if (raw !== "" && raw !== null && raw !== undefined) {
+                            try {
+                                var obj = JSON.parse("" + raw)
+                                if (obj && obj.category) category = "" + obj.category
+                            } catch (e) { category = "" }   // JSON 失败 → 默认图标
+                        }
+                    }
                     arr.push({
                         idVar: s.id || "", statusVar: s.status || "", locVar: s.location || "",
                         detailVar: s.detail || "", operVar: s.oper || "",
-                        idVal: idVal, statusVal: statusVal, locVal: locVal
+                        idVal: idVal, statusVal: statusVal, locVal: locVal,
+                        category: category
                     })
                 }
                 cards = arr
@@ -488,9 +529,10 @@ Rectangle {
                 target: dataManager
                 function onValueChanged(tagName, value) {
                     // 仅本窗口绑定变量变化时刷新（iofield 改状态/位置/编号 → 卡片更新）
+                    // 审查 MINOR-10: detail 变化也刷新（category → 图标随数据更新）
                     for (var i = 0; i < root.robotSlots.length; i++) {
                         var s = root.robotSlots[i]
-                        if (s.id === tagName || s.status === tagName || s.location === tagName) {
+                        if (s.id === tagName || s.status === tagName || s.location === tagName || s.detail === tagName) {
                             robotListRoot.refreshCards()
                             return
                         }
@@ -543,7 +585,11 @@ Rectangle {
                                          || (stOk && (cardData.locVal === "" || cardData.locVal === null || cardData.locVal === undefined))
                     }
                     Component.onCompleted: computeStatus()
-                    onCardDataChanged: computeStatus()
+                    // H-6: cardData 变化（delegate 创建后赋值）时重算状态 + 重绘图标（Canvas onPaint 只初始执行）
+                    onCardDataChanged: {
+                        computeStatus()
+                        if (catIcon) catIcon.requestPaint()
+                    }
 
                     color: cardData.statusVal === "" || cardData.statusVal === null || cardData.statusVal === undefined
                            ? "#ECEFF1" : "#E3F2FD"
@@ -554,6 +600,62 @@ Rectangle {
                         anchors.fill: parent
                         anchors.margins: 2
                         spacing: 1
+                        // H-6(M6): category → 图标（Canvas 简化绘制: 无人机/无人船/潜航器/四足/轮式/人形 + 默认）
+                        Canvas {
+                            id: catIcon
+                            width: 20; height: 14
+                            visible: cardData.idVal !== "" && cardData.idVal !== null && cardData.idVal !== undefined
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.reset()
+                                ctx.clearRect(0, 0, width, height)
+                                ctx.fillStyle = "#1565C0"
+                                var cat = (cardData && cardData.category) ? cardData.category : ""
+                                if (cat === "drone" || cat === "uav") {
+                                    // 无人机: 四旋翼 × 形 + 中心机身
+                                    ctx.strokeStyle = "#1565C0"; ctx.lineWidth = 1.5
+                                    ctx.beginPath()
+                                    ctx.moveTo(3, 2); ctx.lineTo(17, 12)
+                                    ctx.moveTo(17, 2); ctx.lineTo(3, 12)
+                                    ctx.stroke()
+                                    ctx.beginPath(); ctx.arc(10, 7, 2.2, 0, Math.PI * 2); ctx.fill()
+                                } else if (cat === "ship" || cat === "boat") {
+                                    // 无人船: 船体弧 + 桅杆
+                                    ctx.beginPath()
+                                    ctx.moveTo(2, 11); ctx.quadraticCurveTo(10, 14, 18, 11)
+                                    ctx.lineTo(18, 12.5); ctx.quadraticCurveTo(10, 15.5, 2, 12.5)
+                                    ctx.closePath(); ctx.fill()
+                                    ctx.fillRect(9.2, 3, 1.6, 7)
+                                } else if (cat === "uuv" || cat === "submarine" || cat === "auv") {
+                                    // 潜航器: 椭圆鱼形 + 尾鳍
+                                    ctx.beginPath(); ctx.ellipse(8, 7, 6, 3.2, 0, 0, Math.PI * 2); ctx.fill()
+                                    ctx.beginPath()
+                                    ctx.moveTo(14, 7); ctx.lineTo(18, 4); ctx.lineTo(17.5, 7); ctx.lineTo(18, 10)
+                                    ctx.closePath(); ctx.fill()
+                                } else if (cat === "quadruped" || cat === "dog" || cat === "robot-dog") {
+                                    // 四足: 身 + 四腿
+                                    ctx.fillRect(4, 4, 12, 3)
+                                    ctx.fillRect(5, 7, 1.5, 5); ctx.fillRect(13.5, 7, 1.5, 5)
+                                    ctx.fillRect(7.5, 7, 1.2, 3.5); ctx.fillRect(11.3, 7, 1.2, 3.5)
+                                    ctx.beginPath(); ctx.arc(4, 3.4, 1.8, 0, Math.PI * 2); ctx.fill()
+                                } else if (cat === "wheel" || cat === "track" || cat === "vehicle") {
+                                    // 轮式/履带: 车身 + 两轮
+                                    ctx.fillRect(2, 4, 16, 5)
+                                    ctx.beginPath(); ctx.arc(5.5, 10.5, 2.2, 0, Math.PI * 2); ctx.fill()
+                                    ctx.beginPath(); ctx.arc(14.5, 10.5, 2.2, 0, Math.PI * 2); ctx.fill()
+                                } else if (cat === "humanoid" || cat === "human") {
+                                    // 人形: 头 + 身 + 腿
+                                    ctx.beginPath(); ctx.arc(10, 3, 2, 0, Math.PI * 2); ctx.fill()
+                                    ctx.fillRect(7, 6, 6, 3.5)
+                                    ctx.fillRect(8, 9.5, 1.5, 3.5); ctx.fillRect(10.5, 9.5, 1.5, 3.5)
+                                } else {
+                                    // 默认机器人图案: 头 + 方身 + 天线
+                                    ctx.beginPath(); ctx.arc(10, 3.5, 2.2, 0, Math.PI * 2); ctx.fill()
+                                    ctx.fillRect(6.5, 6, 7, 5)
+                                    ctx.fillRect(10, 0.5, 1, 1.8)
+                                }
+                            }
+                        }
                         // 编号（cardShowNumber）
                         Text {
                             text: root.cardShowNumber && cardData.idVal !== "" ? "R" + cardData.idVal : ""
@@ -593,6 +695,7 @@ Rectangle {
                             // 详情弹窗 + onSelect + SelectedTag 写入（DESIGN-WINDOWS L105）
                             robotDetail.cardData = card.cardData
                             robotDetail.openDialog()
+                            root.selectPayload = "R" + cardData.idVal   // H-7(M8): 选中机器人携带编号
                             root.hmiSelect()
                             if (root.selectedTag !== "" && dataManager)
                                 dataManager.setValue(root.selectedTag, "" + cardData.idVal)
@@ -602,123 +705,143 @@ Rectangle {
             }
         }
 
-        // ══════════ 机器人详情弹窗（G-1c）══════════
-        Rectangle {
-            id: robotDetail
-            anchors.fill: parent
-            z: 50
-            color: "#80000000"
-            visible: false
 
-            property var cardData: null
+    }
 
-            function openDialog() { visible = true }
-            function closeDialog() { visible = false }
+    // ══════════ 机器人详情弹窗（G-1c）══════════
+    Rectangle {
+        id: robotDetail
+        anchors.fill: parent
+        z: 50
+        color: "#80000000"
+        visible: false
 
-            // 详情 JSON 解析（修复: function 放顶层, Column 内声明序引用会 ReferenceError）
-            function detailText(detailVar) {
-                if (!detailVar || detailVar === "") return "无详细信息"
-                var raw = dataManager ? dataManager.value(detailVar) : ""
-                if (raw === "" || raw === null || raw === undefined) return "无详细信息"
-                var s = "" + raw
-                try {
-                    var obj = JSON.parse(s)
-                    s = ""
-                    if (obj.category) s += "类别: " + obj.category + "\n"
-                    if (obj.model) s += "型号: " + obj.model + "\n"
-                    if (obj.production_date) s += "生产日期: " + obj.production_date + "\n"
-                    if (obj.factory_date) s += "出厂日期: " + obj.factory_date + "\n"
-                    if (obj.task) s += "当前任务: " + obj.task + "\n"
-                    if (obj.params) s += "参数: " + JSON.stringify(obj.params) + "\n"
-                    if (s === "") s = raw
-                } catch (e) {
-                    s = raw   // 非 JSON 原文显示
-                }
-                return s
+        property var cardData: null
+        // 审查 MAJOR-5: Window attached property 在 JS handler 内访问抛 TypeError——声明处缓存
+        property var contentRoot: root.Window ? root.Window.contentItem : null
+
+        function openDialog() { visible = true }
+        function closeDialog() { visible = false }
+
+        // 详情 JSON 解析（修复: function 放顶层, Column 内声明序引用会 ReferenceError）
+        function detailText(detailVar) {
+            if (!detailVar || detailVar === "") return "无详细信息"
+            var raw = dataManager ? dataManager.value(detailVar) : ""
+            if (raw === "" || raw === null || raw === undefined) return "无详细信息"
+            var s = "" + raw
+            try {
+                var obj = JSON.parse(s)
+                s = ""
+                if (obj.category) s += "类别: " + obj.category + "\n"
+                if (obj.model) s += "型号: " + obj.model + "\n"
+                if (obj.production_date) s += "生产日期: " + obj.production_date + "\n"
+                if (obj.factory_date) s += "出厂日期: " + obj.factory_date + "\n"
+                if (obj.task) s += "当前任务: " + obj.task + "\n"
+                if (obj.params) s += "参数: " + JSON.stringify(obj.params) + "\n"
+                if (s === "") s = raw
+            } catch (e) {
+                s = raw   // 非 JSON 原文显示
             }
+            return s
+        }
+        // 操作指令写 OperTag（H-2 修复: function 放顶层——原在 Row 内声明序引用
+        // 报 ReferenceError: sendOper is not defined, 下线/上线/删除按钮实际失效）
+        function sendOper(type) {
+            if (robotDetail.cardData && robotDetail.cardData.operVar !== "" && dataManager)
+                dataManager.setValue(robotDetail.cardData.operVar,
+                    type + ":R" + robotDetail.cardData.idVal)
+        }
 
-            Rectangle {
-                width: Math.min(parent.width - 8, 240)
-                // 审查 M4: 高度钳制到窗口内（防 clip 裁掉底部操作按钮）
-                height: Math.min(detailColumn.implicitHeight + 16, parent.height - 6)
-                anchors.centerIn: parent
-                radius: 6
-                color: "white"
-                Column {
-                    id: detailColumn
+        Rectangle {
+            // H-2: 最小显示尺寸（宽 240 / 高 max(内容,150)）——内容完整显示;
+            // 窗口小于最小尺寸时弹窗可超出窗口（HmiWindow root 无 clip）, 经屏幕边界钳制保证可操作
+            // 审查 MINOR-7: 原 max(min(w-8,240),240) 恒 240, 直接写明确值
+            width: 240
+            height: Math.max(Math.min(detailColumn.implicitHeight + 16, parent.height - 6), 150)
+            anchors.centerIn: parent
+            radius: 6
+            color: "white"
+            // H-2: 屏幕边界钳制（弹窗超出窗口时 x/y 限制在屏幕可视区, 防按钮落出屏幕）
+            // 审查 MAJOR-5: 用声明处缓存 contentRoot（JS 内访问 root.Window 抛 TypeError）
+            onXChanged: clampToScreen()
+            onYChanged: clampToScreen()
+            function clampToScreen() {
+                var win = robotDetail.contentRoot
+                if (!win) return
+                if (x < 0) x = 0
+                if (y < 0) y = 0
+                if (x + width > win.width) x = Math.max(0, win.width - width)
+                if (y + height > win.height) y = Math.max(0, win.height - height)
+            }
+            Column {
+                id: detailColumn
+                width: parent.width
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 8
+                spacing: 4
+                // 标题行：标题 + 右上角 × 关闭（紧凑布局, 防按钮被窗口高度裁切）
+                Row {
                     width: parent.width
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.top
-                    anchors.topMargin: 8
                     spacing: 4
-                    // 标题行：标题 + 右上角 × 关闭（紧凑布局, 防按钮被窗口高度裁切）
-                    Row {
-                        width: parent.width
-                        spacing: 4
-                        Text {
-                            width: parent.width - 24
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: robotDetail.cardData && robotDetail.cardData.idVal !== ""
-                                  ? "机器人 R" + robotDetail.cardData.idVal : "机器人详情"
-                            font.pixelSize: 12; font.bold: true; color: "#333333"
-                            elide: Text.ElideRight
-                        }
-                        Rectangle {
-                            width: 18; height: 18; radius: 3; color: "#E0E0E0"
-                            Text { anchors.centerIn: parent; text: "✕"; font.pixelSize: 10; color: "#555555" }
-                            MouseArea { anchors.fill: parent; onClicked: robotDetail.closeDialog() }
-                        }
-                    }
-                    // 状态/位置（取自身绑定变量）
                     Text {
-                        width: parent.width
-                        text: robotDetail.cardData
-                              ? "状态: " + robotDetail.cardData.statusVal + "  位置: " + robotDetail.cardData.locVal
-                              : ""
-                        font.pixelSize: 9; color: "#666666"
-                        wrapMode: Text.WordWrap
-                    }
-                    // 详细信息 JSON 解析（型号/日期/参数/task）
-                    Text {
-                        width: parent.width
-                        text: robotDetail.cardData ? robotDetail.detailText(robotDetail.cardData.detailVar) : ""
-                        font.pixelSize: 9; color: "#444444"
-                        wrapMode: Text.WordWrap
-                        maximumLineCount: 3
+                        width: parent.width - 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: robotDetail.cardData && robotDetail.cardData.idVal !== ""
+                              ? "机器人 R" + robotDetail.cardData.idVal : "机器人详情"
+                        font.pixelSize: 12; font.bold: true; color: "#333333"
                         elide: Text.ElideRight
                     }
-                    // 操作按钮（写 OperTag 变量 "下线:R01" 等——控制器执行, HMI 只下发）
-                    Row {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: 6
-                        Rectangle {
-                            width: 48; height: 20; radius: 3; color: "#E53935"
-                            Text { anchors.centerIn: parent; text: "下线"; color: "white"; font.pixelSize: 9 }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: sendOper("下线")
-                            }
+                    Rectangle {
+                        width: 18; height: 18; radius: 3; color: "#E0E0E0"
+                        Text { anchors.centerIn: parent; text: "✕"; font.pixelSize: 10; color: "#555555" }
+                        MouseArea { anchors.fill: parent; onClicked: robotDetail.closeDialog() }
+                    }
+                }
+                // 状态/位置（取自身绑定变量）
+                Text {
+                    width: parent.width
+                    text: robotDetail.cardData
+                          ? "状态: " + robotDetail.cardData.statusVal + "  位置: " + robotDetail.cardData.locVal
+                          : ""
+                    font.pixelSize: 9; color: "#666666"
+                    wrapMode: Text.WordWrap
+                }
+                // 详细信息 JSON 解析（型号/日期/参数/task）
+                Text {
+                    width: parent.width
+                    text: robotDetail.cardData ? robotDetail.detailText(robotDetail.cardData.detailVar) : ""
+                    font.pixelSize: 9; color: "#444444"
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 3
+                    elide: Text.ElideRight
+                }
+                // 操作按钮（写 OperTag 变量 "下线:R01" 等——控制器执行, HMI 只下发）
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 6
+                    Rectangle {
+                        width: 48; height: 20; radius: 3; color: "#E53935"
+                        Text { anchors.centerIn: parent; text: "下线"; color: "white"; font.pixelSize: 9 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: robotDetail.sendOper("下线")
                         }
-                        Rectangle {
-                            width: 48; height: 20; radius: 3; color: "#4CAF50"
-                            Text { anchors.centerIn: parent; text: "上线"; color: "white"; font.pixelSize: 9 }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: sendOper("上线")
-                            }
+                    }
+                    Rectangle {
+                        width: 48; height: 20; radius: 3; color: "#4CAF50"
+                        Text { anchors.centerIn: parent; text: "上线"; color: "white"; font.pixelSize: 9 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: robotDetail.sendOper("上线")
                         }
-                        Rectangle {
-                            width: 48; height: 20; radius: 3; color: "#F57C00"
-                            Text { anchors.centerIn: parent; text: "删除"; color: "white"; font.pixelSize: 9 }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: sendOper("删除")
-                            }
-                        }
-                        function sendOper(type) {
-                            if (robotDetail.cardData && robotDetail.cardData.operVar !== "" && dataManager)
-                                dataManager.setValue(robotDetail.cardData.operVar,
-                                    type + ":R" + robotDetail.cardData.idVal)
+                    }
+                    Rectangle {
+                        width: 48; height: 20; radius: 3; color: "#F57C00"
+                        Text { anchors.centerIn: parent; text: "删除"; color: "white"; font.pixelSize: 9 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: robotDetail.sendOper("删除")
                         }
                     }
                 }
@@ -868,6 +991,7 @@ Rectangle {
             // 审查 M3: 显式同步输入框 text（绑定销毁后属性不再传导）
             mgrNameInput.text = ""
             mgrPasswordInput.text = ""
+            updateGroupComboState()
             visible = true
         }
         function closeDialog() { visible = false; Qt.inputMethod.hide() }
@@ -878,6 +1002,13 @@ Rectangle {
             if (newGroup === "") newGroup = userSystem && userSystem.groupNames().length > 0 ? userSystem.groupNames()[0] : ""
             mgrNameInput.text = ""
             mgrPasswordInput.text = ""
+            updateGroupComboState()
+        }
+        // H-3: 默认 admin 改自己时组下拉禁用（防把唯一管理员降权锁死）
+        function updateGroupComboState() {
+            if (groupCombo)
+                groupCombo.enabled = !(userSystem && userSystem.isDefaultAdmin()
+                                       && userName === userSystem.currentUserName())
         }
 
         Rectangle {
@@ -1019,9 +1150,13 @@ Rectangle {
                             anchors.fill: parent
                             onClicked: {
                                 // 审查 M1: 原样传 newGroup（空=不改, 对齐 C++「留空=不改」契约）
+                                // 审查 MAJOR-2: 默认 admin 改自己时传空组（禁改组; 否则组预填非空被服务端误拒）
+                                var grp = manageDialog.newGroup
+                                if (userSystem && userSystem.isDefaultAdmin()
+                                    && manageDialog.userName === userSystem.currentUserName())
+                                    grp = ""
                                 var err = userSystem.updateUser(manageDialog.userName,
-                                    manageDialog.newName, manageDialog.newPassword,
-                                    manageDialog.newGroup)
+                                    manageDialog.newName, manageDialog.newPassword, grp)
                                 if (err === "") {
                                     manageDialog.closeDialog()
                                 } else {
@@ -1034,6 +1169,154 @@ Rectangle {
                         width: 70; height: 26; radius: 4; color: "#BBBBBB"
                         Text { anchors.centerIn: parent; text: "取消"; color: "white"; font.pixelSize: 12 }
                         MouseArea { anchors.fill: parent; onClicked: manageDialog.closeDialog() }
+                    }
+                }
+            }
+        }
+    }
+
+    // ══════════ 自助改密弹窗（H-3：普通用户/管理员改自己的用户名+密码；组仅管理员且非默认 admin 可改）══════════
+    Rectangle {
+        id: selfEditDialog
+        anchors.fill: parent
+        z: 50
+        color: "#80000000"
+        visible: false
+
+        property string userName: ""
+        property string newName: ""
+        property string newPassword: ""
+        property string newGroup: ""
+        property string errText: ""
+
+        function openDialog() {
+            newName = ""; newPassword = ""; errText = ""
+            // 组预填 = 当前用户所属组（仅管理员且非默认 admin 显示组区; 普通用户组区隐藏）
+            newGroup = userSystem ? userSystem.groupOf(userName) : ""
+            selNameInput.text = ""
+            selPasswordInput.text = ""
+            visible = true
+        }
+        function closeDialog() { visible = false; Qt.inputMethod.hide() }
+
+        Rectangle {
+            width: Math.min(parent.width - 8, 240)
+            height: selColumn.implicitHeight + 20
+            anchors.centerIn: parent
+            radius: 6
+            color: "white"
+            Column {
+                id: selColumn
+                width: parent.width
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 10
+                spacing: 7
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "修改我的账户"
+                    font.pixelSize: 13; font.bold: true; color: "#333333"
+                }
+                // 当前用户名（锁定, 不可改此处——自助改密只作用于自己）
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: selfEditDialog.userName
+                    font.pixelSize: 12; font.bold: true; color: "#1565C0"
+                }
+                // 新用户名
+                TextInput {
+                    id: selNameInput
+                    width: parent.width
+                    height: 24
+                    color: "#333333"
+                    font.pixelSize: 12
+                    clip: true
+                    text: selfEditDialog.newName
+                    onTextChanged: selfEditDialog.newName = text
+                    Rectangle { anchors.fill: parent; z: -1; color: "#F2F2F2"; radius: 3 }
+                    Text {
+                        anchors.fill: parent
+                        anchors.leftMargin: 6
+                        verticalAlignment: Text.AlignVCenter
+                        text: "新用户名（留空=不改）"
+                        color: "#AAAAAA"
+                        font.pixelSize: 11
+                        visible: parent.text === ""
+                    }
+                }
+                // 新密码
+                TextInput {
+                    id: selPasswordInput
+                    width: parent.width
+                    height: 24
+                    color: "#333333"
+                    font.pixelSize: 12
+                    clip: true
+                    echoMode: TextInput.Password
+                    text: selfEditDialog.newPassword
+                    onTextChanged: selfEditDialog.newPassword = text
+                    Rectangle { anchors.fill: parent; z: -1; color: "#F2F2F2"; radius: 3 }
+                    Text {
+                        anchors.fill: parent
+                        anchors.leftMargin: 6
+                        verticalAlignment: Text.AlignVCenter
+                        text: "新密码（留空=不改）"
+                        color: "#AAAAAA"
+                        font.pixelSize: 11
+                        visible: parent.text === ""
+                    }
+                }
+                // 所属组（H-3: 仅管理员且非默认 admin 显示/可改——普通用户禁改组, 默认 admin 禁改自己组）
+                Row {
+                    spacing: 6
+                    visible: userSystem && userSystem.canManage && !userSystem.isDefaultAdmin()
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "组:"
+                        font.pixelSize: 11; color: "#666666"
+                    }
+                    ComboBox {
+                        id: selGroupCombo
+                        width: 120; height: 24
+                        model: userSystem ? userSystem.groupNames() : []
+                        currentIndex: Math.max(0, model.indexOf(selfEditDialog.newGroup))
+                        onActivated: selfEditDialog.newGroup = currentText
+                    }
+                }
+                Text {
+                    width: parent.width
+                    text: selfEditDialog.errText
+                    color: "#D32F2F"
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                    visible: selfEditDialog.errText !== ""
+                }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 12
+                    Rectangle {
+                        width: 70; height: 26; radius: 4; color: "#1565C0"
+                        Text { anchors.centerIn: parent; text: "保存"; color: "white"; font.pixelSize: 12 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                // 组仅管理员且非默认 admin 传值（普通用户组区隐藏 newGroup 空=不改）
+                                var grp = (userSystem && userSystem.canManage && !userSystem.isDefaultAdmin())
+                                          ? selfEditDialog.newGroup : ""
+                                var err = userSystem.updateUser(selfEditDialog.userName,
+                                    selfEditDialog.newName, selfEditDialog.newPassword, grp)
+                                if (err === "") {
+                                    selfEditDialog.closeDialog()
+                                } else {
+                                    selfEditDialog.errText = err
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        width: 70; height: 26; radius: 4; color: "#BBBBBB"
+                        Text { anchors.centerIn: parent; text: "取消"; color: "white"; font.pixelSize: 12 }
+                        MouseArea { anchors.fill: parent; onClicked: selfEditDialog.closeDialog() }
                     }
                 }
             }

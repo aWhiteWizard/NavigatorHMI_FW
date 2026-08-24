@@ -43,7 +43,8 @@ public:
 public slots:
     /// QML 事件入口：objectName 控件事件 → 查模型 → 执行动作
     /// objectName 空 = 世界地图级事件
-    void emitEvent(const QString& objectName, int eventType);
+    /// payload（H-7/M8）：可选事件负载（onAck 报警编号 / onSelect 机器人编号等；旧调用不传=空）
+    void emitEvent(const QString& objectName, int eventType, const QString& payload = QString());
 
 private:
     void executeAction(const EventAction& action, const Widget* widget, const QString& sourceScreen);

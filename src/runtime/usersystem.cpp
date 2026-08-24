@@ -60,6 +60,8 @@ void UserSystem::setProject(const Project& proj)
         admin.groupName = mgmtGroup;
         admin.mustChangePassword = true;
         m_project.users.append(admin);
+        // H-3: 记录初始兜底 admin 身份（改名时跟随）——默认 admin 禁改自己的组
+        m_defaultAdminName = admin.userName;
         qInfo().noquote() << "UserSystem: 初始管理员兜底 admin（首次登录强制改密）";
     }
     // 审查 B1(2026-08-23 G-1a): 本地持久化覆盖合并回内存模型——否则"只写不读",
@@ -217,11 +219,26 @@ QString UserSystem::groupOf(const QString& userName) const
     return acc ? acc->groupName : QString();
 }
 
+bool UserSystem::isDefaultAdmin() const
+{
+    // H-3: 当前登录用户是否初始兜底 admin（改名后身份跟随 m_defaultAdminName）
+    return !m_currentUser.isEmpty() && m_currentUser == m_defaultAdminName;
+}
+
 QString UserSystem::updateUser(const QString& userName, const QString& newName,
                                const QString& newPassword, const QString& newGroup)
 {
-    if (!canManage())
-        return QStringLiteral("无用户管理权限");
+    // H-3 权限分层（用户 2026-08-24 规则定稿）：
+    // 普通用户：改自己 userName+password 允许、禁改组；管理员：改自己+别人（含组）；
+    // 默认 admin（初始兜底）：禁改自己的组（防把唯一管理员降权锁死）
+    const bool isSelf = (userName == m_currentUser);
+    if (!isSelf && !canManage())
+        return QStringLiteral("无用户管理权限");   // 改别人需管理员
+    if (isSelf && !newGroup.isEmpty() && !canManage())
+        return QStringLiteral("无权限修改自己的组（仅管理员可改组）");
+    if (isSelf && !newGroup.isEmpty() && isDefaultAdmin())
+        return QStringLiteral("默认管理员不能修改自己的组");
+
     UserAccount* acc = nullptr;
     for (auto& u : m_project.users)
         if (u.userName == userName) { acc = &u; break; }
@@ -259,6 +276,9 @@ QString UserSystem::updateUser(const QString& userName, const QString& newName,
     }
     if (!newGroup.isEmpty())
         acc->groupName = newGroup;
+    // H-3: 默认 admin 改名 → m_defaultAdminName 跟随（身份不因改名丢失）
+    if (m_defaultAdminName == oldName)
+        m_defaultAdminName = acc->userName;
 
     // 设备端持久化（覆盖工程配置, 下次启动生效——审查 B1: 覆盖在 setProject 时合并回内存模型）
     Override ov;

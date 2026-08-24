@@ -42,8 +42,9 @@ find_package(Qt${QT_VERSION_MAJOR}Quick QUIET)
 if(Qt${QT_VERSION_MAJOR}Qml_FOUND AND Qt${QT_VERSION_MAJOR}Quick_FOUND)
     set(HAVE_QT_QML TRUE)
 endif()
-# 核心组件（Core/Gui/Widgets 必需；Sql 为 G-2 数据记录模块——板端 Qt 6.4.3 已验证 qsqlite 驱动）
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets Sql)
+# 核心组件（Core/Gui/Widgets 必需；Sql 为 G-2 数据记录模块——板端 Qt 6.4.3 已验证 qsqlite 驱动；
+# SerialBus 为 H-8 数据采集 Modbus——板端已装 libQt6SerialBus）
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets Sql SerialBus)
 message(STATUS "Qt 版本: ${QT_VERSION_MAJOR}.${Qt${QT_VERSION_MAJOR}_VERSION}  QML: ${HAVE_QT_QML}")
 
 # ============================================================
@@ -121,13 +122,13 @@ if(SOURCES)
         target_link_libraries(${PROJECT_NAME}
             Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui
             Qt${QT_VERSION_MAJOR}::Qml Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::Widgets
-            Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Sql
+            Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Sql Qt${QT_VERSION_MAJOR}::SerialBus
             protobuf::libprotobuf
         )
     else()
         target_link_libraries(${PROJECT_NAME}
             Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Widgets
-            Qt${QT_VERSION_MAJOR}::Sql
+            Qt${QT_VERSION_MAJOR}::Sql Qt${QT_VERSION_MAJOR}::SerialBus
             protobuf::libprotobuf
         )
     endif()

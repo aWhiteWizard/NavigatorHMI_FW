@@ -53,6 +53,8 @@ signals:
 
 private:
     void poll();   // 定时轮询变量值 → 触发/清除报警
+    /// H-5(M9): 报警恢复统一处理（deadband 达标后: 移出活动列表 + CLEAR 审计）；返回是否变化
+    bool doClear(const AlarmRule& rule, double value);
 
     struct ActiveAlarm {
         QString id;         // 规则名（唯一）
@@ -61,6 +63,7 @@ private:
         QString message;
         bool acked = false; // 已确认（历史保留）
         QString tag;        // 关联变量名
+        int priority = 0;   // H-5(M9): 优先级（同级排序）
     };
 
     Project m_project;
@@ -68,6 +71,7 @@ private:
     QList<ActiveAlarm> m_active;
     QHash<QString, bool> m_triggered;   // ruleName -> 是否处于触发态（防重复触发）
     QHash<QString, QString> m_triggeredTime;
+    QHash<QString, qint64> m_overThresholdMs;   // H-5(M9): 首次超阈值时间戳（delayMs 延迟触发）
     QTimer* m_timer = nullptr;
 };
 

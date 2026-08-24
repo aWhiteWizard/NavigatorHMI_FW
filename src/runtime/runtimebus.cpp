@@ -54,7 +54,7 @@ void RuntimeBus::resetScreens()
     m_previousScreen = -1;
 }
 
-void RuntimeBus::emitEvent(const QString& objectName, int eventType)
+void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QString& payload)
 {
     const EventType et = static_cast<EventType>(eventType);
     // TraceLog（B6-10）: 事件入口 trace——QML 点击 → C++ 事件路由全链路可查（NAVIHMI_TRACE=0 关闭）
@@ -62,7 +62,8 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType)
                        || !qEnvironmentVariableIsSet("NAVIHMI_TRACE");   // 默认开
     if (trace)
         qInfo().noquote() << "[TRACE] emitEvent obj=" << objectName
-                          << "type=" << int(et);
+                          << "type=" << int(et)
+                          << "payload=" << payload;   // H-7(M8): 事件负载（报警/机器人编号）
 
     // 世界地图级事件（objectName 空或 "__worldmap__"）
     if (objectName.isEmpty() || objectName == "__worldmap__") {

@@ -214,8 +214,17 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
         default: signalName = "onHmi" + QString::number(int(ev.type)); break;
         }
         // 占位：eventType 供后续 ActionRunner 路由（QML 只发事件，动作由 C++ 执行）
+        // H-7(M8): emitEvent 第三参 payload——窗口控件 onAck/onSelect 携带编号（HmiWindow.ackPayload/selectPayload）；
+        // 其余事件 payload 空（兼容旧行为）
+        QString payloadExpr = QStringLiteral("\"\"");
+        if (w.type == WidgetType::Window) {
+            if (ev.type == EventType::OnAck)
+                payloadExpr = QStringLiteral("ackPayload");
+            else if (ev.type == EventType::OnSelect)
+                payloadExpr = QStringLiteral("selectPayload");
+        }
         out << "        " << signalName << ": function() { runtimeBus.emitEvent(\""
-            << qmlEsc(w.objectName) << "\", " << int(ev.type) << "); }\n";
+            << qmlEsc(w.objectName) << "\", " << int(ev.type) << ", " << payloadExpr << "); }\n";
     }
     // G-0: 控件注册/注销（ObjectManager 跨画面寻址依据；加载完成注册, 销毁注销）
     // 全局画面(overlay)控件 screenName 用所属 Template 画面名, 与 RuntimeBus 事件匹配口径一致
