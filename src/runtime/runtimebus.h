@@ -25,6 +25,10 @@ public:
 
     /// 设置运行时工程（QML 事件路由的依据）
     void setProject(const Project& proj);
+    /// 只读工程模型（I-1 SSH CLI 命令服务数据源：screens/tags/alarms）
+    const Project& project() const { return m_project; }
+    /// 当前画面名（I-1 CLI screen current；无工程/未进入返回空）
+    QString currentScreenName() const;
     /// 设置数据管理器（TagWrite 等动作写值用）
     void setDataManager(DataManager* dm);
     /// 设置对象管理器（G-0: set_property 等动作经 ObjectManager 跨画面寻址执行）

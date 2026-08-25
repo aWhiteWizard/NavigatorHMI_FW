@@ -29,6 +29,8 @@ public:
     Q_INVOKABLE void setValue(const QString& tagName, const QVariant& value);
     /// 是否存在
     Q_INVOKABLE bool hasTag(const QString& tagName) const;
+    /// 全部变量名列表（I-2 历史记录页/CLI tag list 用；setProject 后有效）
+    Q_INVOKABLE QStringList tagNames() const;
 
 signals:
     /// 变量值变化（QML 组件订阅刷新）

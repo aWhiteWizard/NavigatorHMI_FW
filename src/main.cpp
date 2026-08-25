@@ -41,6 +41,8 @@
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"
 #include "runtime/touchcalibrator.h"
+#include "cli/commands.h"
+#include "cli/cliserver.h"
 #endif
 
 // ═══════ 工程包解析（R3: 工程=单个 ZIP, 内含工程信息 + 瓦片地图）═══════
@@ -505,6 +507,10 @@ int main(int argc, char *argv[])
     // 存储信息（B6-7: SD/USB 真实检测 + 工程扫描/替换）
     navihmi::StorageInfo storageInfo;
 
+    // I-1: SSH CLI 命令服务（本地 socket + navihmi-cli 工具；命令与触屏共享服务实例）
+    navihmi::CommandService commandService;
+    navihmi::CliServer cliServer(&commandService);
+
     // 触摸校准引擎（E 循环集成进 FW: 校准 overlay 在 FW 主窗口内渲染 → VNC 全程不断;
     // 坐标走 Qt 层(QML MouseArea)采集 → VNC 注入鼠标事件也能操作校准）
     // 注: 必须在 engine.load 之前注入——main.qml 顶层绑定引用 touchCalibrator
@@ -531,6 +537,13 @@ int main(int argc, char *argv[])
     touchCalibrator.setProjectPath(projectPath);   // FW 自重启(--project)用原始工程路径
     engine.rootContext()->setContextProperty("touchCalibrator", &touchCalibrator);
 
+    // I-1: CLI 命令服务注入（工程数据经 runtimeBus.project() 读取——loadAndInject 后生效）
+    commandService.setDataManager(&dataManager);
+    commandService.setRuntimeBus(&runtimeBus);
+    commandService.setAlarmEngine(&alarmEngine);
+    commandService.setDeviceInfo(&deviceInfo);
+    commandService.setDataLogger(&dataLogger);
+
     engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败";
@@ -552,6 +565,10 @@ int main(int argc, char *argv[])
     if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition))
         return 1;
     qInfo().noquote() << "navigatorhmi-fw: loadAndInject 完成";   // 诊断(B6-8)
+
+    // I-1: CLI 服务启动（工程加载后——命令数据源就绪）
+    if (!cliServer.start())
+        qWarning().noquote() << "SSH CLI 服务不可用——navihmi-cli 将无法连接（FW 继续正常运行）";
 
     // H-8: 写通道联动——DataManager 写 modbus 来源变量 → 同步写设备
     QObject::connect(&dataManager, &navihmi::DataManager::valueChanged, &acquisition,

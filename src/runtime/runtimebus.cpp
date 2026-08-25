@@ -29,6 +29,13 @@ void RuntimeBus::setDataManager(DataManager* dm)
     m_dataManager = dm;
 }
 
+QString RuntimeBus::currentScreenName() const
+{
+    if (m_currentScreen >= 0 && m_currentScreen < m_project.screens.size())
+        return m_project.screens[m_currentScreen].name;
+    return QString();
+}
+
 void RuntimeBus::setObjectManager(ObjectManager* om)
 {
     m_objectManager = om;

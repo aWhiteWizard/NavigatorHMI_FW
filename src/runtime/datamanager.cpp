@@ -61,4 +61,9 @@ bool DataManager::hasTag(const QString& tagName) const
     return m_values.contains(tagName);
 }
 
+QStringList DataManager::tagNames() const
+{
+    return m_values.keys();
+}
+
 } // namespace navihmi

@@ -146,6 +146,21 @@ else()
 endif()
 
 # ============================================================
+# navihmi-cli（I-1 SSH CLI 客户端工具）——SSH 登录后执行的 FW 命令客户端
+# 仅需 Core + Network（QLocalSocket）；tools/ 不在主程序 GLOB 内
+# ============================================================
+if(HAVE_QT_QML)
+    add_executable(navihmi-cli
+        tools/navihmi-cli/main.cpp
+        ${CMAKE_SOURCE_DIR}/src/cli/cliprotocol.h
+    )
+    target_include_directories(navihmi-cli PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(navihmi-cli Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
+    target_compile_definitions(navihmi-cli PRIVATE FW_QT_MAJOR=${QT_VERSION_MAJOR})
+    message(STATUS "已添加可执行目标: navihmi-cli（SSH CLI 客户端）")
+endif()
+
+# ============================================================
 # 打印编译信息
 # ============================================================
 message(STATUS "========================================")
