@@ -147,6 +147,16 @@ Exec @("-p", $PROJ, "bind-event", "--screen", "画面A", "--widget", "button_24"
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "iofield", "--x", "560", "--y", "450", "--width", "120", "--height", "40", "--bound-tag", "R01_status")
 # H-8: modbus 变量画面显示（numeric 绑 mb_temp——模拟从站改值观察实时刷新）
 Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "numeric", "--x", "760", "--y", "520", "--width", "120", "--height", "40", "--bound-tag", "mb_temp")
+# I-3: 条件表达式测试按钮（objectName=btn_cond 固定；onClick 仅当 温度>30 时执行 tag_write 压力=9.9）
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "40", "--y", "500", "--width", "120", "--height", "40")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_27", "--key", "objectName", "--value", "btn_cond")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "btn_cond", "--key", "text", "--value", "条件测试")
+Exec @("-p", $PROJ, "add-event", "--screen", "画面A", "--widget", "btn_cond", "--event", "onClick", "--action", "tag_write", "--params", "tag_name=压力,value=9.9", "--condition", "温度 > 30")
+# I-3: 函数/取模条件测试按钮（btn_cond2：min(温度,100)>50 && now()%60<60 才执行 tag_write 压力=8.8——验证 min/%/now）
+Exec @("-p", $PROJ, "add-widget", "--screen", "画面A", "--type", "button", "--x", "180", "--y", "500", "--width", "120", "--height", "40")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "button_28", "--key", "objectName", "--value", "btn_cond2")
+Exec @("-p", $PROJ, "set-property", "--screen", "画面A", "--widget", "btn_cond2", "--key", "text", "--value", "函数条件")
+Exec @("-p", $PROJ, "add-event", "--screen", "画面A", "--widget", "btn_cond2", "--event", "onClick", "--action", "tag_write", "--params", "tag_name=压力,value=8.8", "--condition", "min(温度, 100) > 50 && now() % 60 < 60")
 
 # ---------- 5. 画面A: 事件绑定 (19 事件) ----------
 Write-Host "=== 画面A 事件 ===" -ForegroundColor Cyan

@@ -5,6 +5,7 @@
 #include "runtime/runtimebus.h"
 #include "runtime/datamanager.h"
 #include "runtime/objectmanager.h"
+#include "runtime/expressionengine.h"   // I-3: 事件 condition 条件求值
 
 #include <QDebug>
 #include <QMetaObject>
@@ -77,6 +78,13 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QStri
         int hit = 0;
         for (const auto& ev : m_project.worldMap.events) {
             if (ev.type == et) {
+                // I-3: condition 条件不满足 → 跳过该事件（空条件=无条件）
+                if (!ev.condition.trimmed().isEmpty()
+                    && !ExprEngine::eval(ev.condition, m_dataManager, nullptr)) {
+                    if (trace)
+                        qInfo().noquote() << "[COND] skip 世界地图 条件不满足:" << ev.condition;
+                    continue;
+                }
                 ++hit;
                 for (const auto& action : ev.actions)
                     executeAction(action, nullptr, QStringLiteral("__worldmap__"));
@@ -100,6 +108,14 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QStri
             if (w.objectName == objectName) {
                 for (const auto& ev : w.events) {
                     if (ev.type == et) {
+                        // I-3: condition 条件不满足 → 跳过（value 关键字取该控件绑定变量当前值）
+                        if (!ev.condition.trimmed().isEmpty()
+                            && !ExprEngine::eval(ev.condition, m_dataManager, &w)) {
+                            if (trace)
+                                qInfo().noquote() << "[COND] skip 条件不满足:" << ev.condition
+                                                  << "widget=" << w.objectName;
+                            continue;
+                        }
                         ++hit;
                         if (trace)
                             qInfo().noquote() << "[TRACE]   screen=" << sc.name
