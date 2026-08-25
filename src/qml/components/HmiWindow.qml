@@ -720,7 +720,13 @@ Rectangle {
         // 审查 MAJOR-5: Window attached property 在 JS handler 内访问抛 TypeError——声明处缓存
         property var contentRoot: root.Window ? root.Window.contentItem : null
 
-        function openDialog() { visible = true }
+        function openDialog() {
+            // I-4 审查修复：重开清残留反馈（防上一会话「已下发」短暂闪现）
+            operFeedback = ""
+            pressedOper = -1
+            if (feedbackTimer && feedbackTimer.running) feedbackTimer.stop()
+            visible = true
+        }
         function closeDialog() { visible = false }
 
         // 详情 JSON 解析（修复: function 放顶层, Column 内声明序引用会 ReferenceError）
@@ -746,10 +752,37 @@ Rectangle {
         }
         // 操作指令写 OperTag（H-2 修复: function 放顶层——原在 Row 内声明序引用
         // 报 ReferenceError: sendOper is not defined, 下线/上线/删除按钮实际失效）
-        function sendOper(type) {
-            if (robotDetail.cardData && robotDetail.cardData.operVar !== "" && dataManager)
+        // I-4 反馈（Check 续N+5 问题1）：写入成功无 UI 反馈 → 按钮高亮 + 提示「已下发」/「未绑定操作变量」
+        property string operFeedback: ""
+        property string operFeedbackColor: "#2E7D32"   // 与成功分支一致（I-4 复审残留清理）
+        property int pressedOper: -1    // 当前按下的操作类型（0 下线/1 上线/2 删除）
+        function sendOper(type, idx) {
+            // I-4 审查修复：任何点击必有反馈——cardData/dataManager 缺失 → 红「下发失败」
+            if (!robotDetail.cardData || !dataManager) {
+                robotDetail.operFeedback = "下发失败"
+                robotDetail.operFeedbackColor = "#E65100"
+            } else if (robotDetail.cardData.operVar === ""
+                       || !dataManager.hasTag(robotDetail.cardData.operVar)) {
+                // I-4 审查修复：hasTag 预检防假成功（setValue 对不存在变量静默丢弃——组态笔误/标签删除）
+                robotDetail.operFeedback = "未绑定操作变量"
+                robotDetail.operFeedbackColor = "#E65100"
+            } else {
                 dataManager.setValue(robotDetail.cardData.operVar,
                     type + ":R" + robotDetail.cardData.idVal)
+                robotDetail.operFeedback = "已下发: " + type + ":R" + robotDetail.cardData.idVal
+                robotDetail.operFeedbackColor = "#2E7D32"
+            }
+            robotDetail.pressedOper = idx
+            feedbackTimer.restart()
+        }
+        Timer {
+            id: feedbackTimer
+            interval: 1500
+            repeat: false
+            onTriggered: {
+                robotDetail.operFeedback = ""
+                robotDetail.pressedOper = -1
+            }
         }
 
         Rectangle {
@@ -821,29 +854,42 @@ Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: 6
                     Rectangle {
-                        width: 48; height: 20; radius: 3; color: "#E53935"
+                        width: 48; height: 20; radius: 3
+                        color: robotDetail.pressedOper === 0 ? "#B71C1C" : "#E53935"   // I-4: 按下高亮
                         Text { anchors.centerIn: parent; text: "下线"; color: "white"; font.pixelSize: 9 }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: robotDetail.sendOper("下线")
+                            onClicked: robotDetail.sendOper("下线", 0)
                         }
                     }
                     Rectangle {
-                        width: 48; height: 20; radius: 3; color: "#4CAF50"
+                        width: 48; height: 20; radius: 3
+                        color: robotDetail.pressedOper === 1 ? "#2E7D32" : "#4CAF50"
                         Text { anchors.centerIn: parent; text: "上线"; color: "white"; font.pixelSize: 9 }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: robotDetail.sendOper("上线")
+                            onClicked: robotDetail.sendOper("上线", 1)
                         }
                     }
                     Rectangle {
-                        width: 48; height: 20; radius: 3; color: "#F57C00"
+                        width: 48; height: 20; radius: 3
+                        color: robotDetail.pressedOper === 2 ? "#E65100" : "#F57C00"
                         Text { anchors.centerIn: parent; text: "删除"; color: "white"; font.pixelSize: 9 }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: robotDetail.sendOper("删除")
+                            onClicked: robotDetail.sendOper("删除", 2)
                         }
                     }
+                }
+                // I-4: 操作反馈提示（成功绿「已下发」/ 失败橙提示；1.5s 后自动消失）
+                Text {
+                    width: parent.width
+                    text: robotDetail.operFeedback
+                    color: robotDetail.operFeedbackColor
+                    font.pixelSize: 9
+                    font.bold: true   // I-4 审查修复：对比度加深（#2E7D32/#E65100 + 加粗）
+                    horizontalAlignment: Text.AlignHCenter
+                    visible: robotDetail.operFeedback !== ""
                 }
             }
         }
