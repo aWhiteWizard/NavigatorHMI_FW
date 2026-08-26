@@ -85,19 +85,23 @@ bool DataLogger::openDb()
     }
     // WAL 模式防损坏（执行书 G-2 边界）
     QSqlQuery q(*m_db);
-    q.exec(QStringLiteral("PRAGMA journal_mode=WAL"));
-    q.exec(QStringLiteral("PRAGMA synchronous=NORMAL"));
+    if (!q.exec(QStringLiteral("PRAGMA journal_mode=WAL")))
+        qWarning().noquote() << "DataLogger: WAL 模式设置失败" << q.lastError().text();
+    if (!q.exec(QStringLiteral("PRAGMA synchronous=NORMAL")))
+        qWarning().noquote() << "DataLogger: synchronous=NORMAL 设置失败" << q.lastError().text();
     // 建表
     QSqlQuery createTag(*m_db);
-    createTag.exec(QStringLiteral(
+    if (!createTag.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS tag_history ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
         " ts TEXT NOT NULL,"
         " tag_name TEXT NOT NULL,"
-        " value TEXT NOT NULL)"));
-    createTag.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_tag_name ON tag_history(tag_name, ts)"));
+        " value TEXT NOT NULL)")))
+        qWarning().noquote() << "DataLogger: tag_history 建表失败" << createTag.lastError().text();
+    if (!createTag.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_tag_name ON tag_history(tag_name, ts)")))
+        qWarning().noquote() << "DataLogger: idx_tag_name 建索引失败" << createTag.lastError().text();
     QSqlQuery createAlarm(*m_db);
-    createAlarm.exec(QStringLiteral(
+    if (!createAlarm.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS alarm_history ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
         " ts TEXT NOT NULL,"
@@ -105,8 +109,10 @@ bool DataLogger::openDb()
         " tag_name TEXT,"
         " level INTEGER DEFAULT 0,"
         " message TEXT,"
-        " event TEXT NOT NULL)"));   // TRIGGER/ACK/CLEAR
-    createAlarm.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_alarm_ts ON alarm_history(ts)"));
+        " event TEXT NOT NULL)")))   // TRIGGER/ACK/CLEAR
+        qWarning().noquote() << "DataLogger: alarm_history 建表失败" << createAlarm.lastError().text();
+    if (!createAlarm.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_alarm_ts ON alarm_history(ts)")))
+        qWarning().noquote() << "DataLogger: idx_alarm_ts 建索引失败" << createAlarm.lastError().text();
     qInfo().noquote() << "DataLogger: SQLite 就绪" << path;
     return true;
 }
@@ -168,15 +174,19 @@ void DataLogger::cleanup()
                            .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
     delOld.prepare(QStringLiteral("DELETE FROM tag_history WHERE ts < ?"));
     delOld.addBindValue(cutoff);
-    delOld.exec();
+    if (!delOld.exec())
+        qWarning().noquote() << "DataLogger: tag_history 过期清理失败" << delOld.lastError().text();
     delOld.prepare(QStringLiteral("DELETE FROM alarm_history WHERE ts < ?"));
     delOld.addBindValue(cutoff);
-    delOld.exec();
+    if (!delOld.exec())
+        qWarning().noquote() << "DataLogger: alarm_history 过期清理失败" << delOld.lastError().text();
     QSqlQuery cap(*m_db);
-    cap.exec(QStringLiteral("DELETE FROM tag_history WHERE id NOT IN"
-                            " (SELECT id FROM tag_history ORDER BY id DESC LIMIT 500000)"));
-    cap.exec(QStringLiteral("DELETE FROM alarm_history WHERE id NOT IN"
-                            " (SELECT id FROM alarm_history ORDER BY id DESC LIMIT 500000)"));
+    if (!cap.exec(QStringLiteral("DELETE FROM tag_history WHERE id NOT IN"
+                            " (SELECT id FROM tag_history ORDER BY id DESC LIMIT 500000)")))
+        qWarning().noquote() << "DataLogger: tag_history 条数上限清理失败" << cap.lastError().text();
+    if (!cap.exec(QStringLiteral("DELETE FROM alarm_history WHERE id NOT IN"
+                            " (SELECT id FROM alarm_history ORDER BY id DESC LIMIT 500000)")))
+        qWarning().noquote() << "DataLogger: alarm_history 条数上限清理失败" << cap.lastError().text();
     qInfo().noquote() << "DataLogger: 保留策略清理完成（7 天 / 50 万条）";
 }
 

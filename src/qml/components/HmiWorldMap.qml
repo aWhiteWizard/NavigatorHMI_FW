@@ -159,15 +159,8 @@ Rectangle {
         // reload 替换工程时 main.qml 重建整屏 → 组件重新实例化 → onCompleted 再跑
         Component.onCompleted: {
             rebuildTiles()
-            // 临时调试: 打印瓦片层状态（D+ 排查瓦片不显示）
-            console.log("[TILE] tileBasePath=" + root.tileBasePath + " tiles=" + tileLayer.tiles.length
-                        + " zoom=" + root.zoomLevel + " lngMin=" + root.lngMin + " lngMax=" + root.lngMax)
             if (tileLayer.tiles.length > 0) {
-                var t0 = tileLayer.tiles[0]
-                console.log("[TILE] 首片 z=" + t0.z + " x=" + t0.x + " y=" + t0.y
-                            + " screenX=" + tileLayer.tileScreenX(t0.x, t0.z)
-                            + " screenY=" + tileLayer.tileScreenY(t0.y, t0.z)
-                            + " size=" + tileLayer.tilePixelSize(t0.z))
+                // 瓦片层已重建（J-2 瓦片校验闭环：缺瓦片走工程级 qWarning + 模拟底图角标）
             }
         }
 
@@ -180,13 +173,6 @@ Rectangle {
                 height: tileLayer.tilePixelSize(modelData.z)
                 source: "file://" + root.tileBasePath + "/" + modelData.z + "/" + modelData.x + "/" + modelData.y + ".png"
                 fillMode: Image.PreserveAspectFit
-                // 临时调试: Image 加载状态（D+ 排查瓦片不显示）
-                onStatusChanged: {
-                    if (status === Image.Error)
-                        console.log("[TILE] Image 加载失败: " + source)
-                    else if (status === Image.Ready && modelData.x === 3230)
-                        console.log("[TILE] Image 加载成功: " + source + " (" + paintedWidth + "x" + paintedHeight + ")")
-                }
             }
         }
     }

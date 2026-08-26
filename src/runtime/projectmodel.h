@@ -1,5 +1,4 @@
 /*
- * @Author: aWhiteWizard www.123518341@qq.com
  * @FilePath: \NavigatorHMI_FW\src\runtime\projectmodel.h
  * @Description: 运行时模型（从 .navihmi 契约解析后的内存模型）
  *               与 fw/proto/navihmi.proto 对应；QML/报警/渲染只依赖本模型，不直接碰 protobuf
@@ -229,15 +228,15 @@ struct Project {
     bool enableVnc = false;   // VNC 镜像开关（proto 21；默认关=零开销，无人车场景不启）
 
     /// 按名称查画面（找不到返回 nullptr）
-    const Screen* screenByName(const QString& name) const;
+    const Screen* ScreenByName(const QString& name) const;
     /// 按名称查变量（找不到返回 nullptr）
-    const Tag* tagByName(const QString& name) const;
+    const Tag* TagByName(const QString& name) const;
     /// 按名称查报警规则（找不到返回 nullptr）
-    const AlarmRule* alarmByName(const QString& name) const;
+    const AlarmRule* AlarmByName(const QString& name) const;
     /// 按名称查列表（找不到返回 nullptr）
-    const ListDef* listByName(const QString& name) const;
+    const ListDef* ListByName(const QString& name) const;
     /// 启动画面（无则取第一个 Custom 画面）
-    const Screen* startScreenModel() const;
+    const Screen* StartScreenModel() const;
 };
 
 } // namespace navihmi

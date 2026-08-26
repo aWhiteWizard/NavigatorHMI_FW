@@ -65,9 +65,9 @@ void RuntimeBus::resetScreens()
 void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QString& payload)
 {
     const EventType et = static_cast<EventType>(eventType);
-    // TraceLog（B6-10）: 事件入口 trace——QML 点击 → C++ 事件路由全链路可查（NAVIHMI_TRACE=0 关闭）
-    const bool trace = qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0
-                       || !qEnvironmentVariableIsSet("NAVIHMI_TRACE");   // 默认开
+    // TraceLog（B6-10）: 事件入口 trace——QML 点击 → C++ 事件路由全链路可查
+    // （2026-08-26 规范整改: 默认关，与 ObjectManager 一致——审查 N6 大工程启动刷屏教训; NAVIHMI_TRACE=1 开启）
+    const bool trace = qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0;
     if (trace)
         qInfo().noquote() << "[TRACE] emitEvent obj=" << objectName
                           << "type=" << int(et)
@@ -141,8 +141,8 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
     case ActionType::ScreenSwitch: {
         const QString target = p.value("target_screen");
         // TraceLog（B6-10）: 切换动作打目标（ScreenSwitch 原无日志——B-5 排查痛点）
-        if (qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0
-            || !qEnvironmentVariableIsSet("NAVIHMI_TRACE"))
+        // （2026-08-26 规范整改: 默认关，与 emitEvent/ObjectManager 一致; NAVIHMI_TRACE=1 开启）
+        if (qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0)
             qInfo().noquote() << "[TRACE]   action=ScreenSwitch target=" << target;
         if (!target.isEmpty() && onScreenSwitch)
             onScreenSwitch(target);
@@ -153,7 +153,7 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
         if (cmd == "stop_runtime") {
             if (onStopRuntime) onStopRuntime();
         } else {
-            qInfo() << "RuntimeBus: run_command" << cmd;
+            qInfo().noquote() << "RuntimeBus: run_command" << cmd;
         }
         break;
     }
@@ -164,7 +164,7 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
             const QString val = p.value("value");
             if (!val.isEmpty()) {
                 // 按目标变量类型解析（简化：数字优先，否则字符串）
-                const Tag* tag = m_project.tagByName(tagName);
+                const Tag* tag = m_project.TagByName(tagName);
                 QVariant v = val;
                 if (tag && (tag->dataType == TagDataType::Float
                             || tag->dataType == TagDataType::Int16
@@ -182,10 +182,10 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
         break;
     }
     case ActionType::ShowPopup:
-        qInfo() << "RuntimeBus: show_popup" << p.value("title") << p.value("message");
+        qInfo().noquote() << "RuntimeBus: show_popup" << p.value("title") << p.value("message");
         break;
     case ActionType::SendNotification:
-        qInfo() << "RuntimeBus: send_notification" << p.value("topic") << p.value("message");
+        qInfo().noquote() << "RuntimeBus: send_notification" << p.value("topic") << p.value("message");
         break;
     case ActionType::SetProperty: {
         // G-0: 属性修改实装——经 ObjectManager 跨画面寻址设置 QML 控件属性
@@ -203,7 +203,7 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
                 qInfo().noquote() << "RuntimeBus: set_property 未生效(控件未加载/已注销/未知键) screen="
                                   << screenName << "widget=" << widgetName << "key=" << key << "value=" << value;
         } else {
-            qInfo() << "RuntimeBus: set_property" << widgetName << key << value;
+            qInfo().noquote() << "RuntimeBus: set_property" << widgetName << key << value;
         }
         break;
     }
@@ -235,14 +235,14 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
     case ActionType::ScreenPrev:
     case ActionType::ScreenNext:
         // 导航栈前进/后退（后续：主壳维护栈；当前切换相邻画面）
-        qInfo() << "RuntimeBus: screen" << (action.type == ActionType::ScreenPrev ? "prev" : "next");
+        qInfo().noquote() << "RuntimeBus: screen" << (action.type == ActionType::ScreenPrev ? "prev" : "next");
         break;
     case ActionType::SetDatetime:
     case ActionType::GetDatetime:
     case ActionType::AcknowledgeAlarm:
     case ActionType::SetSystemTime:
         // 记录日志（时间/报警系统后续细化）
-        qInfo() << "RuntimeBus: action" << int(action.type) << p;
+        qInfo().noquote() << "RuntimeBus: action" << int(action.type) << p;
         break;
     }
 }

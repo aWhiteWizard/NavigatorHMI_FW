@@ -86,7 +86,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
     // 整型→纯数字(ImhDigitsOnly)、浮点/坐标→数字+小数点(ImhFormattedNumbersOnly)、
     // 布尔→双按钮选择(isBoolean, 非文本输入)、字符串/其它→全键盘(默认)
     if (w.type == WidgetType::IoField && !w.boundTag.isEmpty()) {
-        const Tag* tg = proj.tagByName(w.boundTag);
+        const Tag* tg = proj.TagByName(w.boundTag);
         if (tg) {
             switch (tg->dataType) {
             case TagDataType::Int16: case TagDataType::Uint16:
@@ -114,7 +114,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
     // D+: TextList 且未显式设 content 时, 按 listRef 从工程列表展开为逗号分隔项（供 HmiTextList 渲染）
     QString content = w.content;
     if (w.type == WidgetType::TextList && content.isEmpty() && !w.listRef.isEmpty()) {
-        const ListDef* ld = proj.listByName(w.listRef);
+        const ListDef* ld = proj.ListByName(w.listRef);
         if (ld) content = ld->items.join(QLatin1Char(','));
     }
     appendProp(out, "content", content);
@@ -223,7 +223,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
             else if (ev.type == EventType::OnSelect)
                 payloadExpr = QStringLiteral("selectPayload");
         }
-        out << "        " << signalName << ": function() { runtimeBus.emitEvent(\""
+        out << "        " << signalName << ": function() { if (runtimeBus) runtimeBus.emitEvent(\""
             << qmlEsc(w.objectName) << "\", " << int(ev.type) << ", " << payloadExpr << "); }\n";
     }
     // G-0: 控件注册/注销（ObjectManager 跨画面寻址依据；加载完成注册, 销毁注销）
@@ -314,7 +314,7 @@ QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileB
     for (const auto& wp : proj.worldMap.workPoints) {
         double lng = wp.fixedPoint.longitude, lat = wp.fixedPoint.latitude;
         if (!wp.boundTag.isEmpty()) {
-            const Tag* tag = proj.tagByName(wp.boundTag);
+            const Tag* tag = proj.TagByName(wp.boundTag);
             if (tag && !tag->baseValue.isEmpty()) {
                 const QStringList parts = tag->baseValue.split(QLatin1Char(','));
                 if (parts.size() >= 2) {

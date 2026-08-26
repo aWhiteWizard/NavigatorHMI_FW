@@ -24,7 +24,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -O2")
 
 # ============================================================
 # Qt（优先 Qt6，兼容 Qt5 便于过渡期验证）
-# RK3128：Qt 6.5.6（Rockchip SDK/Buildroot 交叉编译产物，CMAKE_PREFIX_PATH 指定）
+# RK3562：Qt 6.5.6（Rockchip SDK/Buildroot 交叉编译产物，CMAKE_PREFIX_PATH 指定）
 # ============================================================
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -54,12 +54,12 @@ message(STATUS "Qt 版本: ${QT_VERSION_MAJOR}.${Qt${QT_VERSION_MAJOR}_VERSION} 
 find_package(Protobuf REQUIRED)
 
 # ============================================================
-# 平台后端（Linux 嵌入式默认 linuxfb；RK3128 带 GPU 可用 eglfs/wayland，-D 覆盖）
+# 平台后端（Linux 嵌入式默认 linuxfb；RK3562 带 GPU 可用 eglfs/wayland，-D 覆盖）
 # ============================================================
 if(WIN32)
     set(FW_PLATFORM_BACKEND "windows" CACHE STRING "Qt QPA 平台后端")
 else()
-    set(FW_PLATFORM_BACKEND "linuxfb" CACHE STRING "Qt QPA 平台后端（RK3128: eglfs）")
+    set(FW_PLATFORM_BACKEND "linuxfb" CACHE STRING "Qt QPA 平台后端（RK3562: eglfs）")
 endif()
 
 # ============================================================

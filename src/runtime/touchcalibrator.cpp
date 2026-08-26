@@ -132,7 +132,7 @@ void TouchCalibrator::captureAt(int qx, int qy)
 void TouchCalibrator::cancelCalibration()
 {
     if (!m_active) return;
-    qInfo() << "触摸校准: 用户取消";
+    qInfo().noquote() << "触摸校准: 用户取消";
     m_active = false;
     m_done = false;
     m_points.clear();
@@ -187,9 +187,9 @@ void TouchCalibrator::computeAndWrite()
         && std::fabs(c) < 20 && std::fabs(f_) < 20) {
         if (QFile::exists(QStringLiteral("/etc/pointercal"))) {
             if (QFile::remove(QStringLiteral("/etc/pointercal")))
-                qInfo() << "触摸校准: 已删除旧校准文件, 回退 evdevtouch 直读";
+                qInfo().noquote() << "触摸校准: 已删除旧校准文件, 回退 evdevtouch 直读";
             else
-                qWarning() << "触摸校准: 删除旧校准文件失败(需 root)";
+                qWarning().noquote() << "触摸校准: 删除旧校准文件失败(需 root)";
         }
         m_resultText = QStringLiteral("触摸已准确（矩阵≈单位），无需校准文件——保持直读");
         qInfo().noquote() << "触摸校准: " << m_resultText;
@@ -215,7 +215,7 @@ void TouchCalibrator::computeAndWrite()
     out.flush();
 #ifdef Q_OS_UNIX
     if (::fsync(out.handle()) != 0)
-        qWarning() << "触摸校准: fsync 失败" << strerror(errno);
+        qWarning().noquote() << "触摸校准: fsync 失败" << strerror(errno);
 #endif
     out.close();
     if (!QFile::rename(tmpPath, QStringLiteral("/etc/pointercal"))) {
