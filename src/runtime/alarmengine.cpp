@@ -27,6 +27,7 @@ void AlarmEngine::setProject(const Project& proj)
     m_triggered.clear();
     m_triggeredTime.clear();
     m_overThresholdMs.clear();   // 审查 MINOR-2: 工程重载清 delayMs 计时（防同名规则残留旧时间戳）
+    m_manualLastMs.clear();      // J-1 审查修复: 工程重载清手动报警去重（防旧消息抑制新报警）
     emit alarmsChanged();
 }
 
@@ -208,6 +209,31 @@ bool AlarmEngine::doClear(const AlarmRule& rule, double value)
                       << "值=" << value;
     emit alarmCleared(rule.name, tg, lv, msg);
     return true;
+}
+
+void AlarmEngine::raiseManualAlarm(int level, const QString& message)
+{
+    // 去重：同消息 10s 内不重复（操作连点/同因未生效不刷报警）
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_manualLastMs.value(message, 0) + 10000 > nowMs)
+        return;
+    m_manualLastMs.insert(message, nowMs);
+
+    ActiveAlarm a;
+    // J-1 审查修复: id 加静态自增序号（防同毫秒两条不同消息撞 id——ackAlarm 只删首条）
+    static qint64 s_manualSeq = 0;
+    a.id = QStringLiteral("manual-%1-%2").arg(nowMs).arg(++s_manualSeq);
+    a.time = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
+    a.level = level;
+    a.message = message;
+    a.tag = QString();   // 手动报警无绑定变量
+    a.priority = 0;
+    a.acked = false;
+    m_active.append(a);
+    m_triggered.insert(a.id, true);   // 防 poll 干扰（id 不与规则名冲突）
+    emit alarmsChanged();
+    emit alarmTriggered(a.id, QString(), level, message);   // DataLogger TRIGGER 联动
+    qInfo().noquote() << "AlarmEngine: 手动报警" << message;
 }
 
 } // namespace navihmi

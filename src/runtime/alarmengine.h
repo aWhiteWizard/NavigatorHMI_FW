@@ -40,6 +40,9 @@ public:
     Q_INVOKABLE void ackAlarms(const QVariantList& ids);
     /// 全部确认
     Q_INVOKABLE void ackAll();
+    /// J-1: 手动报警（操作未生效等事件型报警——非阈值驱动）；入活动列表 + alarmTriggered（DataLogger 联动）；
+    ///      同消息 10s 去重（防操作连点刷报警）
+    Q_INVOKABLE void raiseManualAlarm(int level, const QString& message);
 
 signals:
     /// 活动报警列表变化（QML 刷新）
@@ -72,6 +75,7 @@ private:
     QHash<QString, bool> m_triggered;   // ruleName -> 是否处于触发态（防重复触发）
     QHash<QString, QString> m_triggeredTime;
     QHash<QString, qint64> m_overThresholdMs;   // H-5(M9): 首次超阈值时间戳（delayMs 延迟触发）
+    QHash<QString, qint64> m_manualLastMs;      // J-1: 手动报警去重（message -> 上次时间戳，10s 窗口）
     QTimer* m_timer = nullptr;
 };
 

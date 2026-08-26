@@ -573,7 +573,8 @@ Rectangle {
                             statusText = "离线"; statusColor = "#B0BEC5"
                         } else {
                             var n = Number(v)   // 审查 MINOR: Number() + isNaN——非数值串 "abc" → NaN 判异常
-                            if (!isNaN(n) && n === 0) { statusText = "空闲"; statusColor = "#90A4AE" }
+                            if (!isNaN(n) && n === -1) { statusText = "已删除"; statusColor = "#9E9E9E" }   // J-1: 删除模拟值（唯一特殊值，其他负值走异常红框）
+                            else if (!isNaN(n) && n === 0) { statusText = "空闲"; statusColor = "#90A4AE" }
                             else if (!isNaN(n) && n === 1) { statusText = "运行"; statusColor = "#4CAF50" }
                             else if (!isNaN(n) && n === 2) { statusText = "故障"; statusColor = "#D32F2F" }
                             else { statusText = "异常:" + v; statusColor = "#D32F2F" }
@@ -581,7 +582,10 @@ Rectangle {
                         // 审查 M5(DESIGN L103): 异常标注三源——状态越界/非数值/位置无值（离线态=状态无值不标红, 置灰即常态）
                         var stOk = (v !== "" && v !== null && v !== undefined)
                         var stNum = stOk ? Number(v) : NaN
-                        statusAbnormal = (stOk && (isNaN(stNum) || stNum > 2 || stNum < 0))
+                        // J-1 审查修复: -1 已删除为终态灰——短路全部异常标注源（含位置无值维度，防「已删除」+ 空位置叠红框）
+                        var isDeleted = (!isNaN(stNum) && stNum === -1)
+                        statusAbnormal = stOk && !isDeleted
+                                         && (isNaN(stNum) || stNum > 2 || stNum < 0)
                                          || (stOk && (cardData.locVal === "" || cardData.locVal === null || cardData.locVal === undefined))
                     }
                     Component.onCompleted: computeStatus()
@@ -756,6 +760,15 @@ Rectangle {
         property string operFeedback: ""
         property string operFeedbackColor: "#2E7D32"   // 与成功分支一致（I-4 复审残留清理）
         property int pressedOper: -1    // 当前按下的操作类型（0 下线/1 上线/2 删除）
+        // J-1: 模拟控制器/外部等待参数（Timer onTriggered 读取；J-1 审查修复：schedule 时存值防触发时 cardData 变化张冠李戴）
+        property string simStatusVar: ""
+        property var simStatusVal: 0
+        property string simDesc: ""
+        property string simRobotId: ""
+        property string waitStatusVar: ""
+        property var waitBefore: null
+        property string waitDesc: ""
+        property string waitRobotId: ""
         function sendOper(type, idx) {
             // I-4 审查修复：任何点击必有反馈——cardData/dataManager 缺失 → 红「下发失败」
             if (!robotDetail.cardData || !dataManager) {
@@ -771,9 +784,58 @@ Rectangle {
                     type + ":R" + robotDetail.cardData.idVal)
                 robotDetail.operFeedback = "已下发: " + type + ":R" + robotDetail.cardData.idVal
                 robotDetail.operFeedbackColor = "#2E7D32"
+                // J-1: 内部变量 → 模拟控制器（全链路联动）；外部变量 → 等待真实状态（超时报警）
+                robotDetail.simulateOrWait(type)
             }
             robotDetail.pressedOper = idx
             feedbackTimer.restart()
+        }
+        // J-1: 按 status 变量数据源分流——内部（Tag.source 空）模拟改状态；外部（modbus/mqtt）等真实返回
+        function simulateOrWait(type) {
+            var statusVar = robotDetail.cardData.statusVar || ""
+            var src = (dataManager && statusVar !== "") ? dataManager.tagSource(statusVar) : ""
+            var isInternal = (statusVar === "" || src === "" || src === null || src === undefined)
+            if (isInternal) {
+                if (statusVar === "" || !dataManager.hasTag(statusVar)) return   // 无状态变量不模拟
+                robotDetail.simStatusVar = statusVar
+                robotDetail.simStatusVal = (type === "下线") ? 0 : (type === "上线") ? 1 : -1
+                robotDetail.simDesc = type   // J-1 审查修复：报警文案只含操作名（定稿口径）
+                robotDetail.simRobotId = robotDetail.cardData.idVal   // schedule 时存值防触发时错位
+                simTimer.restart()
+            } else {
+                robotDetail.waitStatusVar = statusVar
+                robotDetail.waitBefore = dataManager ? dataManager.value(statusVar) : null
+                robotDetail.waitDesc = type
+                robotDetail.waitRobotId = robotDetail.cardData.idVal
+                waitTimer.restart()
+            }
+        }
+        Timer {
+            id: simTimer
+            interval: 500
+            repeat: false
+            onTriggered: {
+                if (robotDetail.simStatusVar === "" || !dataManager
+                    || !dataManager.hasTag(robotDetail.simStatusVar)) return
+                dataManager.setValue(robotDetail.simStatusVar, robotDetail.simStatusVal)
+                // 写后校验：模拟状态未生效 → 手动报警（用 schedule 时存值）
+                if (dataManager.value(robotDetail.simStatusVar) !== robotDetail.simStatusVal && alarmEngine) {
+                    alarmEngine.raiseManualAlarm(2, "机器人 R" + robotDetail.simRobotId
+                        + " 操作「" + robotDetail.simDesc + "」未生效")
+                }
+            }
+        }
+        Timer {
+            id: waitTimer
+            interval: 10000   // 外部等待超时（用户定 5~10s）
+            repeat: false
+            onTriggered: {
+                if (!dataManager || !alarmEngine) return
+                var nowVal = dataManager.value(robotDetail.waitStatusVar)
+                if (nowVal !== robotDetail.waitBefore) return   // 状态已变（真实控制器响应）→ 正常
+                alarmEngine.raiseManualAlarm(2, "机器人 R" + robotDetail.waitRobotId
+                    + " 操作「" + robotDetail.waitDesc + "」未生效（外部状态未返回）")
+            }
         }
         Timer {
             id: feedbackTimer

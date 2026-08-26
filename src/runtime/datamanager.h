@@ -31,6 +31,8 @@ public:
     Q_INVOKABLE bool hasTag(const QString& tagName) const;
     /// 全部变量名列表（I-2 历史记录页/CLI tag list 用；setProject 后有效）
     Q_INVOKABLE QStringList tagNames() const;
+    /// 变量数据源（J-1 机器人内部/外部判定）：Tag.source——空=内部变量 / modbus://·mqtt://=外部；未知变量返回空
+    Q_INVOKABLE QString tagSource(const QString& tagName) const;
 
 signals:
     /// 变量值变化（QML 组件订阅刷新）
@@ -38,6 +40,7 @@ signals:
 
 private:
     QHash<QString, QVariant> m_values;
+    QHash<QString, QString> m_sources;   // J-1: tagName -> Tag.source
 };
 
 } // namespace navihmi

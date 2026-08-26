@@ -14,7 +14,9 @@ DataManager::DataManager(QObject* parent)
 void DataManager::setProject(const Project& proj)
 {
     m_values.clear();
+    m_sources.clear();
     for (const auto& tag : proj.tags) {
+        m_sources.insert(tag.name, tag.source);   // J-1: 变量数据源映射（内部/外部判定）
         // 初始值用 baseValue（设计态基准值），按类型解析
         QVariant v;
         switch (tag.dataType) {
@@ -64,6 +66,11 @@ bool DataManager::hasTag(const QString& tagName) const
 QStringList DataManager::tagNames() const
 {
     return m_values.keys();
+}
+
+QString DataManager::tagSource(const QString& tagName) const
+{
+    return m_sources.value(tagName);
 }
 
 } // namespace navihmi
