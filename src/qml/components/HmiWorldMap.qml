@@ -366,6 +366,19 @@ Rectangle {
         }
     }
 
+    // J-2: 无瓦片角标——工程无 tiles/ 数据时右下角提示「模拟底图（无瓦片）」（视觉可见校验）
+    Text {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 6
+        anchors.bottomMargin: 4
+        text: "模拟底图（无瓦片）"
+        font.pixelSize: 9
+        color: "#888888"
+        visible: root.tileBasePath === ""
+        z: 10
+    }
+
     onWorkPointsChanged: {
         rangeCanvas.requestPaint()
         if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)

@@ -16,6 +16,7 @@
 #include <QDebug>
 #include <QTextStream>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QVariant>
 #include <QVariantList>
@@ -109,10 +110,9 @@ static QString resolveProjectPackage(const QString& projectPath, QString& tileBa
     const QString pkgDir = QDir::tempPath() + "/navihmi_pkg";
     QDir old(pkgDir);
     if (old.exists()) {
-        // 清空旧包（防 reload 残留旧瓦片/工程）
-        for (const auto& e : old.entryList(QDir::AllEntries | QDir::NoDotAndDotDot))
-            QFile::remove(old.filePath(e));
-        old.rmdir(pkgDir);
+        // J-2 审查修复: 清空旧包用递归删除（QFile::remove 对目录无效——原实现 tiles/ 子树残留,
+        // reload「有瓦片→无瓦片」时残留瓦片导致 J-2 校验假阴性 + 显示旧工程瓦片）
+        old.removeRecursively();
     }
     if (extractZipAll(projectPath, pkgDir) < 0) {
         tileBasePath = QString();
@@ -120,11 +120,20 @@ static QString resolveProjectPackage(const QString& projectPath, QString& tileBa
     }
     // 内部工程二进制
     const QString inner = pkgDir + "/app.navihmi";
-    // 瓦片目录（存在才注入）
+    // 瓦片目录（存在且含 PNG 才注入）
     const QString tilesDir = pkgDir + "/tiles";
-    tileBasePath = QFileInfo::exists(tilesDir) ? tilesDir : QString();
+    int tilePngCount = 0;
+    if (QFileInfo::exists(tilesDir)) {
+        QDirIterator it(tilesDir, QStringList() << "*.png", QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) { it.next(); ++tilePngCount; }
+    }
+    tileBasePath = (tilePngCount > 0) ? tilesDir : QString();
+    // J-2: ZIP 工程包缺瓦片（目录缺失或 0 PNG）→ 明确警告（R3 工程包应含 tiles/）
+    if (tileBasePath.isEmpty())
+        qWarning().noquote() << "工程 ZIP 缺瓦片数据（tiles/ 目录缺失或 0 张 PNG）:"
+                             << QFileInfo(projectPath).fileName();
     qInfo().noquote() << "工程包解析: inner=" << inner
-                      << " tiles=" << (tileBasePath.isEmpty() ? "(无)" : tileBasePath);
+                      << " tiles=" << (tileBasePath.isEmpty() ? "(无)" : QStringLiteral("%1 (%2 PNG)").arg(tileBasePath).arg(tilePngCount));
     return inner;
 }
 #endif
@@ -286,6 +295,10 @@ static bool loadAndInject(QObject* rootObj,
         QString content;
         if (sc.type == navihmi::ScreenType::WorldMap) {
             fname = QStringLiteral("screen_%1.qml").arg(genIdx);
+            // J-2: 工程级瓦片校验——WorldMap 画面无瓦片 → 明确警告（任何来源：ZIP 缺 tiles/ 或普通文件工程）
+            if (tileBasePath.isEmpty())
+                qWarning().noquote() << "世界地图画面无瓦片数据，使用模拟底图:"
+                                     << sc.name;
             content = navihmi::QmlGenerator::generateWorldMap(proj, tileBasePath);   // R3: 工程自带瓦片
         } else if (sc.type == navihmi::ScreenType::Template) {
             fname = overlayName;
