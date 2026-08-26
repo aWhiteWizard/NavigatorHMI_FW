@@ -61,6 +61,8 @@ private:
     bool m_connecting = false;
     QString m_connectedDevice;   // 当前连接设备（连接参数变更时重连）
     QHash<QString, QString> m_conn;   // 当前连接参数
+    qint64 m_lastConnectFailMs = 0;      // J-3: 最近一次连接失败时间戳（重连退避 5s）
+    qint64 m_lastConnectWarnMs = 0;      // J-3: 最近一次连接失败告警时间戳（日志降频）
 };
 
 } // namespace navihmi

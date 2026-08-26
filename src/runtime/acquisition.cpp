@@ -68,6 +68,9 @@ void Acquisition::setProject(const Project& proj)
     // 审查 BLOCKER-1(2026-08-24 H 循环): m_conn 赋值——否则 ensureConnected 恒不连接,
     // 采集引擎空转（编译/启动通过但永不建立 Modbus 连接）
     m_conn = m_tags.first().conn;
+    // J-3 审查修复: 工程重载重置退避时间戳（旧工程失败时间戳不应抑制新工程首连/吞首条日志）
+    m_lastConnectFailMs = 0;
+    m_lastConnectWarnMs = 0;
     m_connectedDevice.clear();
     if (!m_timer) {
         m_timer = new QTimer(this);
@@ -117,13 +120,27 @@ void Acquisition::ensureConnected()
         });
         connect(m_client, &QModbusDevice::errorOccurred, this,
                 [this](QModbusDevice::Error e) {
-            if (e != QModbusDevice::NoError)
-                qWarning().noquote() << "Acquisition: Modbus 错误" << int(e);
+            if (e == QModbusDevice::NoError) return;
+            // J-3 审查修复: 仅未连接状态（连接阶段）错误才记连接失败/打日志——
+            // 连接成功后轮询读超时/协议错误会传播到 client，不应算连接失败（误导日志 + 刷新时间戳推迟断线重连）
+            if (m_client->state() == QModbusDevice::ConnectedState)
+                return;
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            m_lastConnectFailMs = nowMs;
+            if (nowMs - m_lastConnectWarnMs >= 5000) {
+                m_lastConnectWarnMs = nowMs;
+                qWarning().noquote() << "Acquisition: Modbus 连接失败（错误" << int(e)
+                                     << "），5s 后重试" << m_conn.value("host") << m_conn.value("port");
+            }
         });
     }
     if (m_client->state() != QModbusDevice::ConnectedState && !m_connecting) {
         // 取第一个任务连接参数（首版单连接; 多设备场景后续扩展连接池）
         if (!m_tags.isEmpty() && !m_conn.isEmpty()) {
+            // J-3: 重连退避——失败后 5s 内不重试（MINOR-5；无 modbus 变量时 tick 提前返回零开销不变）
+            const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+            if (nowMs - m_lastConnectFailMs < 5000)
+                return;
             m_client->setConnectionParameter(QModbusDevice::NetworkPortParameter, m_conn.value("port", "502").toInt());
             m_client->setConnectionParameter(QModbusDevice::NetworkAddressParameter, m_conn.value("host", "127.0.0.1"));
             m_client->setTimeout(500);
