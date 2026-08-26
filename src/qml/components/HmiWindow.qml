@@ -812,7 +812,7 @@ Rectangle {
         }
         Timer {
             id: simTimer
-            interval: 500
+            interval: 500   // 模拟状态写回延迟（J-1：内部变量场景，模拟控制器 500ms 后置状态）
             repeat: false
             onTriggered: {
                 if (robotDetail.simStatusVar === "" || !dataManager
@@ -839,7 +839,7 @@ Rectangle {
         }
         Timer {
             id: feedbackTimer
-            interval: 1500
+            interval: 1500   // 操作反馈提示清除延时（按钮变色恢复 + 提示消失）
             repeat: false
             onTriggered: {
                 robotDetail.operFeedback = ""

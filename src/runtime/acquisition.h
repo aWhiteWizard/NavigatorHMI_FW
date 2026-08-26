@@ -20,6 +20,13 @@ class QModbusTcpClient;
 namespace navihmi {
 class DataManager;
 
+/// Modbus 请求超时（ms）——影响读/写成败判定（2026-08-26 魔法数字整改命名）。
+constexpr int kModbusTimeoutMs = 500;
+/// Modbus 从站地址上限（协议标准 1-247）。
+constexpr int kModbusSlaveMax = 247;
+/// Modbus 默认端口（IANA 标准）。
+constexpr char kModbusDefaultPort[] = "502";
+
 class Acquisition : public QObject
 {
     Q_OBJECT

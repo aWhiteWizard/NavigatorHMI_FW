@@ -142,7 +142,7 @@ Rectangle {
     Rectangle {
         id: dropdown
         width: root.width
-        height: Math.min(root.items.length * 20 + 4, 240)
+        height: Math.min(root.items.length * 20 + 4, 240)   // 行高 20px + 内边距 4，最大高度 240px
         visible: false
         z: 10000
         color: "#FFFFFF"

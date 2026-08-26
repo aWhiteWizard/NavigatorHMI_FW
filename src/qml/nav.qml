@@ -378,7 +378,7 @@ Item {
 
             Grid {
                 width: devInfoScroll.availableWidth
-                columns: devInfoScroll.availableWidth > 400 ? 2 : 1
+                columns: devInfoScroll.availableWidth > 400 ? 2 : 1   // 两列/一列布局断点（可用宽 >400 两列；与设备信息页一致）
                 spacing: 4
                 Repeater {
                     model: infoBox.entries
@@ -422,7 +422,7 @@ Item {
                 width: devInfoPageScroll.availableWidth
                 spacing: 8
                 Grid {
-                    columns: devInfoPageScroll.availableWidth > 400 ? 2 : 1
+                    columns: devInfoPageScroll.availableWidth > 400 ? 2 : 1   // 两列/一列布局断点（同上）
                     spacing: 8
                     width: devInfoPageScroll.availableWidth
                     Repeater {
@@ -860,10 +860,10 @@ Item {
 
         function refreshTags() {
             if (selTag === "") { tagRows = []; return }
-            tagRows = dataLogger ? dataLogger.queryTagHistory(selTag, 50) : []
+            tagRows = dataLogger ? dataLogger.queryTagHistory(selTag, 50) : []   // 最近 50 条（与 CLI alarm history 一致）
         }
         function refreshAlarms() {
-            alarmRows = dataLogger ? dataLogger.queryAlarmHistory(50) : []
+            alarmRows = dataLogger ? dataLogger.queryAlarmHistory(50) : []   // 最近 50 条（与 CLI alarm history 一致）
         }
         function refresh() {
             if (currentTab === 0) refreshTags(); else refreshAlarms()

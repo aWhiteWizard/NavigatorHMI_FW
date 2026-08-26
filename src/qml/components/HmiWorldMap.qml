@@ -14,7 +14,7 @@ Rectangle {
     property double latMax: 30.72
     property double lngMin: 103.90
     property double lngMax: 104.15
-    property int zoomLevel: 12
+    property int zoomLevel: 12   // 默认瓦片缩放级别（工程可覆盖；L140 取瓦片用）
     property bool showGlobalOverlay: false
     property bool viewLocked: false
     property var workPoints: []        // [{name, lng, lat, boundTag}]

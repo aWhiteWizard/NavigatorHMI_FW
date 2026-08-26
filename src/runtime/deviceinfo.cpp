@@ -54,7 +54,7 @@ QString DeviceInfo::resolveIp()
     QProcess ip;
     ip.start(QStringLiteral("ip"), { QStringLiteral("-4"), QStringLiteral("addr"),
                                      QStringLiteral("show"), QStringLiteral("eth0") });
-    if (ip.waitForFinished(1500)) {
+    if (ip.waitForFinished(kCmdWaitTimeoutMs)) {   // 命令等待超时（2026-08-26 魔法数字整改命名）
         const QString out = QString::fromUtf8(ip.readAllStandardOutput());
         const QRegularExpression re(QStringLiteral("inet\\s+([0-9.]+)/"));
         const auto m = re.match(out);
@@ -64,7 +64,7 @@ QString DeviceInfo::resolveIp()
     // 兜底 ifconfig eth0
     QProcess ic;
     ic.start(QStringLiteral("ifconfig"), { QStringLiteral("eth0") });
-    if (ic.waitForFinished(1500)) {
+    if (ic.waitForFinished(kCmdWaitTimeoutMs)) {
         const QString out = QString::fromUtf8(ic.readAllStandardOutput());
         const QRegularExpression re(QStringLiteral("inet\\s+addr:([0-9.]+)"));
         const auto m = re.match(out);

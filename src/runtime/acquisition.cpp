@@ -49,7 +49,7 @@ void Acquisition::setProject(const Project& proj)
             mt.slave = parts[0].toInt();
         if (parts.size() >= 2 && !parts[1].isEmpty())
             mt.reg = quint16(parts[1].toUInt());
-        if (mt.slave < 1 || mt.slave > 247)
+        if (mt.slave < 1 || mt.slave > kModbusSlaveMax)
             continue;
         mt.conn = connInfoForDevice(tag.deviceName);
         if (mt.conn.isEmpty()) {
@@ -57,7 +57,7 @@ void Acquisition::setProject(const Project& proj)
             mt.conn.insert(QStringLiteral("host"), QString::fromLocal8Bit(qgetenv("NAVIHMI_MODBUS_HOST").isEmpty()
                 ? "127.0.0.1" : qgetenv("NAVIHMI_MODBUS_HOST")));
             mt.conn.insert(QStringLiteral("port"), QString::fromLocal8Bit(qgetenv("NAVIHMI_MODBUS_PORT").isEmpty()
-                ? "502" : qgetenv("NAVIHMI_MODBUS_PORT")));
+                ? kModbusDefaultPort : qgetenv("NAVIHMI_MODBUS_PORT")));
         }
         m_tags.append(mt);
     }
@@ -141,9 +141,9 @@ void Acquisition::ensureConnected()
             const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
             if (nowMs - m_lastConnectFailMs < 5000)
                 return;
-            m_client->setConnectionParameter(QModbusDevice::NetworkPortParameter, m_conn.value("port", "502").toInt());
+            m_client->setConnectionParameter(QModbusDevice::NetworkPortParameter, m_conn.value("port", kModbusDefaultPort).toInt());
             m_client->setConnectionParameter(QModbusDevice::NetworkAddressParameter, m_conn.value("host", "127.0.0.1"));
-            m_client->setTimeout(500);
+            m_client->setTimeout(kModbusTimeoutMs);   // Modbus 请求超时（2026-08-26 魔法数字整改命名）
             m_client->setNumberOfRetries(1);
             m_connecting = true;
             m_client->connectDevice();

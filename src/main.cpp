@@ -46,6 +46,12 @@
 #include "cli/cliserver.h"
 #endif
 
+namespace {
+// 默认设备尺寸（7 寸 1024×600；与 touchcalibrator/vncmirror 兜底一致，2026-08-26 魔法数字整改命名）
+constexpr int kDefaultDevW = 1024;
+constexpr int kDefaultDevH = 600;
+} // anonymous namespace
+
 // ═══════ 工程包解析（R3: 工程=单个 ZIP, 内含工程信息 + 瓦片地图）═══════
 // 工程文件 = 一个 ZIP 压缩包（2026-08-21 用户定）：
 //   <工程>.navihmi (ZIP)
@@ -331,8 +337,8 @@ static bool loadAndInject(QObject* rootObj,
     rootObj->setProperty("startScreen", startScreen);
     rootObj->setProperty("hasProject", !proj.screens.isEmpty());
     // 设备尺寸（主壳自适应：7 寸 1024×600 / 4 寸 720×720 等比缩放）
-    int devW = proj.deviceWidth > 0 ? proj.deviceWidth : 1024;
-    int devH = proj.deviceHeight > 0 ? proj.deviceHeight : 600;
+    int devW = proj.deviceWidth > 0 ? proj.deviceWidth : kDefaultDevW;
+    int devH = proj.deviceHeight > 0 ? proj.deviceHeight : kDefaultDevH;
     rootObj->setProperty("deviceWidth", devW);
     rootObj->setProperty("deviceHeight", devH);
 
@@ -362,7 +368,8 @@ static bool loadAndInject(QObject* rootObj,
     QFile overlayFile(genDir.filePath(overlayName));
     if (!hasTemplate) {
         overlayFile.open(QIODevice::WriteOnly | QIODevice::Truncate);
-        overlayFile.write("import QtQuick 2.15\nItem { width: 1024; height: 600 }\n");
+        overlayFile.write(QStringLiteral("import QtQuick 2.15\nItem { width: %1; height: %2 }\n")
+                              .arg(kDefaultDevW).arg(kDefaultDevH).toUtf8());
         overlayFile.close();
     }
     rootObj->setProperty("overlayFile", genDir.filePath(overlayName));

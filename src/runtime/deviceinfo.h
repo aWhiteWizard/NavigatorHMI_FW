@@ -10,6 +10,9 @@
 
 namespace navihmi {
 
+/// ip/ifconfig 命令等待超时（ms）——超时回落 0.0.0.0（2026-08-26 魔法数字整改命名）。
+constexpr int kCmdWaitTimeoutMs = 1500;
+
 class DeviceInfo : public QObject
 {
     Q_OBJECT

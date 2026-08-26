@@ -192,7 +192,7 @@ QString CommandService::cmdAlarm(const QStringList& args)
     }
     if (sub == QLatin1String("history")) {
         if (!m_dl) return QStringLiteral("ERROR: 数据记录未初始化");
-        const QVariantList rows = m_dl->queryAlarmHistory(50);
+        const QVariantList rows = m_dl->queryAlarmHistory(50);   // 最近 50 条（与历史页 nav.qml 一致，2026-08-26 注释对齐）
         if (rows.isEmpty()) return QStringLiteral("报警历史为空");
         QString out = QStringLiteral("报警历史 (最近 %1):").arg(rows.size());
         for (const QVariant& r : rows) {

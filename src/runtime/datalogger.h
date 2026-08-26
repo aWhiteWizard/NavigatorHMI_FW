@@ -33,8 +33,8 @@ public:
                           const QString& message, const QString& event);
 
     // ── 查询接口（趋势图预留 / AlarmView 历史）──
-    Q_INVOKABLE QVariantList queryTagHistory(const QString& tagName, int limit = 100);
-    Q_INVOKABLE QVariantList queryAlarmHistory(int limit = 100);
+    Q_INVOKABLE QVariantList queryTagHistory(const QString& tagName, int limit = 100);   // 默认 100 条（历史页/CLI 传 50 覆盖）
+    Q_INVOKABLE QVariantList queryAlarmHistory(int limit = 100);   // 默认 100 条（同上）
 
     /// 数据库路径（调试/日志）
     Q_INVOKABLE QString dbPath() const;

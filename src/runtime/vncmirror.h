@@ -29,6 +29,10 @@ class VncMirror : public QObject
 {
     Q_OBJECT
 public:
+    /// 默认设备尺寸（7 寸 1024×600；setDeviceSize 前兜底，2026-08-26 魔法数字整改命名）
+    static constexpr int kDefaultDevW = 1024;
+    static constexpr int kDefaultDevH = 600;
+
     explicit VncMirror(QQuickWindow* window, QObject* parent = nullptr);
     ~VncMirror() override;
 
@@ -83,8 +87,8 @@ private:
     QTcpServer* m_server = nullptr;
     QVector<Client*> m_clients;
     QMutex m_clientsMutex;
-    int m_devW = 1024;
-    int m_devH = 600;
+    int m_devW = kDefaultDevW;
+    int m_devH = kDefaultDevH;
     QElapsedTimer m_elapsed;
     qint64 m_lastCaptureMs = -1000;   // 上次读帧时刻（节流用）
     QByteArray m_lastFrame;           // 最近捕获帧缓存（连接时立即下发，静态画面可见）

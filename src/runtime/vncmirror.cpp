@@ -22,6 +22,10 @@
 
 namespace navihmi {
 
+// 帧推流调优参数（2026-08-26 魔法数字整改命名）
+constexpr int kDirtyAreaFullFrameThresholdPercent = 40;   // 脏面积 >40% 走分条带渐进读回
+constexpr int kFullFrameBandCount = 4;                    // 大面积变化时分条带数（每帧 1/4 高度）
+
 namespace {
 
 // RFB 大端工具
@@ -365,13 +369,13 @@ void VncMirror::onAfterRendering()
     qint64 dirtyArea = 0;
     for (const QRect& r : merged)
         dirtyArea += qint64(r.width()) * r.height();
-    if (dirtyArea > qint64(w) * h * 40 / 100) {
+    if (dirtyArea > qint64(w) * h * kDirtyAreaFullFrameThresholdPercent / 100) {
         // 大面积变化（切页等）：分条带读回——每帧只读 1/4 高度条带（~200ms），
-        // 4 帧渐进完成全屏，视觉 ~5fps 而非全帧 792ms 的 1fps
-        const int bandH = h / 4;
+        // kFullFrameBandCount 帧渐进完成全屏，视觉 ~5fps 而非全帧 792ms 的 1fps
+        const int bandH = h / kFullFrameBandCount;
         static int band = 0;
         const QRect bandRect(0, band * bandH, w, qMin(bandH, h - band * bandH));
-        band = (band + 1) % 4;
+        band = (band + 1) % kFullFrameBandCount;
         QByteArray bgra;
         if (readRegion(f, bandRect, w, h, bgra)) {
             QVector<QRect> br{ bandRect };

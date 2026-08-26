@@ -23,6 +23,11 @@
 
 namespace navihmi {
 
+// 触摸校准布局参数（2026-08-26 魔法数字整改命名）
+constexpr int kCalibPointMarginPx = 80;    // 校准十字点距屏幕边缘内缩
+constexpr int kDefaultDevW = 1024;         // 默认设备宽（7 寸；与 main.cpp/vncmirror 兜底一致）
+constexpr int kDefaultDevH = 600;          // 默认设备高
+
 namespace {
 
 // ── 3x3 高斯消元（移植自 touch-calibrate.cpp）──
@@ -83,10 +88,14 @@ QString TouchCalibrator::statusText() const
 
 void TouchCalibrator::startCalibration(int devW, int devH)
 {
-    const int w = devW > 0 ? devW : 1024;
-    const int h = devH > 0 ? devH : 600;
+    const int w = devW > 0 ? devW : kDefaultDevW;
+    const int h = devH > 0 ? devH : kDefaultDevH;
     m_points = {
-        { 80, 80 }, { w - 80, 80 }, { w / 2, h / 2 }, { 80, h - 80 }, { w - 80, h - 80 }
+        { kCalibPointMarginPx, kCalibPointMarginPx },
+        { w - kCalibPointMarginPx, kCalibPointMarginPx },
+        { w / 2, h / 2 },
+        { kCalibPointMarginPx, h - kCalibPointMarginPx },
+        { w - kCalibPointMarginPx, h - kCalibPointMarginPx }
     };
     m_pairs.clear();
     m_index = 0;
