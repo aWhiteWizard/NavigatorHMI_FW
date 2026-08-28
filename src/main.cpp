@@ -44,6 +44,9 @@
 #include "runtime/touchcalibrator.h"
 #include "cli/commands.h"
 #include "cli/cliserver.h"
+#if defined(HAVE_QT_HTTPSERVER)
+#include "httpreceiver/httpreceiver.h"   // K-8b: HTTP 接收端（工程部署容器；QtHttpServer 缺失时降级排除）
+#endif
 #endif
 
 namespace {
@@ -531,6 +534,11 @@ int main(int argc, char *argv[])
     navihmi::CommandService commandService;
     navihmi::CliServer cliServer(&commandService);
 
+#if defined(HAVE_QT_HTTPSERVER)
+    // K-8b: HTTP 接收端（工程部署容器传输——qthttpserver；单客户端串行）
+    navihmi::HttpReceiver httpReceiver(&runtimeBus, &deviceInfo);
+#endif
+
     // 触摸校准引擎（E 循环集成进 FW: 校准 overlay 在 FW 主窗口内渲染 → VNC 全程不断;
     // 坐标走 Qt 层(QML MouseArea)采集 → VNC 注入鼠标事件也能操作校准）
     // 注: 必须在 engine.load 之前注入——main.qml 顶层绑定引用 touchCalibrator
@@ -589,6 +597,24 @@ int main(int argc, char *argv[])
     // I-1: CLI 服务启动（工程加载后——命令数据源就绪）
     if (!cliServer.start())
         qWarning().noquote() << "SSH CLI 服务不可用——navihmi-cli 将无法连接（FW 继续正常运行）";
+
+#if defined(HAVE_QT_HTTPSERVER)
+    // K-8b: HTTP 接收端启动（工程加载后）+ 容器就绪 → 工程重载（下载事务性：校验已在接收端完成，此处重载）
+    if (!httpReceiver.start())
+        qWarning().noquote() << "HTTP 接收端不可用（FW 继续正常运行，无法接收工程部署）";
+    QObject::connect(&httpReceiver, &navihmi::HttpReceiver::projectPackageReady, rootObj,
+                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger, &acquisition](const QString& projectPath) {
+        QString tileBasePath;
+        const QString resolved = resolveProjectPackage(projectPath, tileBasePath);
+        // 同步校准重启路径（对齐 storageInfo.projectReplaced 链——校准后自重启拉起新工程）
+        touchCalibrator.setProjectPath(projectPath);
+        qputenv("NAVIHMI_PROJECT", projectPath.toUtf8());
+        // 工程重载前清理 ObjectManager 画面上下文与注册表（防旧工程控件残留寻址幽灵）
+        objectManager.setCurrentScreen(QString());
+        objectManager.clearScreens();
+        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
+    });
+#endif
 
     // H-8: 写通道联动——DataManager 写 modbus 来源变量 → 同步写设备
     QObject::connect(&dataManager, &navihmi::DataManager::valueChanged, &acquisition,

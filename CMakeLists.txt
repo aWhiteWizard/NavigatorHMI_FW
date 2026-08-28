@@ -45,6 +45,13 @@ endif()
 # 核心组件（Core/Gui/Widgets 必需；Sql 为 G-2 数据记录模块——板端 Qt 6.4.3 已验证 qsqlite 驱动；
 # SerialBus 为 H-8 数据采集 Modbus——板端已装 libQt6SerialBus）
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets Sql SerialBus)
+# K-8a: QtHttpServer（官方仓库交叉编译, libQt6HttpServer 已固化 fs-overlay/usr/lib + sysroot cmake 配置）
+find_package(Qt${QT_VERSION_MAJOR}HttpServer QUIET)
+if(Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
+    message(STATUS "QtHttpServer 可用（K-8b 接收端启用）")
+else()
+    message(WARNING "QtHttpServer 未找到——K-8b 接收端不可用（需先跑 build-qthttp.sh 构建并安装到 sysroot）")
+endif()
 message(STATUS "Qt 版本: ${QT_VERSION_MAJOR}.${Qt${QT_VERSION_MAJOR}_VERSION}  QML: ${HAVE_QT_QML}")
 
 # ============================================================
@@ -72,6 +79,11 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
 )
 # 排除 src/tests/（qt-test 独立目标，不并入主程序）
 list(FILTER SOURCES EXCLUDE REGEX ".*/src/tests/.*")
+# K-8b: QtHttpServer 缺失时排除 httpreceiver（降级编译——不因 TP 模块缺失破坏整体构建，如 Windows 仿真器）
+if(NOT Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
+    list(FILTER SOURCES EXCLUDE REGEX ".*/src/httpreceiver/.*")
+    message(STATUS "httpreceiver 已排除（QtHttpServer 未找到——接收端编译被跳过，主程序正常）")
+endif()
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.h
     ${CMAKE_SOURCE_DIR}/src/*.hpp
@@ -125,6 +137,10 @@ if(SOURCES)
             Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Sql Qt${QT_VERSION_MAJOR}::SerialBus
             protobuf::libprotobuf
         )
+        if(Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
+            target_link_libraries(${PROJECT_NAME} Qt${QT_VERSION_MAJOR}::HttpServer)   # K-8b 接收端
+            target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_QT_HTTPSERVER=1)
+        endif()
     else()
         target_link_libraries(${PROJECT_NAME}
             Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Widgets
