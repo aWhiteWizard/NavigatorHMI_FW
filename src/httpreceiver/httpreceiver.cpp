@@ -21,6 +21,8 @@
 #include "runtime/runtimebus.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
+#include "runtime/vncmirror.h"     // K-9：/api/vnc 端点
+#include "runtime/devicemeta.h"    // K-9：设备身份推导单点
 
 // qzipreader_p.h（private 头——CMakeLists 已含 QtGui_PRIVATE_INCLUDE_DIRS，R3 先例）
 #include <QtGui/private/qzipreader_p.h>
@@ -77,6 +79,8 @@ HttpReceiver::HttpReceiver(RuntimeBus* bus, DeviceInfo* devInfo, QObject* parent
 
 HttpReceiver::~HttpReceiver() = default;
 
+void HttpReceiver::setVncMirror(VncMirror* vm) { m_vncMirror = vm; }   // K-9
+
 bool HttpReceiver::start()
 {
     if (!m_server.listen(QHostAddress::Any, kTransferPort)) {
@@ -100,21 +104,26 @@ void HttpReceiver::setupRoutes()
     // POST /api/transfer——工程部署容器上传（单客户端串行）
     m_server.route(QStringLiteral("/api/transfer"), QHttpServerRequest::Method::Post,
         [this](const QHttpServerRequest& request) { return handleTransfer(request); });
+
+    // K-9：POST /api/vnc {enable}——VNC 运行时启停（设备面板对等；proto enable_vnc=21 启动默认值，运行时指令覆盖）
+    m_server.route(QStringLiteral("/api/vnc"), QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest& request) { return handleVnc(request); });
+
+    // K-9：POST /api/blink {enable}——设备闪烁（屏幕亮灭交替 ~1s；多设备定位）
+    m_server.route(QStringLiteral("/api/blink"), QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest& request) { return handleBlink(request); });
 }
 
 QString HttpReceiver::deviceModel() const
 {
     if (!m_bus) return QStringLiteral("NavigatorHMI-7");
-    const Project& proj = m_bus->project();
-    // 按工程分辨率推导（7寸 1024×600 / 4寸 720×720——与 device-profile 一致）
-    if (proj.deviceWidth == 720 && proj.deviceHeight == 720)
-        return QStringLiteral("NavigatorHMI-4");
-    return QStringLiteral("NavigatorHMI-7");
+    return deviceModelFor(m_bus->project());
 }
 
 QString HttpReceiver::deviceSizeInch() const
 {
-    return deviceModel() == QLatin1String("NavigatorHMI-4") ? QStringLiteral("4寸") : QStringLiteral("7寸");
+    if (!m_bus) return QStringLiteral("7寸");
+    return deviceSizeInchFor(m_bus->project());
 }
 
 QHttpServerResponse HttpReceiver::handleDeviceInfo()
@@ -186,6 +195,53 @@ QHttpServerResponse HttpReceiver::handleTransfer(const QHttpServerRequest& reque
         { QStringLiteral("stage"), QStringLiteral("Finish") },
     };
     QHttpServerResponse resp(QJsonDocument(ok).toJson(QJsonDocument::Compact), QHttpServerResponse::StatusCode::Ok);
+    resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));
+    return resp;
+}
+
+QHttpServerResponse HttpReceiver::handleVnc(const QHttpServerRequest& request)
+{
+    // K-9：VNC 运行时启停（enable: true/false）——不重启工程
+    bool enable = false;
+    const QJsonDocument doc = QJsonDocument::fromJson(request.body());
+    if (doc.isObject())
+        enable = doc.object().value(QStringLiteral("enable")).toBool(false);
+    if (!m_vncMirror)
+        return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("VNC_UNAVAILABLE") },
+                                         { QStringLiteral("message"), QStringLiteral("VNC 镜像未初始化") } },
+                            QHttpServerResponse::StatusCode::ServiceUnavailable);
+    if (enable) {
+        if (!m_vncMirror->start(5900))
+            return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("VNC_FAILED") },
+                                             { QStringLiteral("message"), QStringLiteral("VNC 启动失败（端口占用？）") } },
+                                QHttpServerResponse::StatusCode::Conflict);
+        qInfo().noquote() << "VNC 运行时启动（5900）";
+    } else {
+        m_vncMirror->stop();
+        qInfo().noquote() << "VNC 运行时停止";
+    }
+    return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("OK") },
+                                     { QStringLiteral("vnc"), enable } },
+                        QHttpServerResponse::StatusCode::Ok);
+}
+
+QHttpServerResponse HttpReceiver::handleBlink(const QHttpServerRequest& request)
+{
+    // K-9：设备闪烁（enable: true/false）——QML 覆盖层亮灭交替 ~1s
+    bool enable = false;
+    const QJsonDocument doc = QJsonDocument::fromJson(request.body());
+    if (doc.isObject())
+        enable = doc.object().value(QStringLiteral("enable")).toBool(false);
+    emit blinkRequested(enable);
+    qInfo().noquote() << "设备闪烁指令:" << (enable ? "on" : "off");
+    return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("OK") },
+                                     { QStringLiteral("blink"), enable } },
+                        QHttpServerResponse::StatusCode::Ok);
+}
+
+QHttpServerResponse HttpReceiver::jsonResponse(const QJsonObject& obj, QHttpServerResponse::StatusCode status)
+{
+    QHttpServerResponse resp(QJsonDocument(obj).toJson(QJsonDocument::Compact), status);
     resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));
     return resp;
 }

@@ -585,6 +585,16 @@ int main(int argc, char *argv[])
     navihmi::VncMirror vncMirror(qobject_cast<QQuickWindow*>(rootObj));
     // QML 生产端脏矩形报告（西门子 dirty-rect 模式：画面变化点调 vncMirror.markDirty）
     engine.rootContext()->setContextProperty("vncMirror", &vncMirror);
+    // K-9: VNC 运行时启停注入——SSH CLI 命令（无条件，不依赖 HTTP）；proto enable_vnc=21 启动默认值，运行时指令覆盖
+    commandService.setVncMirror(&vncMirror);
+#if defined(HAVE_QT_HTTPSERVER)
+    // K-9: HTTP 端点注入 + 设备闪烁请求 → QML 覆盖层（亮灭交替 ~1s；main.qml setBlink）
+    httpReceiver.setVncMirror(&vncMirror);
+    QObject::connect(&httpReceiver, &navihmi::HttpReceiver::blinkRequested, rootObj,
+                     [rootObj](bool enable) {
+        QMetaObject::invokeMethod(rootObj, "setBlink", Q_ARG(QVariant, QVariant(enable)));
+    });
+#endif
 
     // 加载并注入工程（B6-8: 抽函数——无 --project / 文件缺失 → 空工程导航模式, 进程不退出）
     // R3: --project 是 ZIP 工程包时整包解压 → 内部 app.navihmi + tiles/ 瓦片

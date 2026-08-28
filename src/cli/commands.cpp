@@ -10,6 +10,8 @@
 #include "runtime/alarmengine.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/datalogger.h"
+#include "runtime/vncmirror.h"   // K-9：vnc 启停命令
+#include "runtime/devicemeta.h"  // K-9：设备身份推导单点
 
 #include <QDateTime>
 #include <QVariant>
@@ -34,6 +36,7 @@ void CommandService::setRuntimeBus(RuntimeBus* bus) { m_bus = bus; }
 void CommandService::setAlarmEngine(AlarmEngine* ae) { m_ae = ae; }
 void CommandService::setDeviceInfo(DeviceInfo* di) { m_di = di; }
 void CommandService::setDataLogger(DataLogger* dl) { m_dl = dl; }
+void CommandService::setVncMirror(VncMirror* vm) { m_vm = vm; }   // K-9
 
 bool CommandService::isAdmin(int clientUid)
 {
@@ -62,6 +65,8 @@ QString CommandService::execute(const QString& line, int clientUid)
     if (cmd == QLatin1String("system")) return cmdSystem(rest);
     if (cmd == QLatin1String("config")) return cmdConfig(rest);
     if (cmd == QLatin1String("render")) return cmdRender(rest);
+    if (cmd == QLatin1String("device")) return cmdDevice(rest);   // K-9：设备信息/状态（PC SSH 数据回传）
+    if (cmd == QLatin1String("vnc"))    return cmdVnc(rest);      // K-9：VNC 运行时启停（设备面板对等）
     if (cmd == QLatin1String("help"))   return helpText();
     if (cmd == QLatin1String("exit") || cmd == QLatin1String("quit"))
         return QStringLiteral("Connection closed.");
@@ -249,6 +254,53 @@ QString CommandService::cmdRender(const QStringList& args)
     return QStringLiteral("画面渲染为实时刷新（无需手动触发）；如需重载工程请用 config reload");
 }
 
+// ── device（K-9：设备信息/状态——PC SSH 数据回传基础）────────────────
+QString CommandService::deviceModel() const
+{
+    if (!m_bus) return QStringLiteral("NavigatorHMI-7");
+    return deviceModelFor(m_bus->project());
+}
+
+QString CommandService::deviceSizeInch() const
+{
+    if (!m_bus) return QStringLiteral("7寸");
+    return deviceSizeInchFor(m_bus->project());
+}
+
+QString CommandService::cmdDevice(const QStringList& args)
+{
+    if (args.isEmpty()) return QStringLiteral("用法: device info");
+    if (args[0].toLower() != QLatin1String("info")) return QStringLiteral("用法: device info");
+    if (!m_di) return QStringLiteral("ERROR: 设备信息未初始化");
+    const QString ip = m_di->ipAddress();
+    const QString fw = m_di->appVersion();
+    const bool json = args.size() > 1 && args[1] == QLatin1String("-j");   // K-9：-j JSON 输出（PC 解析用）
+    if (json)
+        return QStringLiteral("{\"model\":\"%1\",\"sizeInch\":\"%2\",\"id\":\"%3\",\"version\":\"%4\"}")
+                   .arg(deviceModel(), deviceSizeInch(), ip, fw);
+    return QStringLiteral("型号: %1\n尺寸: %2\nID: %3\n固件版本: %4\n")
+               .arg(deviceModel(), deviceSizeInch(), ip, fw);
+}
+
+// ── vnc（K-9：VNC 运行时启停——设备面板对等；proto enable_vnc=21 启动默认值，运行时指令可覆盖）──
+QString CommandService::cmdVnc(const QStringList& args)
+{
+    if (args.isEmpty()) return QStringLiteral("用法: vnc on | off");
+    if (!isAdmin(m_clientUid)) return QStringLiteral("ERROR: 权限不足（VNC 启停需 root）");
+    if (!m_vm) return QStringLiteral("ERROR: VNC 镜像未初始化");
+    const QString op = args[0].toLower();
+    if (op == QLatin1String("on")) {
+        if (m_vm->start(5900))
+            return QStringLiteral("✓ VNC 已启动（5900）");
+        return QStringLiteral("ERROR: VNC 启动失败（端口占用？）");
+    }
+    if (op == QLatin1String("off")) {
+        m_vm->stop();
+        return QStringLiteral("✓ VNC 已停止");
+    }
+    return QStringLiteral("用法: vnc on | off");
+}
+
 QString CommandService::helpText() const
 {
     return QStringLiteral(
@@ -257,6 +309,8 @@ QString CommandService::helpText() const
         "  tag list | read <name> | write <name> <value>   变量\n"
         "  alarm list | ack <id> | history   报警\n"
         "  system info | reboot confirm   设备信息/重启\n"
+        "  device info [-j]   设备信息（型号/尺寸/ID/固件版本，-j=JSON）\n"
+        "  vnc on | off   VNC 运行时启停（5900）\n"
         "  config reload   工程重载提示（需重启 FW 生效）\n"
         "  render refresh   画面为实时刷新（无需手动触发）\n"
         "  help   本帮助\n"

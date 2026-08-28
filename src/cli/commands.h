@@ -22,6 +22,7 @@ class RuntimeBus;
 class AlarmEngine;
 class DeviceInfo;
 class DataLogger;
+class VncMirror;
 
 class CommandService : public QObject
 {
@@ -34,6 +35,7 @@ public:
     void setAlarmEngine(AlarmEngine* ae);
     void setDeviceInfo(DeviceInfo* di);
     void setDataLogger(DataLogger* dl);
+    void setVncMirror(VncMirror* vm);   // K-9：vnc 启停命令（A 批设备面板对等）
 
     /// 执行一行命令，返回输出文本（错误以 "ERROR: " 前缀）
     /// clientUid：客户端进程 UID（SSH CLI 场景 = SSH 登录用户 UID；Linux SO_PEERCRED 由 CliServer 读取）
@@ -49,13 +51,20 @@ private:
     QString cmdSystem(const QStringList& args);
     QString cmdConfig(const QStringList& args);
     QString cmdRender(const QStringList& args);
+    QString cmdDevice(const QStringList& args);   // K-9：设备信息/状态（PC SSH 数据回传基础）
+    QString cmdVnc(const QStringList& args);      // K-9：VNC 运行时启停（设备面板对等）
     QString helpText() const;
+    /// K-9：设备型号（按工程分辨率推导 1024×600→NavigatorHMI-7 / 720×720→NavigatorHMI-4，与 HttpReceiver 口径一致）
+    QString deviceModel() const;
+    /// K-9：设备尺寸（"7寸"/"4寸"）
+    QString deviceSizeInch() const;
 
     DataManager* m_dm = nullptr;
     RuntimeBus* m_bus = nullptr;
     AlarmEngine* m_ae = nullptr;
     DeviceInfo* m_di = nullptr;
     DataLogger* m_dl = nullptr;
+    VncMirror* m_vm = nullptr;
     int m_clientUid = -1;   // 当前连接客户端 UID（-1=未知，按非管理员处理）
 };
 

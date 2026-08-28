@@ -123,6 +123,30 @@ Window {
         if (vncMirror) vncMirror.markDirty(0, 0, deviceWidth, deviceHeight)
     }
 
+    // ── K-9: 设备闪烁覆盖层（POST /api/blink → setBlink；亮灭交替约 1s，多设备定位）──
+    property bool blinkActive: false
+    Rectangle {
+        id: blinkOverlay
+        anchors.fill: parent
+        z: 999
+        color: "#000000"
+        opacity: 0
+        visible: mainShell.blinkActive
+        Behavior on opacity { NumberAnimation { duration: 120 } }
+        Timer {
+            id: blinkTimer
+            interval: 500
+            repeat: true
+            running: mainShell.blinkActive
+            onTriggered: blinkOverlay.opacity = blinkOverlay.opacity > 0 ? 0 : 0.85
+        }
+    }
+
+    function setBlink(enable) {
+        blinkActive = enable
+        if (!enable) blinkOverlay.opacity = 0
+    }
+
     function switchToName(name) {
         for (var i = 0; i < screenFiles.length; i++) {
             if (screenFiles[i].name === name) {
