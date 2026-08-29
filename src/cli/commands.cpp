@@ -12,6 +12,7 @@
 #include "runtime/datalogger.h"
 #include "runtime/vncmirror.h"   // K-9：vnc 启停命令
 #include "runtime/devicemeta.h"  // K-9：设备身份推导单点
+#include "runtime/fwconfig.h"    // K-9 评论3：VNC 端口配置单点
 
 #include <QDateTime>
 #include <QVariant>
@@ -257,14 +258,28 @@ QString CommandService::cmdRender(const QStringList& args)
 // ── device（K-9：设备信息/状态——PC SSH 数据回传基础）────────────────
 QString CommandService::deviceModel() const
 {
-    if (!m_bus) return QStringLiteral("NavigatorHMI-7");
-    return deviceModelFor(m_bus->project());
+    // K-9 评论1：不写死——无工程时按设备默认分辨率查型号表（设备本身型号，非工程推导），工程加载后走工程字段/查表
+    // 2026-08-30 用户评论：有工程但型号/分辨率皆空 = 错误工程 → 返回"未知"（调用方报错，不静默兜底）
+    if (!m_bus) {
+        Project stub;
+        stub.deviceWidth = kDefaultDeviceWidth;
+        stub.deviceHeight = kDefaultDeviceHeight;
+        return deviceModelFor(stub);
+    }
+    const QString model = deviceModelFor(m_bus->project());
+    return model.isEmpty() ? QStringLiteral("未知（错误工程：无型号且无有效分辨率）") : model;
 }
 
 QString CommandService::deviceSizeInch() const
 {
-    if (!m_bus) return QStringLiteral("7寸");
-    return deviceSizeInchFor(m_bus->project());
+    if (!m_bus) {
+        Project stub;
+        stub.deviceWidth = kDefaultDeviceWidth;
+        stub.deviceHeight = kDefaultDeviceHeight;
+        return deviceSizeInchFor(stub);
+    }
+    const QString inch = deviceSizeInchFor(m_bus->project());
+    return inch.isEmpty() ? QStringLiteral("未知（错误工程）") : inch;
 }
 
 QString CommandService::cmdDevice(const QStringList& args)
@@ -290,8 +305,10 @@ QString CommandService::cmdVnc(const QStringList& args)
     if (!m_vm) return QStringLiteral("ERROR: VNC 镜像未初始化");
     const QString op = args[0].toLower();
     if (op == QLatin1String("on")) {
-        if (m_vm->start(5900))
-            return QStringLiteral("✓ VNC 已启动（5900）");
+        // K-9 评论3：端口走 fwconfig（配置/环境变量），不再写死 5900
+        const int port = navihmi::vncPort();
+        if (m_vm->start(quint16(port)))
+            return QStringLiteral("✓ VNC 已启动（%1）").arg(port);
         return QStringLiteral("ERROR: VNC 启动失败（端口占用？）");
     }
     if (op == QLatin1String("off")) {
@@ -310,7 +327,7 @@ QString CommandService::helpText() const
         "  alarm list | ack <id> | history   报警\n"
         "  system info | reboot confirm   设备信息/重启\n"
         "  device info [-j]   设备信息（型号/尺寸/ID/固件版本，-j=JSON）\n"
-        "  vnc on | off   VNC 运行时启停（5900）\n"
+        "  vnc on | off   VNC 运行时启停（端口见 /etc/navigatorhmi/fw-config.json）\n"
         "  config reload   工程重载提示（需重启 FW 生效）\n"
         "  render refresh   画面为实时刷新（无需手动触发）\n"
         "  help   本帮助\n"

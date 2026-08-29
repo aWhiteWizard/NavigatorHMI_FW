@@ -54,9 +54,9 @@ private:
     QString cmdDevice(const QStringList& args);   // K-9：设备信息/状态（PC SSH 数据回传基础）
     QString cmdVnc(const QStringList& args);      // K-9：VNC 运行时启停（设备面板对等）
     QString helpText() const;
-    /// K-9：设备型号（按工程分辨率推导 1024×600→NavigatorHMI-7 / 720×720→NavigatorHMI-4，与 HttpReceiver 口径一致）
+    /// K-9：设备型号（优先工程 device_model 字段，空按分辨率查 /etc/navigatorhmi/device-profiles.json，再兜底 7寸；与 HttpReceiver 同走 devicemeta 单点）
     QString deviceModel() const;
-    /// K-9：设备尺寸（"7寸"/"4寸"）
+    /// K-9：设备尺寸（"7寸"/"4寸"，型号查表；同 devicemeta 单点）
     QString deviceSizeInch() const;
 
     DataManager* m_dm = nullptr;

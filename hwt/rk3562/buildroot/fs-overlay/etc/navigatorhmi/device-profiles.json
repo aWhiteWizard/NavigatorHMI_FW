@@ -1,0 +1,14 @@
+[
+  {
+    "model": "NavigatorHMI-7",
+    "width": 1024,
+    "height": 600,
+    "sizeInch": "7寸"
+  },
+  {
+    "model": "NavigatorHMI-4",
+    "width": 720,
+    "height": 720,
+    "sizeInch": "4寸"
+  }
+]

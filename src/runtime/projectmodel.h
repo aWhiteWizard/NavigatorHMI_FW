@@ -222,6 +222,7 @@ struct Project {
     int formatVersion = 0;    // 契约版本（1 = 当前）
     int deviceWidth = 0;      // 设备宽（像素，proto 7）
     int deviceHeight = 0;     // 设备高（像素，proto 8）
+    QString deviceModel;      // 设备型号（proto 22；PC 端 device-profile 写入，空=旧工程按分辨率兜底）
     QList<UserAccount> users;
     QList<UserGroup> groups;
     SecuritySettings security;

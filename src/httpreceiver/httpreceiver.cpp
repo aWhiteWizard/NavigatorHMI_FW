@@ -23,6 +23,7 @@
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"     // K-9：/api/vnc 端点
 #include "runtime/devicemeta.h"    // K-9：设备身份推导单点
+#include "runtime/fwconfig.h"      // K-9 评论3：VNC 端口配置单点
 
 // qzipreader_p.h（private 头——CMakeLists 已含 QtGui_PRIVATE_INCLUDE_DIRS，R3 先例）
 #include <QtGui/private/qzipreader_p.h>
@@ -116,14 +117,28 @@ void HttpReceiver::setupRoutes()
 
 QString HttpReceiver::deviceModel() const
 {
-    if (!m_bus) return QStringLiteral("NavigatorHMI-7");
-    return deviceModelFor(m_bus->project());
+    // K-9 评论2：不写死——无工程时按设备默认分辨率查型号表（设备本身型号），工程加载后走工程字段/查表
+    // 2026-08-30 用户评论：有工程但型号/分辨率皆空 = 错误工程 → 返回"未知"（不静默兜底）
+    if (!m_bus) {
+        Project stub;
+        stub.deviceWidth = kDefaultDeviceWidth;
+        stub.deviceHeight = kDefaultDeviceHeight;
+        return deviceModelFor(stub);
+    }
+    const QString model = deviceModelFor(m_bus->project());
+    return model.isEmpty() ? QStringLiteral("未知（错误工程：无型号且无有效分辨率）") : model;
 }
 
 QString HttpReceiver::deviceSizeInch() const
 {
-    if (!m_bus) return QStringLiteral("7寸");
-    return deviceSizeInchFor(m_bus->project());
+    if (!m_bus) {
+        Project stub;
+        stub.deviceWidth = kDefaultDeviceWidth;
+        stub.deviceHeight = kDefaultDeviceHeight;
+        return deviceSizeInchFor(stub);
+    }
+    const QString inch = deviceSizeInchFor(m_bus->project());
+    return inch.isEmpty() ? QStringLiteral("未知（错误工程）") : inch;
 }
 
 QHttpServerResponse HttpReceiver::handleDeviceInfo()
@@ -211,11 +226,13 @@ QHttpServerResponse HttpReceiver::handleVnc(const QHttpServerRequest& request)
                                          { QStringLiteral("message"), QStringLiteral("VNC 镜像未初始化") } },
                             QHttpServerResponse::StatusCode::ServiceUnavailable);
     if (enable) {
-        if (!m_vncMirror->start(5900))
+        // K-9 评论3：端口走 fwconfig（配置/环境变量），不再写死 5900
+        const int port = navihmi::vncPort();
+        if (!m_vncMirror->start(quint16(port)))
             return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("VNC_FAILED") },
                                              { QStringLiteral("message"), QStringLiteral("VNC 启动失败（端口占用？）") } },
                                 QHttpServerResponse::StatusCode::Conflict);
-        qInfo().noquote() << "VNC 运行时启动（5900）";
+        qInfo().noquote() << "VNC 运行时启动（" << port << "）";
     } else {
         m_vncMirror->stop();
         qInfo().noquote() << "VNC 运行时停止";

@@ -2,7 +2,7 @@
  * @FilePath: \NavigatorHMI_FW\src\runtime\vncmirror.h
  * @Description: 内嵌 VNC 镜像服务（RFB 3.3）
  *               应用照常跑 eglfs 物理屏（触摸/显示正常），本服务在渲染线程
- *               afterRendering 时 glReadPixels 读已渲染帧推给 VNC 客户端（5900），
+ *               afterRendering 时 glReadPixels 读已渲染帧推给 VNC 客户端（端口默认 5900，见 fw-config.json），
  *               并把 VNC 鼠标/键盘事件回灌进应用。
  *               无人车场景默认关闭（proj.enable_vnc=false），零内存/CPU 开销。
  *               2026-08-20 修正：不再用 grabWindow 定时抓帧（eglfs 上高频
@@ -17,6 +17,8 @@
 #include <QMutex>
 #include <QElapsedTimer>
 #include <QOpenGLFunctions>   // GLuint / QOpenGLFunctions*
+
+#include "runtime/fwconfig.h" // kDefaultVncPort 单点（VNC 端口配置）
 
 class QTcpServer;
 class QTcpSocket;
@@ -39,8 +41,8 @@ public:
     /// 设备尺寸（VNC 屏幕尺寸 = 工程 deviceWidth/Height，如 1024x600）
     void setDeviceSize(int w, int h);
 
-    /// 启动监听（默认 5900；监听失败返回 false 并记日志）
-    bool start(quint16 port = 5900);
+    /// 启动监听（默认 kDefaultVncPort，定义于 fwconfig.h——VNC 端口单点；监听失败返回 false 并记日志）
+    bool start(quint16 port = kDefaultVncPort);
     void stop();
     bool isRunning() const { return m_server != nullptr; }
 

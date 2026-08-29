@@ -41,7 +41,9 @@
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"
+#include "runtime/fwconfig.h"   // K-9 评论3：VNC 端口配置单点
 #include "runtime/touchcalibrator.h"
+#include "runtime/devicemeta.h"   // kDefaultDeviceWidth/Height 单点（K-9 评论1：默认分辨率收敛，替代本地 kDefaultDevW/H）
 #include "cli/commands.h"
 #include "cli/cliserver.h"
 #if defined(HAVE_QT_HTTPSERVER)
@@ -51,8 +53,9 @@
 
 namespace {
 // 默认设备尺寸（7 寸 1024×600；与 touchcalibrator/vncmirror 兜底一致，2026-08-26 魔法数字整改命名）
-constexpr int kDefaultDevW = 1024;
-constexpr int kDefaultDevH = 600;
+// K-9 评论1：值已收敛到 devicemeta.h kDefaultDeviceWidth/Height 单点（此处保留别名引用，防匿名命名空间内原调用点改动面扩大）
+constexpr int kDefaultDevW = navihmi::kDefaultDeviceWidth;
+constexpr int kDefaultDevH = navihmi::kDefaultDeviceHeight;
 } // anonymous namespace
 
 // ═══════ 工程包解析（R3: 工程=单个 ZIP, 内含工程信息 + 瓦片地图）═══════
@@ -354,10 +357,8 @@ static bool loadAndInject(QObject* rootObj,
         if (okForce) force = fv;
         bool want = (force == 2) || (proj.enableVnc && force != 0);
         if (want) {
-            int port = 5900;
-            int pv = qEnvironmentVariableIntValue("NAVIHMI_VNC_PORT");
-            if (pv > 0 && pv < 65536) port = pv;
-            vncMirror->start(quint16(port));
+            // K-9 评论3：端口收敛到 fwconfig（/etc/navigatorhmi/fw-config.json + NAVIHMI_VNC_PORT 覆盖），不再写死 5900
+            vncMirror->start(quint16(navihmi::vncPort()));
         } else {
             vncMirror->stop();
         }
@@ -581,7 +582,7 @@ int main(int argc, char *argv[])
                       << engine.rootObjects().size();   // 诊断(B6-8)
     QObject* rootObj = engine.rootObjects().first();
 
-    // VNC 镜像（eglfs 物理屏照常，额外 5900 远程通道；按工程 enable_vnc 启停）
+    // VNC 镜像（eglfs 物理屏照常，额外远程通道，端口默认 5900 见 fw-config.json；按工程 enable_vnc 启停）
     navihmi::VncMirror vncMirror(qobject_cast<QQuickWindow*>(rootObj));
     // QML 生产端脏矩形报告（西门子 dirty-rect 模式：画面变化点调 vncMirror.markDirty）
     engine.rootContext()->setContextProperty("vncMirror", &vncMirror);

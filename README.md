@@ -81,7 +81,7 @@ docker run --rm -v "D:\workspace\code\NavigatorHMI_FW:/workspace" -v "D:\workspa
 export QT_QPA_PLATFORM=eglfs QT_QPA_PLATFORM_PLUGIN_PATH=/usr/plugins/platforms \
        QT_PLUGIN_PATH=/usr/plugins QML_IMPORT_PATH=/usr/qml QML2_IMPORT_PATH=/usr/qml
 navigatorhmi-fw --project /mnt/user/userdata/demo.navihmi   # ZIP 工程包（含瓦片）
-# 日志: /tmp/navihmi-mirror.log（VNC 模式）; NAVIHMI_VNC=2 强制开 VNC 5900
+# 日志: /tmp/navihmi-mirror.log（VNC 模式）; NAVIHMI_VNC=2 强制开 VNC（端口默认 5900，见 /etc/navigatorhmi/fw-config.json）
 # 验证: 世界地图瓦片显示 / 画面切换 / 触摸校准长按 / 虚拟键盘 / VNC 远程
 ```
 
