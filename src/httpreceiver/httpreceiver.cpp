@@ -280,11 +280,42 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
         if (zf.write(body) != body.size()) return QStringLiteral("临时文件写入不完整");
     }
 
-    // 3. 解压到临时目录
+    // 3. 解压到临时目录——逐条提取（fileInfoList+fileData，对齐 main.cpp extractZipAll 成功路径）
+    //    K-9 评论/4_bugs：QZipReader::extractAll 对 PC 打包 zip（.NET ZipArchive）不兼容（板子 unzip 可解但
+    //    extractAll 失败）；逐条 fileData 读取经 main.cpp 工程包解压验证可靠（2026-08-30 L 循环修复）
+    //    穿越防护沿用 main.cpp 的 rel.contains("..")（此处条目来自 manifest 打包白名单外的 res 资源，
+    //    与 receiveAndInstall 后续 safeRelPath 白名单校验互补；L-A1 审查确认边界）
     const QString extractDir = tmpDir.filePath(QStringLiteral("x"));
     if (!QDir().mkpath(extractDir)) return QStringLiteral("解压目录创建失败");
-    QZipReader reader(zipPath);
-    if (!reader.extractAll(extractDir)) return QStringLiteral("容器解压失败（非 ZIP 或损坏）");
+    {
+        QZipReader reader(zipPath);
+        if (!reader.exists()) return QStringLiteral("容器解压失败（非 ZIP 或损坏）");
+        const auto entries = reader.fileInfoList();
+        int extracted = 0;
+        for (const auto& entry : entries) {
+            if (entry.isDir) continue;
+            const QString rel = entry.filePath;
+            if (rel.contains(QLatin1String(".."))) continue;   // 防路径穿越（与 main.cpp 一致）
+            const QString target = extractDir + QLatin1Char('/') + rel;
+            QFileInfo fi(target);
+            QDir().mkpath(fi.absolutePath());
+            QFile f(target);
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                // 写入完整性检查（L-A1 审查 🔴）：fileData 为空或写入不完整 → 解压失败返回，
+                // 不静默落盘损坏条目（防 SHA256 校验绕过坏 res）
+                const QByteArray data = reader.fileData(rel);
+                if (data.isEmpty() || f.write(data) != data.size())
+                    return QStringLiteral("容器解压失败（条目写入不完整: %1）").arg(rel);
+                f.close();
+                ++extracted;
+            } else {
+                return QStringLiteral("容器解压失败（无法创建: %1）").arg(target);
+            }
+        }
+        if (extracted == 0) return QStringLiteral("容器解压失败（空容器，无文件条目）");
+        reader.close();
+        qInfo().noquote() << "部署容器解压完成:" << extracted << "files ->" << extractDir;
+    }
 
     // 4. manifest 校验：app 条目 SHA256 与实际文件比对
     QJsonArray manifest;
