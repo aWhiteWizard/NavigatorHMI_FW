@@ -324,15 +324,19 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
     QString appTarget;   // 校验通过的 app 条目 target（拷贝源统一用 manifest 路径，防硬编码漂移）
     for (const QJsonValue& v : manifest) {
         const QJsonObject entry = v.toObject();
-        const QString type = entry.value(QStringLiteral("type")).toString();
-        const QString target = entry.value(QStringLiteral("target")).toString();
+        // 大小写容错（L-A1 联调发现）：PC 端旧产物 PascalCase "Type"/"Target"/"Sha256"，新产物 CamelCase（JsonNamingPolicy）
+        const QString type = entry.value(QStringLiteral("type")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Type")).toString() : entry.value(QStringLiteral("type")).toString();
+        const QString target = entry.value(QStringLiteral("target")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Target")).toString() : entry.value(QStringLiteral("target")).toString();
         if (type != QLatin1String("app")) continue;
         if (target.isEmpty() || !safeRelPath(target)) return QStringLiteral("manifest app target 非法");
         const QString filePath = extractDir + QLatin1Char('/') + target;
         if (!QFileInfo::exists(filePath)) return QStringLiteral("app 主包缺失: %1").arg(target);
-        const QString expectSha = entry.value(QStringLiteral("sha256")).toString().toLower();
+        const QString expectSha = entry.value(QStringLiteral("sha256")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Sha256")).toString() : entry.value(QStringLiteral("sha256")).toString();
         const QString actualSha = sha256OfFile(filePath);
-        if (expectSha.isEmpty() || actualSha != expectSha)
+        if (expectSha.isEmpty() || actualSha != expectSha.toLower())
             return QStringLiteral("app 主包 SHA256 校验失败");
         appFound = true;
         appTarget = target;
