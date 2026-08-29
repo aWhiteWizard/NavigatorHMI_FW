@@ -6,6 +6,7 @@
 
 #include <QHttpServerRequest>
 #include <QHttpServerResponse>
+#include <QHttpServerResponder>   // M-3 ④：异步传输响应器（responder 形式路由）
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -20,6 +21,8 @@
 
 #include <unistd.h>   // ::rename（L-A4：POSIX 原子覆盖替代 QFile::rename）
 #include <cerrno>     // errno
+#include <thread>     // M-3 ④（R1）：receiveAndInstall 后台线程执行（避免冻结 GUI 事件循环）
+#include <memory>     // std::make_unique/move（responder 异步持有）
 
 #include "runtime/runtimebus.h"
 #include "runtime/deviceinfo.h"
@@ -106,8 +109,10 @@ void HttpReceiver::setupRoutes()
         [this](const QHttpServerRequest&) { return handleVersion(); });
 
     // POST /api/transfer——工程部署容器上传（单客户端串行）
+    // M-3 ④（R1）：responder 异步形式——qthttpserver 6.4 处理器运行在服务器对象所在线程（=GUI 主线程），
+    // receiveAndInstall 秒级耗时若同步执行会冻结事件循环（进度条无法重绘）；改后台线程执行 + 主线程收尾
     m_server.route(QStringLiteral("/api/transfer"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& request) { return handleTransfer(request); });
+        [this](const QHttpServerRequest& request, QHttpServerResponder&& responder) { handleTransfer(request, std::move(responder)); });
 
     // K-9：POST /api/vnc {enable}——VNC 运行时启停（设备面板对等；proto enable_vnc=21 启动默认值，运行时指令覆盖）
     m_server.route(QStringLiteral("/api/vnc"), QHttpServerRequest::Method::Post,
@@ -171,7 +176,7 @@ QHttpServerResponse HttpReceiver::handleVersion()
     return resp;
 }
 
-QHttpServerResponse HttpReceiver::handleTransfer(const QHttpServerRequest& request)
+void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder)
 {
     // 并发上限 1（单客户端串行；多余请求拒绝并报错——服务约束）
     if (!m_transferActive.testAndSetAcquire(false, true)) {
@@ -180,41 +185,59 @@ QHttpServerResponse HttpReceiver::handleTransfer(const QHttpServerRequest& reque
             { QStringLiteral("message"), QStringLiteral("已有传输任务进行中") },
             { QStringLiteral("stage"), QStringLiteral("Upload") },
         };
-        QHttpServerResponse resp(QJsonDocument(err).toJson(QJsonDocument::Compact),
-                                 QHttpServerResponse::StatusCode::Conflict);
-        resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));
-        return resp;
+        responder.write(QJsonDocument(err).toJson(QJsonDocument::Compact),
+                        QByteArrayLiteral("application/json"),
+                        QHttpServerResponder::StatusCode::Conflict);
+        return;
     }
 
     const QByteArray body = request.body();
-    QString projectPath;
-    const QString error = receiveAndInstall(body, projectPath);
-    m_transferActive.storeRelease(false);
+    // M-3 ④：接收开始 → QML 屏幕进度条（退导航→进度→满停→自动打开）
+    emit transferProgress(5, QStringLiteral("接收完成，开始安装"));
+    m_responder = std::make_unique<QHttpServerResponder>(std::move(responder));
 
+    // M-3 ④（R1 修复）：receiveAndInstall 移出 GUI 线程——qthttpserver 6.4 处理器跑在服务器对象线程
+    // （=main() 所在线程），1220 瓦片 demo 解压/校验/落盘秒级耗时，同步执行冻结事件循环 →
+    // 进度条无法重绘、触摸/VNC 无响应；后台线程执行安装，完成后回主线程写响应（QTcpSocket 非线程安全）
+    std::thread([this, body]() {
+        QString projectPath;
+        const QString error = receiveAndInstall(body, projectPath);
+        QMetaObject::invokeMethod(this, [this, error, projectPath]() {
+            finishTransfer(error, projectPath);
+        }, Qt::QueuedConnection);
+    }).detach();
+}
+
+/// M-3 ④：主线程收尾——写 HTTP 响应 + 释放并发锁 + 信号（成功→projectPackageReady；失败→progress(-1)）
+void HttpReceiver::finishTransfer(const QString& error, const QString& projectPath)
+{
+    m_transferActive.storeRelease(false);
     if (!error.isEmpty()) {
         qWarning().noquote() << "传输失败:" << error;
+        emit transferProgress(-1, error);   // M-3 ④：失败 → QML 进度条恢复（隐藏）
         const QJsonObject err{
             { QStringLiteral("code"), QStringLiteral("TRANSFER_FAILED") },
             { QStringLiteral("message"), error },
             { QStringLiteral("stage"), QStringLiteral("Install") },
         };
-        QHttpServerResponse resp(QJsonDocument(err).toJson(QJsonDocument::Compact),
-                                 QHttpServerResponse::StatusCode::BadRequest);
-        resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));
-        return resp;
+        if (m_responder)
+            m_responder->write(QJsonDocument(err).toJson(QJsonDocument::Compact),
+                               QByteArrayLiteral("application/json"),
+                               QHttpServerResponder::StatusCode::BadRequest);
+    } else {
+        // 校验通过、已落盘 → 通知主程序重载工程（下载事务性：失败路径不动当前工程）
+        emit projectPackageReady(projectPath);
+        const QJsonObject ok{
+            { QStringLiteral("code"), QStringLiteral("SUCCESSFUL_REBOOT") },
+            { QStringLiteral("message"), QStringLiteral("部署成功，工程重载中") },
+            { QStringLiteral("stage"), QStringLiteral("Finish") },
+        };
+        if (m_responder)
+            m_responder->write(QJsonDocument(ok).toJson(QJsonDocument::Compact),
+                               QByteArrayLiteral("application/json"),
+                               QHttpServerResponder::StatusCode::Ok);
     }
-
-    // 校验通过、已落盘 → 通知主程序重载工程（下载事务性：失败路径不动当前工程）
-    emit projectPackageReady(projectPath);
-
-    const QJsonObject ok{
-        { QStringLiteral("code"), QStringLiteral("SUCCESSFUL_REBOOT") },
-        { QStringLiteral("message"), QStringLiteral("部署成功，工程重载中") },
-        { QStringLiteral("stage"), QStringLiteral("Finish") },
-    };
-    QHttpServerResponse resp(QJsonDocument(ok).toJson(QJsonDocument::Compact), QHttpServerResponse::StatusCode::Ok);
-    resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));
-    return resp;
+    m_responder.reset();
 }
 
 QHttpServerResponse HttpReceiver::handleVnc(const QHttpServerRequest& request)
@@ -294,7 +317,13 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
         QZipReader reader(zipPath);
         if (!reader.exists()) return QStringLiteral("容器解压失败（非 ZIP 或损坏）");
         const auto entries = reader.fileInfoList();
+        // Y4：分母预统计 = 实际文件条目数（entries 含 isDir 目录条目——若混入分母，目录多的 zip
+        // extracted 永达不到 totalEntries，末次 45% 进度不发且百分比偏低）
+        int fileEntries = 0;
+        for (const auto& entry : entries)
+            if (!entry.isDir) ++fileEntries;
         int extracted = 0;
+        const int totalEntries = fileEntries;
         for (const auto& entry : entries) {
             if (entry.isDir) continue;
             const QString rel = entry.filePath;
@@ -311,6 +340,9 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
                     return QStringLiteral("容器解压失败（条目写入不完整: %1）").arg(rel);
                 f.close();
                 ++extracted;
+                // M-3 ④：解压进度（5% → 45%）
+                if (totalEntries > 0 && (extracted % 16 == 0 || extracted == totalEntries))
+                    emit transferProgress(5 + 40 * extracted / totalEntries, QStringLiteral("解压安装包…"));
             } else {
                 return QStringLiteral("容器解压失败（无法创建: %1）").arg(target);
             }
@@ -381,10 +413,41 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
     }
 
     // res/ 资源按 target 落盘（白名单 fail-closed：非法 target 报错而非静默跳过；copy 失败报错）
-    for (const QJsonValue& v : manifest) {
+    const QJsonArray manifestArr = manifest;
+    int resTotal = 0;
+    for (const QJsonValue& v : manifestArr) {   // 分母 = res 条目数（manifest 含 1 条 app——不能混入分母）
         const QJsonObject entry = v.toObject();
-        const QString type = entry.value(QStringLiteral("type")).toString();
-        const QString target = entry.value(QStringLiteral("target")).toString();
+        // Y6：type 大小写容错（与 app 条目 L-A1 双读同模式——旧 PascalCase 产物兼容）
+        const QString etype = entry.value(QStringLiteral("type")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Type")).toString() : entry.value(QStringLiteral("type")).toString();
+        if (etype == QLatin1String("res")) ++resTotal;
+    }
+    // Y3（B2 CONFLICT_SOFT，对齐 J-2 ZIP 分支 removeRecursively）：新包含瓦片时先清理工程目录旧 tiles/
+    // ——httreceiver 增量 copy 不删旧内容，单文件探测会命中陈旧瓦片（世界地图显示旧瓦片/瓦片校验假阴性）
+    bool hasTiles = false;
+    for (const QJsonValue& v : manifestArr) {
+        const QJsonObject entry = v.toObject();
+        const QString etype = entry.value(QStringLiteral("type")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Type")).toString() : entry.value(QStringLiteral("type")).toString();
+        const QString etarget = entry.value(QStringLiteral("target")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Target")).toString() : entry.value(QStringLiteral("target")).toString();
+        if (etype == QLatin1String("res") && etarget.startsWith(QLatin1String("tiles/"))) { hasTiles = true; break; }
+    }
+    if (hasTiles) {
+        QDir oldTiles(deployDir + QStringLiteral("/tiles"));
+        if (oldTiles.exists()) {
+            oldTiles.removeRecursively();
+            qInfo().noquote() << "已清理旧瓦片目录（防陈旧瓦片残留）:" << oldTiles.absolutePath();
+        }
+    }
+    int resDone = 0;
+    for (const QJsonValue& v : manifestArr) {
+        const QJsonObject entry = v.toObject();
+        // Y6：type/target 大小写容错（双读，同 app 条目）
+        const QString type = entry.value(QStringLiteral("type")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Type")).toString() : entry.value(QStringLiteral("type")).toString();
+        const QString target = entry.value(QStringLiteral("target")).toString().isEmpty()
+            ? entry.value(QStringLiteral("Target")).toString() : entry.value(QStringLiteral("target")).toString();
         if (type != QLatin1String("res")) continue;
         if (target.isEmpty() || !safeRelPath(target))
             return QStringLiteral("manifest res target 非法: %1").arg(target);
@@ -394,12 +457,21 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
         const QString dstFile = deployDir + QLatin1Char('/') + target;
         if (!QDir().mkpath(QFileInfo(dstFile).absolutePath()))
             return QStringLiteral("res 落盘目录创建失败: %1").arg(target);
+        // 跨端缺陷修复（M-3 ① 审查知会）：QFile::copy 目标已存在时失败（不覆盖）——重复部署同资源/瓦片
+        // （1200+ 条目）全失败；先删目标再 copy（幂等覆盖，与重部署兼容；失败仍报错不留半成品）
+        if (QFileInfo::exists(dstFile) && !QFile::remove(dstFile))
+            return QStringLiteral("res 旧文件清理失败: %1").arg(target);
         if (!QFile::copy(srcFile, dstFile))
             return QStringLiteral("res 落盘失败: %1").arg(target);
+        ++resDone;
+        // M-3 ④：落盘进度（50% → 95%）
+        if (resTotal > 0 && (resDone % 16 == 0 || resDone == resTotal))
+            emit transferProgress(50 + 45 * resDone / resTotal, QStringLiteral("写入资源…"));
     }
 
     // 6. 清理临时（QTemporaryDir 析构自动删）+ 返回
     projectPathOut = appPath;
+    emit transferProgress(100, QStringLiteral("安装完成"));   // M-3 ④：满进度 → QML 停 1~2s 后自动打开
     qInfo().noquote() << "工程容器接收完成: app=" << appPath;
     return QString();
 }

@@ -11,8 +11,10 @@
 #include <QHttpServer>
 #include <QString>
 #include <QAtomicInteger>
+#include <memory>   // M-3 ④：std::unique_ptr<QHttpServerResponder>（异步传输响应器）
 
 class QHttpServerRequest;
+class QHttpServerResponder;
 
 namespace navihmi {
 
@@ -43,14 +45,22 @@ signals:
     /// K-9：设备闪烁请求（QML 覆盖层亮灭交替 ~1s；enable=false 停止恢复原画面）
     void blinkRequested(bool enable);
 
+    /// M-3 ④：下载/安装进度回报（0~100；percent<0 = 失败恢复）——QML 屏幕进度条（退导航→进度→满停 1~2s→自动打开）
+    void transferProgress(int percent, const QString& stage);
+
 private:
     void setupRoutes();
     QHttpServerResponse handleDeviceInfo();
     QHttpServerResponse handleVersion();
-    QHttpServerResponse handleTransfer(const QHttpServerRequest& request);
+    /// M-3 ④（R1 修复）：transfer 改为 responder 异步——qthttpserver 6.4 处理器跑在服务器对象线程（=GUI 主线程），
+    /// receiveAndInstall 解压/校验/落盘为秒级耗时，同步执行会冻结事件循环 → 进度条无法重绘、触摸/VNC 无响应；
+    /// 后台线程执行安装，完成后经 finishTransfer 回主线程写响应（QTcpSocket 非线程安全）
+    void handleTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder);
+    /// 主线程收尾：写 HTTP 响应 + 释放并发锁 + 信号（成功→projectPackageReady；失败→progress(-1)）
+    void finishTransfer(const QString& error, const QString& projectPath);
     QHttpServerResponse handleVnc(const QHttpServerRequest& request);    // K-9：POST /api/vnc {enable}
     QHttpServerResponse handleBlink(const QHttpServerRequest& request);  // K-9：POST /api/blink {enable}
-    /// 校验 + 落盘；成功返回空错误串并输出 projectPath，失败返回原因
+    /// 校验 + 落盘；成功返回空错误串并输出 projectPath，失败返回原因（后台线程执行——只碰局部/线程安全成员）
     QString receiveAndInstall(const QByteArray& body, QString& projectPathOut);
     /// JSON 响应构造（Content-Type application/json）
     QHttpServerResponse jsonResponse(const QJsonObject& obj, QHttpServerResponse::StatusCode status);
@@ -64,6 +74,7 @@ private:
     VncMirror* m_vncMirror = nullptr;   // K-9
     QHttpServer m_server;
     QAtomicInteger<bool> m_transferActive { false };
+    std::unique_ptr<QHttpServerResponder> m_responder;   // M-3 ④：活动传输的异步响应器（单客户端串行，唯一持有者）
 };
 
 } // namespace navihmi

@@ -187,6 +187,95 @@ Window {
         }
     }
 
+    // ── M-3 ④: 下载工程屏幕进度条（退导航→进度→100% 停 1.5s→自动打开新工程）──
+    // 信号源: C++ HttpReceiver::transferProgress → invokeMethod showTransferProgress
+    // Y1（审查）：Rectangle 不消费鼠标事件——全屏空 MouseArea 吞点击（半透明遮罩下 nav 页不可点，
+    // 防安装期间误开旧工程/残留无工程弹窗）
+    Rectangle {
+        id: downloadOverlay
+        z: 300
+        anchors.fill: parent
+        color: "#B0000000"
+        visible: false
+        MouseArea {
+            anchors.fill: parent
+            enabled: downloadOverlay.visible
+        }
+        Rectangle {
+            width: 420
+            height: 120
+            radius: 10
+            anchors.centerIn: parent
+            color: "#F0F7FB"
+            Column {
+                anchors.centerIn: parent
+                spacing: 10
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "正在下载工程…"
+                    font.pixelSize: 15
+                    color: "#1B4E6B"
+                }
+                Rectangle {
+                    width: 340; height: 14; radius: 7
+                    color: "#D5E5EE"
+                    Rectangle {
+                        id: downloadBarFill
+                        width: parent.width * (downloadPercent / 100)
+                        height: parent.height
+                        radius: 7
+                        color: "#1382B1"
+                    }
+                }
+                Text {
+                    id: downloadStageText
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "准备中…"
+                    font.pixelSize: 12
+                    color: "#5A7A8C"
+                }
+            }
+        }
+    }
+    property int downloadPercent: 0
+    property bool downloadPrevRuntimeActive: false   // Y2：下载前运行态（失败恢复用）
+    Timer {
+        id: downloadOpenTimer
+        interval: 1500   // 进度满后停留 1.5s 再自动打开（M-3 ④ 用户期望 1~2 秒）
+        repeat: false
+        onTriggered: {
+            downloadOverlay.visible = false
+            mainShell.showNoProjectDialog = false   // Y1：防残留无工程弹窗盖在新工程上
+            mainShell.startProject()   // 新工程已由 C++ loadAndInject 注入（screenFiles/hasProject）
+        }
+    }
+    // M-3 ④: C++ 进度回调——首次(5%)退导航回首页; 100% 后停 1.5s 自动打开; <0 失败恢复
+    function showTransferProgress(percent, stage) {
+        if (percent < 0) {
+            downloadOpenTimer.stop()
+            downloadOverlay.visible = false
+            // Y2（审查）：失败恢复——回到下载前的运行态（此前在运行 → 重新打开旧工程）
+            if (downloadPrevRuntimeActive && screenFiles.length > 0) {
+                mainShell.startProject()
+            }
+            downloadPrevRuntimeActive = false
+            return
+        }
+        if (downloadOverlay.visible === false) {
+            downloadOverlay.visible = true
+            downloadPrevRuntimeActive = mainShell.runtimeActive
+            // 退导航回首页（与 Stop Runtime 同语义；screenLoader 清空、runtimeActive=false）
+            mainShell.stopRuntime()
+        }
+        // Y5（审查）：非 100% 时停旧 timer（新传输开始/进度中断时防旧 timer 提前触发 startProject）
+        if (percent < 100) downloadOpenTimer.stop()
+        downloadPercent = percent
+        downloadStageText.text = stage
+        if (percent >= 100) {
+            downloadOpenTimer.start()
+        }
+    }
+
     // ── 无工程提示弹窗 ──
     Rectangle {
         z: 100

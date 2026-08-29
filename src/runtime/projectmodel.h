@@ -41,7 +41,8 @@ enum class ActionType {
     RunCommand = 3, ShowPopup = 4, SendNotification = 5,
     ScreenPrev = 6, ScreenNext = 7, TagAdd = 8, TagSubtract = 9,
     TagToggle = 10, SetBit = 11, ResetBit = 12,
-    SetDatetime = 13, GetDatetime = 14, AcknowledgeAlarm = 15, SetSystemTime = 16
+    SetDatetime = 13, GetDatetime = 14, AcknowledgeAlarm = 15, SetSystemTime = 16,
+    StopRuntime = 17   // 运行时停止（退出当前工程回导航首页；M-3）
 };
 enum class AlarmTriggerMode { Threshold = 0, OnRising = 1, OnFalling = 2, OnChange = 3 };
 enum class AlarmCategory { System = 0, User = 1, Error = 2 };

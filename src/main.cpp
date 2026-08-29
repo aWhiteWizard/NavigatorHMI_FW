@@ -115,7 +115,19 @@ static QString resolveProjectPackage(const QString& projectPath, QString& tileBa
     QByteArray magic = f.read(4);
     f.close();
     if (magic.size() < 4 || magic[0] != 'P' || magic[1] != 'K') {
-        tileBasePath = QString();
+        // M-3 ①: 单文件工程（HTTP 下载链路落盘 app.navihmi + 同目录 tiles/ 瓦片——
+        // httreceiver 按 manifest target 落盘，瓦片保留根级 tiles/ 前缀）→ 探测同目录 tiles/（与 ZIP 直启同约定）
+        const QString appDir = QFileInfo(projectPath).absolutePath();
+        const QString tilesDir = appDir + QStringLiteral("/tiles");
+        int tilePngCount = 0;
+        if (QFileInfo::exists(tilesDir)) {
+            QDirIterator it(tilesDir, QStringList() << "*.png", QDir::Files, QDirIterator::Subdirectories);
+            while (it.hasNext()) { it.next(); ++tilePngCount; }
+        }
+        tileBasePath = (tilePngCount > 0) ? tilesDir : QString();
+        if (tileBasePath.isEmpty())
+            qWarning().noquote() << "单文件工程缺瓦片数据（同目录 tiles/ 目录缺失或 0 张 PNG）:"
+                                 << QFileInfo(projectPath).fileName();
         return projectPath;          // 普通单文件工程（向后兼容纯二进制）
     }
     // ZIP 工程包：整包解压到固定临时目录
@@ -594,6 +606,12 @@ int main(int argc, char *argv[])
     QObject::connect(&httpReceiver, &navihmi::HttpReceiver::blinkRequested, rootObj,
                      [rootObj](bool enable) {
         QMetaObject::invokeMethod(rootObj, "setBlink", Q_ARG(QVariant, QVariant(enable)));
+    });
+    // M-3 ④：下载/安装进度 → QML 屏幕进度条（退导航→进度→满停 1~2s→自动打开；percent<0 = 失败恢复隐藏）
+    QObject::connect(&httpReceiver, &navihmi::HttpReceiver::transferProgress, rootObj,
+                     [rootObj](int percent, const QString& stage) {
+        QMetaObject::invokeMethod(rootObj, "showTransferProgress",
+                                  Q_ARG(QVariant, QVariant(percent)), Q_ARG(QVariant, QVariant(stage)));
     });
 #endif
 

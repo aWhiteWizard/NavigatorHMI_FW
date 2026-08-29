@@ -157,6 +157,11 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
         }
         break;
     }
+    case ActionType::StopRuntime: {
+        // M-3: 运行时停止（独立动作类型；旧工程 run_command=stop_runtime 兼容路径保留在上方 RunCommand）
+        if (onStopRuntime) onStopRuntime();
+        break;
+    }
     case ActionType::TagWrite: {
         // B-5: 实际写 DataManager（变量实时值 → QML 组件刷新）
         const QString tagName = p.value("tag_name");

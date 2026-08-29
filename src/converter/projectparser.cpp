@@ -96,6 +96,7 @@ ActionType mapActionType(pb::ActionType t)
     case pb::ACT_GET_DATETIME: return ActionType::GetDatetime;
     case pb::ACT_ACKNOWLEDGE_ALARM: return ActionType::AcknowledgeAlarm;
     case pb::ACT_SET_SYSTEM_TIME: return ActionType::SetSystemTime;
+    case pb::ACT_STOP_RUNTIME: return ActionType::StopRuntime;
     default: return ActionType::TagWrite;
     }
 }
