@@ -18,6 +18,9 @@
 #include <QDateTime>
 #include <QUuid>
 
+#include <unistd.h>   // ::rename（L-A4：POSIX 原子覆盖替代 QFile::rename）
+#include <cerrno>     // errno
+
 #include "runtime/runtimebus.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
@@ -368,9 +371,13 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
         dst.close();
     }
     // 原子替换（POSIX rename 原子覆盖已存在目标——禁止先删后 rename：失败时旧工程必须完好）
-    if (!QFile::rename(appTmp, appPath)) {
+    // L-A4（2026-08-30 联调）：QFile::rename 在目标已存在时实测失败（板子 busybox mv -f 覆盖成功但
+    // QFile::rename 返回 false）——改用系统 ::rename()（POSIX 语义原子覆盖，同文件系统内保证原子性；
+    // appTmp 与 appPath 同在 /mnt/user/userdata，无跨 fs EXDEV 问题）
+    if (::rename(appTmp.toLocal8Bit().constData(), appPath.toLocal8Bit().constData()) != 0) {
+        const int err = errno;
         QFile::remove(appTmp);
-        return QStringLiteral("app 原子替换失败（当前工程未改动）");
+        return QStringLiteral("app 原子替换失败（errno=%1，当前工程未改动）").arg(err);
     }
 
     // res/ 资源按 target 落盘（白名单 fail-closed：非法 target 报错而非静默跳过；copy 失败报错）
