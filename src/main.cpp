@@ -277,6 +277,18 @@ static bool loadAndInject(QObject* rootObj,
         qCritical().noquote() << "工程加载失败:" << projectPath;
         return false;
     }
+    // N-1: 锁定视角底图探测——工程目录 worldmap_bg.png（PC 编译时拼好的单张 PNG，随工程包下发；
+    // res 资源按 target 落盘到 工程目录/res/（httreceiver L438）——探测 res/ 子目录 + 工程根目录兜底）
+    QString backgroundImagePath;
+    if (!projectPath.isEmpty()) {
+        const QString deployDir = QFileInfo(projectPath).dir().absolutePath();
+        const QStringList candidates = {
+            deployDir + QStringLiteral("/res/worldmap_bg.png"),
+            deployDir + QStringLiteral("/worldmap_bg.png"),
+        };
+        for (const QString& cand : candidates)
+            if (QFile::exists(cand)) { backgroundImagePath = cand; break; }
+    }
     runtimeBus.setProject(proj);      // 内部重置画面匹配状态（⑪候选A）
     dataManager.setProject(proj);
     // G-1a: 用户系统注入工程用户/组/安全配置（含初始管理员兜底）
@@ -321,11 +333,12 @@ static bool loadAndInject(QObject* rootObj,
         QString content;
         if (sc.type == navihmi::ScreenType::WorldMap) {
             fname = QStringLiteral("screen_%1.qml").arg(genIdx);
-            // J-2: 工程级瓦片校验——WorldMap 画面无瓦片 → 明确警告（任何来源：ZIP 缺 tiles/ 或普通文件工程）
-            if (tileBasePath.isEmpty())
+            // J-2: 工程级瓦片校验——WorldMap 画面无瓦片 → 明确警告（任何来源：ZIP 缺 tiles/ 或普通文件工程；
+            // N-1：有锁定底图时不警告——底图替代瓦片铺贴）
+            if (tileBasePath.isEmpty() && backgroundImagePath.isEmpty())
                 qWarning().noquote() << "世界地图画面无瓦片数据，使用模拟底图:"
                                      << sc.name;
-            content = navihmi::QmlGenerator::generateWorldMap(proj, tileBasePath);   // R3: 工程自带瓦片
+            content = navihmi::QmlGenerator::generateWorldMap(proj, tileBasePath, backgroundImagePath);   // R3: 工程自带瓦片; N-1: 锁定底图
         } else if (sc.type == navihmi::ScreenType::Template) {
             fname = overlayName;
             content = navihmi::QmlGenerator::generateOverlay(proj);

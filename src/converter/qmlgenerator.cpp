@@ -261,7 +261,7 @@ QString QmlGenerator::generateScreen(const Project& proj, const Screen& screen)
     return out;
 }
 
-QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileBasePath)
+QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileBasePath, const QString& backgroundImagePath)
 {
     QString out;
     QTextStream ts(&out);
@@ -291,6 +291,9 @@ QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileB
     // R3: 工程自带瓦片根目录（ZIP 工程包解压出的 tiles/）；空则组件用模拟底图
     if (!tileBasePath.isEmpty())
         ts << "    tileBasePath: \"" << qmlEsc(tileBasePath) << "\"\n";
+    // N-1: 锁定视角底图（PC 拼好的单张 PNG，随工程包下发 worldmap_bg.png）；有底图时瓦片层/模拟底图隐藏
+    if (!backgroundImagePath.isEmpty())
+        ts << "    backgroundImage: \"" << qmlEsc(backgroundImagePath) << "\"\n";
     ts << "    showGlobalOverlay: " << (proj.worldMap.showGlobalOverlay ? "true" : "false") << "\n";
     ts << "    viewLocked: " << (proj.worldMap.viewLocked ? "true" : "false") << "\n";
     // 作业点

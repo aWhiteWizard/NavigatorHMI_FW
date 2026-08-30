@@ -21,6 +21,9 @@ Rectangle {
     property var workRange: []         // [{lng, lat, boundTag}]
     // R3: 工程自带瓦片根目录（ZIP 工程包解压出的 tiles/, 内含 z/x/y.png）；空=用模拟底图
     property string tileBasePath: ""
+    // N-1（2026-08-30 用户定方案替代瓦片铺贴）：锁定视角底图（PC 编译时按 FW computeBounds 同口径视口拼好的单张 PNG，
+    // 随工程包下发 worldmap_bg.png）——设备端不缩放，显示底图 + 叠加作业点/范围点；有底图时瓦片层/模拟底图隐藏
+    property string backgroundImage: ""
     // runtimeBus 由 C++ setContextProperty 注入（不能声明同名 property 遮蔽）
 
     signal hmiClicked()
@@ -141,12 +144,12 @@ Rectangle {
         return p.lat
     }
 
-    // ── R3: 工程自带瓦片层（ZIP 工程包解压出的 tiles/ 目录; 空则用下方模拟底图）──
+    // ── R3: 工程自带瓦片层（ZIP 工程包解压出的 tiles/ 目录; 空则用下方模拟底图；N-1：有锁定底图时隐藏）──
     // 瓦片为 Web Mercator z/x/y.png, 按当前 bounds+zoom 计算可见瓦片范围, 逐片 Image 铺贴
     Item {
         id: tileLayer
         anchors.fill: parent
-        visible: root.tileBasePath !== ""
+        visible: root.tileBasePath !== "" && root.backgroundImage === ""
 
         // Web Mercator 瓦片坐标（标准公式, 与下载脚本一致）
         function tileX(lng, z) { return Math.floor((lng + 180.0) / 360.0 * Math.pow(2, z)) }
@@ -216,10 +219,21 @@ Rectangle {
         }
     }
 
-    // ── 地图底图（网格 + 边界, 模拟瓦片; 有工程瓦片时底色/网格被瓦片覆盖）──
+    // ── 锁定视角底图（N-1：PC 拼好的单张 PNG；有底图时显示，瓦片层/模拟底图隐藏）──
+    Image {
+        id: bgImage
+        anchors.fill: parent
+        source: root.backgroundImage !== "" ? "file://" + root.backgroundImage : ""
+        visible: root.backgroundImage !== ""
+        fillMode: Image.Stretch
+        z: -2
+    }
+
+    // ── 地图底图（网格 + 边界, 模拟瓦片; 有工程瓦片/锁定底图时底色/网格被覆盖）──
     Canvas {
         id: mapCanvas
         anchors.fill: parent
+        visible: root.backgroundImage === ""   // N-1：有锁定底图时隐藏模拟底图
         onPaint: {
             var ctx = getContext("2d")
             ctx.reset()
@@ -402,7 +416,7 @@ Rectangle {
         }
     }
 
-    // J-2: 无瓦片角标——工程无 tiles/ 数据时右下角提示「模拟底图（无瓦片）」（视觉可见校验）
+    // J-2: 无瓦片角标——工程无 tiles/ 数据且无锁定底图时右下角提示「模拟底图（无瓦片）」（视觉可见校验）
     Text {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -411,7 +425,7 @@ Rectangle {
         text: "模拟底图（无瓦片）"
         font.pixelSize: 9
         color: "#888888"
-        visible: root.tileBasePath === ""
+        visible: root.tileBasePath === "" && root.backgroundImage === ""
         z: 10
     }
 

@@ -18,8 +18,10 @@ class QmlGenerator
 public:
     /// 生成单画面 QML 文本
     static QString generateScreen(const Project& proj, const Screen& screen);
-    /// 生成世界地图 QML 文本（特殊画面）；tileBasePath 非空时注入瓦片根目录（R3: 工程自带瓦片）
-    static QString generateWorldMap(const Project& proj, const QString& tileBasePath = QString());
+    /// 生成世界地图 QML 文本（特殊画面）；tileBasePath 非空时注入瓦片根目录（R3: 工程自带瓦片）；
+    /// backgroundImagePath 非空时注入锁定视角底图（N-1：PC 拼好的单张 PNG，有底图时瓦片层/模拟底图隐藏）
+    static QString generateWorldMap(const Project& proj, const QString& tileBasePath = QString(),
+                                    const QString& backgroundImagePath = QString());
     /// 生成全局画面叠加层 QML 文本
     static QString generateOverlay(const Project& proj);
     /// 生成全部画面文件（返回 <文件名, 内容> 列表；主壳固定用 qrc:/qml/main.qml）
