@@ -309,7 +309,8 @@ static bool loadAndInject(QObject* rootObj,
     genDir.mkpath(".");
     // N-1 Do 修复：QML 磁盘缓存清理——screen_0.qml 等动态生成文件固定名，重载后内容变化
     //（如 backgroundImage 注入）但引擎缓存旧编译结果 → 画面不更新（用户 Check：底图/按钮不显示）；
-    // 每次 loadAndInject 清 /.cache/NavigatorHMI_FW/qmlcache（E 循环已知缓存位置），保证动态 QML 新鲜
+    // 每次 loadAndInject 清 /.cache/NavigatorHMI_FW/qmlcache（E 循环已知缓存位置），保证动态 QML 新鲜。
+    // N+19 起文件名带递增代次（Loader 强制重载），缓存清理仍兜底（磁盘缓存与内存实例缓存双保险）
     {
         const QStringList cacheDirs = {
             QStringLiteral("/.cache/NavigatorHMI_FW/qmlcache"),
@@ -328,12 +329,17 @@ static bool loadAndInject(QObject* rootObj,
             }
         }
     }
-    // 审查 M3(2026-08-23 G-0): overlay 文件名带递增序号——工程重载时同路径 source 相等
-    // Loader 不重载, 旧 Template 控件残留注册; 序号保证每次路径不同强制重载
-    // 审查 N-7(复审): 双文件轮换(a/b)封顶 2 文件, 防进程内多次替换累积
-    static int s_overlaySeq = 0;
-    const QString overlayName = QStringLiteral("overlay_%1.qml")
-        .arg((++s_overlaySeq % 2) ? QStringLiteral("a") : QStringLiteral("b"));
+    // N+19 Do 修复：动态 QML 文件名带递增代次（每次 loadAndInject 递增）——screen_0.qml 等固定名
+    // 重载后内容变化但路径相同 → Qt Loader 同 source 不重载（内存实例缓存）→ 旧工程画面残留
+    //（用户 Check：下载工程2 后世界地图=工程2 但画面1=工程1）。代次保证每次重载所有画面路径必变 → Loader 强制重载；
+    // 替代原 overlay a/b 轮换（M3 G-0 先例：路径变强制重载；代次 + 生成后每轮全量清理防累积，覆盖 screen/overlay 全部动态 QML）
+    static quint64 s_genSeq = 0;
+    const quint64 genSeq = ++s_genSeq;
+    const QString overlayName = QStringLiteral("overlay_%1.qml").arg(genSeq);
+    // 旧动态 QML 清理移到生成循环之后（审查 N+19 🟡：先生成、后清理——画面文件生成失败时上一代仍在，
+    // 不产生「旧删新缺」空白窗口；空 overlay 写失败场景见下方 overlay 分支告警）；清理时显式排除当前代次，
+    // 防误删刚生成的文件（见下方清理块）
+    const QString genScreenPrefix = QStringLiteral("screen_%1_").arg(genSeq);
     // 2026-08-30 用户 Check 修复：VNC 按工程 enable_vnc 启停仅首次加载执行（此后重载保持运行时状态）
     static bool s_initialVncApplied = false;
     QStringList screenFiles;
@@ -353,7 +359,7 @@ static bool loadAndInject(QObject* rootObj,
         QString fname;
         QString content;
         if (sc.type == navihmi::ScreenType::WorldMap) {
-            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
+            fname = QStringLiteral("screen_%1_%2.qml").arg(genSeq).arg(genIdx);   // N+19：带代次（重载路径必变 → Loader 强制重载）
             // J-2: 工程级瓦片校验——WorldMap 画面无瓦片 → 明确警告（任何来源：ZIP 缺 tiles/ 或普通文件工程；
             // N-1：有锁定底图时不警告——底图替代瓦片铺贴）
             if (tileBasePath.isEmpty() && backgroundImagePath.isEmpty())
@@ -364,19 +370,39 @@ static bool loadAndInject(QObject* rootObj,
             fname = overlayName;
             content = navihmi::QmlGenerator::generateOverlay(proj);
         } else {
-            fname = QStringLiteral("screen_%1.qml").arg(genIdx);
+            fname = QStringLiteral("screen_%1_%2.qml").arg(genSeq).arg(genIdx);   // N+19：带代次
             content = navihmi::QmlGenerator::generateScreen(proj, sc);
         }
         QFile f(genDir.filePath(fname));
+        bool writeOk = false;
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             f.write(content.toUtf8());
             f.close();
+            writeOk = true;
+        } else {
+            // 审查 N+19 🟡：写盘失败必须告警（cpp-coding §5 不吞错误）——否则「旧删新缺」+ 零日志
+            qWarning().noquote() << "动态 QML 写入失败:" << genDir.filePath(fname) << f.errorString();
         }
-        if (sc.type != navihmi::ScreenType::Template) {
+        if (writeOk && sc.type != navihmi::ScreenType::Template) {
             screenFiles.append(genDir.filePath(fname));
             screenNames.append(sc.name);
         }
         ++genIdx;
+    }
+
+    // 清理 genDir 旧动态 QML（screen_*/overlay_*）——审查 N+19 🟡：先生成、后清理（生成失败时
+    // 上一代文件仍在，不产生空白窗口）+ remove 返回值检查失败计数告警（cpp-coding §5 不吞错误）
+    // 显式排除当前代次（screen_<gen>_* / overlay_<gen>.qml），防误删刚生成的文件
+    {
+        const QStringList stale = genDir.entryList({ QStringLiteral("screen_*.qml"), QStringLiteral("overlay_*.qml") }, QDir::Files);
+        int failed = 0;
+        for (const QString& f : stale) {
+            if (f.startsWith(genScreenPrefix) || f == overlayName)
+                continue;   // 当前代次保留
+            if (!QFile::remove(genDir.filePath(f))) failed++;
+        }
+        if (failed > 0)
+            qWarning().noquote() << "genDir 旧动态 QML 删除失败:" << failed << "个（旧文件残留，代次累积）";
     }
 
     // 注入画面清单（对象数组 [{name, file}]，QML switchToName 用 .name/.file）
@@ -428,10 +454,14 @@ static bool loadAndInject(QObject* rootObj,
         if (sc.type == navihmi::ScreenType::Template) { hasTemplate = true; break; }
     QFile overlayFile(genDir.filePath(overlayName));
     if (!hasTemplate) {
-        overlayFile.open(QIODevice::WriteOnly | QIODevice::Truncate);
-        overlayFile.write(QStringLiteral("import QtQuick 2.15\nItem { width: %1; height: %2 }\n")
-                              .arg(kDefaultDevW).arg(kDefaultDevH).toUtf8());
-        overlayFile.close();
+        // 审查 N+19 🟡：空 overlay 写入失败同样告警（cpp-coding §5 不吞错误）——否则旧 overlay 残留静默
+        if (!overlayFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            qWarning().noquote() << "空 overlay 写入失败:" << overlayFile.fileName() << overlayFile.errorString();
+        } else {
+            overlayFile.write(QStringLiteral("import QtQuick 2.15\nItem { width: %1; height: %2 }\n")
+                                  .arg(kDefaultDevW).arg(kDefaultDevH).toUtf8());
+            overlayFile.close();
+        }
     }
     rootObj->setProperty("overlayFile", genDir.filePath(overlayName));
     return true;
