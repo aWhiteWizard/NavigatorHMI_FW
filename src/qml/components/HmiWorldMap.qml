@@ -382,13 +382,15 @@ Rectangle {
 
     // ── 地图点击（空白处 → 地图级事件）──
     // B6-2: z:-1 置于作业点之下——否则后声明全屏 MouseArea 拦截作业点点击
+    // 2026-08-30 用户 Check 修复：移除 `if (root.viewLocked) return`——
+    // ViewLocked（锁定预览）语义 = 禁平移/缩放，**不拦截点击切换事件**（PC 端 L1456 明示
+    // "切换仅 FW 端执行"，设计态 ViewLocked 只短路平移；原 FW 实现连点击一起禁 → 用户点地图跳转失效）
     MouseArea {
         z: -1
         anchors.fill: parent
         onClicked: {
-            if (root.viewLocked) return
             if (runtimeBus)
-                runtimeBus.emitEvent("__worldmap__", 0, "", "")   // 审查 🟡：补全 4 参（同上方）
+                runtimeBus.emitEvent("__worldmap__", 0, "", "")   // 地图级 onClick
         }
     }
 
