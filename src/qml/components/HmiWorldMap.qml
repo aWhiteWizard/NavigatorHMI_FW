@@ -10,10 +10,10 @@ Rectangle {
     color: "#DEEBF7"   // 地图底色（浅蓝）
 
     // ── 模型配置 ──
-    property double latMin: 30.55
-    property double latMax: 30.72
-    property double lngMin: 103.90
-    property double lngMax: 104.15
+    property double latMin: 0   // 2026-08-30：默认 0（与生成器"未配置=全 0"占位口径一致；成都兜底仅在 computeBounds 无点时）
+    property double latMax: 0
+    property double lngMin: 0
+    property double lngMax: 0
     property int zoomLevel: 12   // 默认瓦片缩放级别（工程可覆盖；L140 取瓦片用）
     property bool showGlobalOverlay: false
     property bool viewLocked: false
@@ -48,11 +48,49 @@ Rectangle {
     function mercX(lng) { return lng * earthRadius * Math.PI / 180.0 }
     function mercY(lat) { return earthRadius * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) }
 
+    // ── 视口 bounds：工程未配置（全 0）时按作业点/范围点包围盒自适应（2026-08-30 用户 Check 修复：
+    //   用户工程未配置范围 → 原兜底成都视口错位、作业范围显示不出来）──
+    function computeBounds() {
+        // 工程配置了有效范围（latMax>latMin && lngMax>lngMin）→ 直接用；部分配置（仅某值 0）也视为未配置 → 自适应（审查 ⚪）
+        if (root.latMax > root.latMin && root.lngMax > root.lngMin)
+            return { latMin: root.latMin, latMax: root.latMax, lngMin: root.lngMin, lngMax: root.lngMax }
+        // 未配置 → 作业点 + 范围点包围盒（含 boundTag 解析）
+        var minLng = 1e9, maxLng = -1e9, minLat = 1e9, maxLat = -1e9
+        var i, p, lng, lat
+        for (i = 0; i < root.workPoints.length; i++) {
+            p = root.workPoints[i]
+            lng = root.pointLng(p); lat = root.pointLat(p)
+            if (isNaN(lng) || isNaN(lat)) continue
+            if (lng === 0 && lat === 0) continue   // 空坐标点跳过（未配置固定值且变量无值）
+            minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng)
+            minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat)
+        }
+        for (i = 0; i < root.workRange.length; i++) {
+            p = root.workRange[i]
+            lng = p.lng; lat = p.lat
+            if (isNaN(lng) || isNaN(lat) || (lng === 0 && lat === 0)) continue
+            minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng)
+            minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat)
+        }
+        if (minLng > maxLng || minLat > maxLat)
+            return { latMin: 30.55, latMax: 30.72, lngMin: 103.90, lngMax: 104.15 }   // 无任何点 → 兜底成都
+        // 最小跨度 + 10% padding（对齐 PC 端 TryFitWorldMapViewport）
+        var spanLng = Math.max(maxLng - minLng, 0.01)
+        var spanLat = Math.max(maxLat - minLat, 0.01)
+        return {
+            latMin: minLat - spanLat * 0.1, latMax: maxLat + spanLat * 0.1,
+            lngMin: minLng - spanLng * 0.1, lngMax: maxLng + spanLng * 0.1
+        }
+    }
+    // viewBounds 为**加载时一次性拟合**（readonly 绑定在组件完成期求值，生成器静态数组已赋值）：
+    // boundTag 变量运行时值变化不重算视口（点本身活绑定会漂移出视口——作业点多为组态固定坐标，接受此语义；如需跟随改非 readonly 重算）
+    readonly property var viewBounds: root.computeBounds()
+
     // 显示范围 → 视口中心 + 分辨率（按 bounds 自适应，含 10% padding）
-    readonly property double viewMinX: mercX(lngMin)
-    readonly property double viewMaxX: mercX(lngMax)
-    readonly property double viewMinY: mercY(latMin)
-    readonly property double viewMaxY: mercY(latMax)
+    readonly property double viewMinX: mercX(viewBounds.lngMin)
+    readonly property double viewMaxX: mercX(viewBounds.lngMax)
+    readonly property double viewMinY: mercY(viewBounds.latMin)
+    readonly property double viewMaxY: mercY(viewBounds.latMax)
     readonly property double centerX: (viewMinX + viewMaxX) / 2
     readonly property double centerY: (viewMinY + viewMaxY) / 2
     readonly property double resolution: Math.max(
@@ -189,18 +227,19 @@ Rectangle {
             // 背景
             ctx.fillStyle = "#DEEBF7"
             ctx.fillRect(0, 0, width, height)
-            // 网格（每 0.05 度）
+            // 网格（每 0.05 度）——用 viewBounds（自适应视口）而非 root.lngMin/lngMax：
+            // 工程未配置 bounds 时生成器输出 0 占位，若用 lngMin/lngMax 网格只画 0 度线（屏幕外）→ 自适应模式无网格（审查 🟡）
             ctx.strokeStyle = "#B0C4DE"
             ctx.lineWidth = 0.5
             var dLng = 0.05, dLat = 0.05
-            for (var lng = Math.floor(root.lngMin / dLng) * dLng; lng <= root.lngMax; lng += dLng) {
+            for (var lng = Math.floor(root.viewBounds.lngMin / dLng) * dLng; lng <= root.viewBounds.lngMax; lng += dLng) {
                 var sx = root.toScreenX(lng)
                 if (sx < -50 || sx > width + 50) continue
                 ctx.beginPath()
                 ctx.moveTo(sx, 0); ctx.lineTo(sx, height)
                 ctx.stroke()
             }
-            for (var lat = Math.floor(root.latMin / dLat) * dLat; lat <= root.latMax; lat += dLat) {
+            for (var lat = Math.floor(root.viewBounds.latMin / dLat) * dLat; lat <= root.viewBounds.latMax; lat += dLat) {
                 var sy = root.toScreenY(lat)
                 if (sy < -50 || sy > height + 50) continue
                 ctx.beginPath()
@@ -333,8 +372,9 @@ Rectangle {
                 anchors.fill: parent
                 onClicked: {
                     // B6-1: 裸 runtimeBus（context property 沿作用域链解析）——id 限定访问 root.runtimeBus 恒 undefined
+                    // 审查 🟡：补全 4 参（显式空 payload/sourceScreen）——规避 QML 调用 C++ 槽默认参数不确定性
                     if (runtimeBus)
-                        runtimeBus.emitEvent("__worldmap__", 0)   // 地图级 onClick
+                        runtimeBus.emitEvent("__worldmap__", 0, "", "")   // 地图级 onClick
                 }
             }
         }
@@ -348,7 +388,7 @@ Rectangle {
         onClicked: {
             if (root.viewLocked) return
             if (runtimeBus)
-                runtimeBus.emitEvent("__worldmap__", 0)
+                runtimeBus.emitEvent("__worldmap__", 0, "", "")   // 审查 🟡：补全 4 参（同上方）
         }
     }
 

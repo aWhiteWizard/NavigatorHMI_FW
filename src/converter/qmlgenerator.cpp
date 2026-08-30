@@ -223,8 +223,11 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
             else if (ev.type == EventType::OnSelect)
                 payloadExpr = QStringLiteral("selectPayload");
         }
+        // 2026-08-30 用户 Check 修复：emitEvent 第四参 sourceScreen = 控件所在画面名——
+        // runtimebus 来源画面优先精确匹配，同名控件不再连动（画面一按钮1=返回地图 不再连带触发 全局画面按钮1=StopRuntime）
         out << "        " << signalName << ": function() { if (runtimeBus) runtimeBus.emitEvent(\""
-            << qmlEsc(w.objectName) << "\", " << int(ev.type) << ", " << payloadExpr << "); }\n";
+            << qmlEsc(w.objectName) << "\", " << int(ev.type) << ", " << payloadExpr
+            << ", \"" << qmlEsc(screenName) << "\"); }\n";
     }
     // G-0: 控件注册/注销（ObjectManager 跨画面寻址依据；加载完成注册, 销毁注销）
     // 全局画面(overlay)控件 screenName 用所属 Template 画面名, 与 RuntimeBus 事件匹配口径一致
@@ -270,16 +273,20 @@ QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileB
     ts << "HmiWorldMap {\n";
     ts << "    width: " << proj.deviceWidth << "\n";
     ts << "    height: " << proj.deviceHeight << "\n";
-    // bounds 全 0 = 未配置, 兜底成都范围 (2026-08-18 用户定: 世界地图放成都市)
+    // bounds 全 0 = 未配置 → 2026-08-30 用户 Check 修复：优先用作业点/范围点包围盒（含 padding），
+    // 保证地图显示到作业范围区域（用户实测：工程未配置范围时兜底成都，作业点在另一区域 → 视口错位、作业范围看不到）；
+    // 无任何点才兜底成都范围（2026-08-18 用户定: 世界地图放成都市）
     double latMin = proj.worldMap.latMin, latMax = proj.worldMap.latMax;
     double lngMin = proj.worldMap.lngMin, lngMax = proj.worldMap.lngMax;
-    if (latMin == 0 && latMax == 0 && lngMin == 0 && lngMax == 0) {
-        latMin = 30.55; latMax = 30.72; lngMin = 103.90; lngMax = 104.15;
+    if (!(latMin == 0 && latMax == 0 && lngMin == 0 && lngMax == 0)) {
+        ts << "    latMin: " << latMin << "\n";
+        ts << "    latMax: " << latMax << "\n";
+        ts << "    lngMin: " << lngMin << "\n";
+        ts << "    lngMax: " << lngMax << "\n";
+    } else {
+        ts << "    // bounds 未配置——视口由下方作业点/范围点包围盒计算（2026-08-30 修复）\n";
+        ts << "    latMin: 0\n    latMax: 0\n    lngMin: 0\n    lngMax: 0\n";   // 占位，HmiWorldMap 内自适应
     }
-    ts << "    latMin: " << latMin << "\n";
-    ts << "    latMax: " << latMax << "\n";
-    ts << "    lngMin: " << lngMin << "\n";
-    ts << "    lngMax: " << lngMax << "\n";
     ts << "    zoomLevel: " << proj.worldMap.zoomLevel << "\n";
     // R3: 工程自带瓦片根目录（ZIP 工程包解压出的 tiles/）；空则组件用模拟底图
     if (!tileBasePath.isEmpty())

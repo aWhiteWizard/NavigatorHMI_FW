@@ -301,6 +301,8 @@ static bool loadAndInject(QObject* rootObj,
     static int s_overlaySeq = 0;
     const QString overlayName = QStringLiteral("overlay_%1.qml")
         .arg((++s_overlaySeq % 2) ? QStringLiteral("a") : QStringLiteral("b"));
+    // 2026-08-30 用户 Check 修复：VNC 按工程 enable_vnc 启停仅首次加载执行（此后重载保持运行时状态）
+    static bool s_initialVncApplied = false;
     QStringList screenFiles;
     QStringList screenNames;
     int genIdx = 0;
@@ -361,8 +363,17 @@ static bool loadAndInject(QObject* rootObj,
     rootObj->setProperty("deviceHeight", devH);
 
     // VNC 镜像：按工程 enable_vnc 启停（eglfs 物理屏照常；NAVIHMI_VNC=0 强制关兜底 / =2 强制开调试）
-    if (vncMirror) {
+    // 2026-08-30 用户 Check 修复：只在**首次加载**按工程 enable_vnc 决策——
+    // 之后下载新工程/SD/USB 替换重载时保持当前 VNC 运行时状态（K-9 语义：enable_vnc 是启动默认值，
+    // 运行时指令 vnc on/off 覆盖；否则下载 enable_vnc=false 的工程会把用户手动开着的 VNC 停掉）
+    // 审查 🟡 边缘：冷启动无工程（空导航）时首载在空工程上决策（enableVnc=false → stop），
+    // 之后下载 enable_vnc=true 工程重载不自动启动——需手动 `vnc on`（与 K-9"启动默认值"语义一致，接受）
+    // 审查 🟡：setDeviceSize **不门控**——每次 loadAndInject 同步设备尺寸（VNC 读帧区域/握手帧尺寸用
+    // m_devW/H，重载不同尺寸工程后必须更新，否则 glReadPixels 区域/宣告尺寸陈旧）；仅启停决策走 s_initialVncApplied
+    if (vncMirror)
         vncMirror->setDeviceSize(devW, devH);
+    if (vncMirror && !s_initialVncApplied) {
+        s_initialVncApplied = true;
         int force = 1;
         bool okForce = false;
         int fv = qEnvironmentVariableIntValue("NAVIHMI_VNC", &okForce);

@@ -48,7 +48,11 @@ public slots:
     /// QML 事件入口：objectName 控件事件 → 查模型 → 执行动作
     /// objectName 空 = 世界地图级事件
     /// payload（H-7/M8）：可选事件负载（onAck 报警编号 / onSelect 机器人编号等；旧调用不传=空）
-    void emitEvent(const QString& objectName, int eventType, const QString& payload = QString());
+    /// sourceScreen（2026-08-30 用户 Check 修复）：QML 生成器传事件来源画面名——同名控件不再连动：
+    ///   来源画面有同名控件 → 只执行来源画面动作（如画面一按钮1=返回地图，不再连带触发全局画面按钮1=StopRuntime）；
+    ///   来源画面无同名控件 → 回退 当前画面 + 上一画面 + 全局画面 匹配（旧语义兼容）
+    void emitEvent(const QString& objectName, int eventType, const QString& payload = QString(),
+                   const QString& sourceScreen = QString());
 
 private:
     void executeAction(const EventAction& action, const Widget* widget, const QString& sourceScreen);

@@ -62,7 +62,8 @@ void RuntimeBus::resetScreens()
     m_previousScreen = -1;
 }
 
-void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QString& payload)
+void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QString& payload,
+                           const QString& sourceScreen)
 {
     const EventType et = static_cast<EventType>(eventType);
     // TraceLog（B6-10）: 事件入口 trace——QML 点击 → C++ 事件路由全链路可查
@@ -71,7 +72,8 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QStri
     if (trace)
         qInfo().noquote() << "[TRACE] emitEvent obj=" << objectName
                           << "type=" << int(et)
-                          << "payload=" << payload;   // H-7(M8): 事件负载（报警/机器人编号）
+                          << "payload=" << payload
+                          << "src=" << sourceScreen;   // 2026-08-30: 来源画面（同名控件精确匹配）
 
     // 世界地图级事件（objectName 空或 "__worldmap__"）
     if (objectName.isEmpty() || objectName == "__worldmap__") {
@@ -95,35 +97,59 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QStri
         return;
     }
 
-    // 控件事件：⑪候选A（用户定）——仅匹配 当前画面 + 上一画面(OnScreenUnload 兼容) + 全局画面(Template)，
-    // 消除其他自定义画面同名控件误触发（如画面A/画面B 同名 button_1 互不连动；
-    // 注: 全局 Template 画面恒匹配，若与 overlay 控件同名仍会连动——demo 工程 Stop(button_1) 与画面A 同名属此，勿再改）
+    // 控件事件：⑪候选A（用户定）——匹配范围 = 当前画面 + 上一画面(OnScreenUnload 兼容) + 全局画面(Template)。
+    // 2026-08-30 用户 Check 修复（同名控件连动）：QML 生成器带 sourceScreen——
+    //   来源画面有同名控件 → **只执行来源画面动作**（画面一按钮1=返回地图 不再连带触发 全局画面按钮1=StopRuntime）；
+    //   来源画面无同名控件 → 回退 ⑪候选A（当前/上一/全局）——overlay 模板按钮独立点击仍触发自己的 stop_runtime
+    auto executeWidgetEvents = [&](const Screen& sc, const Widget& w, int& hitOut) {
+        for (const auto& ev : w.events) {
+            if (ev.type != et) continue;
+            // I-3: condition 条件不满足 → 跳过（value 关键字取该控件绑定变量当前值）
+            if (!ev.condition.trimmed().isEmpty()
+                && !ExprEngine::eval(ev.condition, m_dataManager, &w)) {
+                if (trace)
+                    qInfo().noquote() << "[COND] skip 条件不满足:" << ev.condition
+                                      << "widget=" << w.objectName;
+                continue;
+            }
+            ++hitOut;
+            if (trace)
+                qInfo().noquote() << "[TRACE]   screen=" << sc.name
+                                  << "widget=" << w.objectName << "type=" << int(et);
+            for (const auto& action : ev.actions)
+                executeAction(action, &w, sc.name);   // G-0: 事件源画面传入动作上下文
+        }
+    };
+
     int hit = 0;
-    for (int i = 0; i < m_project.screens.size(); ++i) {
-        const auto& sc = m_project.screens[i];
-        if (i != m_currentScreen && i != m_previousScreen
-            && sc.type != ScreenType::Template)
-            continue;
-        for (const auto& w : sc.widgets) {
-            if (w.objectName == objectName) {
-                for (const auto& ev : w.events) {
-                    if (ev.type == et) {
-                        // I-3: condition 条件不满足 → 跳过（value 关键字取该控件绑定变量当前值）
-                        if (!ev.condition.trimmed().isEmpty()
-                            && !ExprEngine::eval(ev.condition, m_dataManager, &w)) {
-                            if (trace)
-                                qInfo().noquote() << "[COND] skip 条件不满足:" << ev.condition
-                                                  << "widget=" << w.objectName;
-                            continue;
-                        }
-                        ++hit;
-                        if (trace)
-                            qInfo().noquote() << "[TRACE]   screen=" << sc.name
-                                              << "widget=" << w.objectName << "type=" << int(et);
-                        for (const auto& action : ev.actions)
-                            executeAction(action, &w, sc.name);   // G-0: 事件源画面传入动作上下文
-                    }
-                }
+    // 1) 来源画面精确匹配（QML 生成器传 sourceScreen：控件所在画面）
+    // 审查 🟡 注释：sourceHit 按"来源画面存在同名控件"置位——同名控件事件 condition 不满足时
+    // 事件吞掉**不回退**（防全局画面同名控件误触发，新语义更安全；与"来源画面有同名控件 → 只执行来源画面动作"字面一致）
+    bool sourceHit = false;
+    if (!sourceScreen.isEmpty()) {
+        for (int i = 0; i < m_project.screens.size(); ++i) {
+            const auto& sc = m_project.screens[i];
+            if (sc.name != sourceScreen) continue;
+            for (const auto& w : sc.widgets) {
+                if (w.objectName != objectName) continue;
+                sourceHit = true;
+                executeWidgetEvents(sc, w, hit);
+            }
+            break;
+        }
+        if (trace && sourceHit)
+            qInfo().noquote() << "[TRACE]   sourceScreen 精确命中:" << sourceScreen;
+    }
+    // 2) 来源画面未命中（或未传来源）→ 回退 ⑪候选A：当前 + 上一 + 全局画面
+    if (!sourceHit) {
+        for (int i = 0; i < m_project.screens.size(); ++i) {
+            const auto& sc = m_project.screens[i];
+            if (i != m_currentScreen && i != m_previousScreen
+                && sc.type != ScreenType::Template)
+                continue;
+            for (const auto& w : sc.widgets) {
+                if (w.objectName != objectName) continue;
+                executeWidgetEvents(sc, w, hit);
             }
         }
     }
