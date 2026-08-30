@@ -64,7 +64,7 @@ private:
     QString receiveAndInstall(const QByteArray& body, QString& projectPathOut);
     /// JSON 响应构造（Content-Type application/json）
     QHttpServerResponse jsonResponse(const QJsonObject& obj, QHttpServerResponse::StatusCode status);
-    /// 设备型号（优先工程 device_model 字段，空按分辨率查 /etc/navigatorhmi/device-profiles.json，再兜底 7寸；同 devicemeta 单点）
+    /// 设备型号（设备自身硬件身份：物理屏默认分辨率查 device-profiles.json，与工程无关；同 devicemeta 单点）
     QString deviceModel() const;
     /// 设备尺寸（"7寸"/"4寸"，型号查表；同 devicemeta 单点）
     QString deviceSizeInch() const;

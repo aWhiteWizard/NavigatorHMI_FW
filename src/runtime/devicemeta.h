@@ -1,11 +1,10 @@
 /*
  * @FilePath: \NavigatorHMI_FW\src\runtime\devicemeta.h
  * @Description: 设备身份推导单点（K-9 审查：CommandService / HttpReceiver 共用）——
- *               型号/尺寸：优先工程 device_model 字段（proto 22，PC 端 device-profile 写入），
- *               空（旧工程）按分辨率查表（/etc/navigatorhmi/device-profiles.json，与 PC 端同构）。
- *               合法工程必有型号或分辨率之一；两者皆空 = 错误工程 → 返回空（调用方显式报错），
- *               不静默兜底（2026-08-30 用户评论：错误工程不应伪装成 7 寸）。
- *               kDefaultDeviceWidth/Height 仅作设备物理屏默认（QML 初始化），不参与身份推导。
+ *               型号/尺寸 = 设备自身硬件身份（物理屏默认分辨率查 /etc/navigatorhmi/device-profiles.json），
+ *               与工程内容无关（2026-08-30 用户 Check 指正：设备身份是设备自身的属性，PC 需要时向设备要，
+ *               不因加载的工程有无型号而改变）。
+ *               kDefaultDeviceWidth/Height = 设备物理屏默认分辨率（身份推导依据，单点收敛）。
  *               防双处重复实现漂移（10/15 寸扩展时只改配置文件）。
  */
 #pragma once
@@ -20,7 +19,7 @@
 
 namespace navihmi {
 
-/// 设备物理屏默认分辨率（QML 初始化/无工程时设备默认显示尺寸用；**非身份推导兜底**——错误工程不适用）
+/// 设备物理屏默认分辨率（设备自身硬件身份推导依据：查 device-profiles.json 得型号/尺寸；2026-08-30 用户 Check 指正——设备身份与工程无关）
 inline constexpr int kDefaultDeviceWidth = 1024;
 inline constexpr int kDefaultDeviceHeight = 600;
 
@@ -51,7 +50,7 @@ inline const QJsonArray& deviceProfileTable()
 /// 按分辨率查型号（遍历表匹配 width/height；无匹配返回空）
 inline QString modelForResolution(int width, int height)
 {
-    if (width <= 0 || height <= 0) return QString();   // 分辨率无效 = 无法推导（错误工程）
+    if (width <= 0 || height <= 0) return QString();   // 分辨率无效 = 无法推导（防御：恒传物理屏默认分辨率，正常不可达）
     const QJsonArray& table = deviceProfileTable();
     for (const QJsonValue& v : table) {
         const QJsonObject o = v.toObject();
@@ -76,18 +75,17 @@ inline QString sizeInchForModel(const QString& model)
 
 } // namespace detail
 
-/// 设备型号：优先工程型号字段；空则按分辨率查表；均无法确定 → 返回空（错误工程，调用方显式报错，不兜底）
-inline QString deviceModelFor(const Project& proj)
+/// 设备型号（设备自身硬件身份）：按设备物理屏默认分辨率查 device-profiles.json——与工程无关
+/// （2026-08-30 用户 Check 指正：设备身份由设备端判断，PC 需要时向设备要；不因工程有无型号而变）
+inline QString deviceModelFor()
 {
-    if (!proj.deviceModel.isEmpty())
-        return proj.deviceModel;
-    return detail::modelForResolution(proj.deviceWidth, proj.deviceHeight);
+    return detail::modelForResolution(kDefaultDeviceWidth, kDefaultDeviceHeight);
 }
 
-/// 设备尺寸：型号查表；型号为空/查不到 → 返回空（错误工程，调用方显式报错，不兜底）
-inline QString deviceSizeInchFor(const Project& proj)
+/// 设备尺寸（"7寸"/"4寸"，型号查表；与工程无关）
+inline QString deviceSizeInchFor()
 {
-    const QString model = deviceModelFor(proj);
+    const QString model = deviceModelFor();
     if (model.isEmpty())
         return QString();
     return detail::sizeInchForModel(model);

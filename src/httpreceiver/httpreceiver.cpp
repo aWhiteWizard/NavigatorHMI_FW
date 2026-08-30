@@ -125,28 +125,14 @@ void HttpReceiver::setupRoutes()
 
 QString HttpReceiver::deviceModel() const
 {
-    // K-9 评论2：不写死——无工程时按设备默认分辨率查型号表（设备本身型号），工程加载后走工程字段/查表
-    // 2026-08-30 用户评论：有工程但型号/分辨率皆空 = 错误工程 → 返回"未知"（不静默兜底）
-    if (!m_bus) {
-        Project stub;
-        stub.deviceWidth = kDefaultDeviceWidth;
-        stub.deviceHeight = kDefaultDeviceHeight;
-        return deviceModelFor(stub);
-    }
-    const QString model = deviceModelFor(m_bus->project());
-    return model.isEmpty() ? QStringLiteral("未知（错误工程：无型号且无有效分辨率）") : model;
+    // 2026-08-30 用户 Check 指正：设备型号 = 设备自身硬件身份（物理屏默认分辨率查表），
+    // 与工程内容无关——PC 需要时向设备要（/api/device/info），不因加载工程有无型号而改变
+    return deviceModelFor();
 }
 
 QString HttpReceiver::deviceSizeInch() const
 {
-    if (!m_bus) {
-        Project stub;
-        stub.deviceWidth = kDefaultDeviceWidth;
-        stub.deviceHeight = kDefaultDeviceHeight;
-        return deviceSizeInchFor(stub);
-    }
-    const QString inch = deviceSizeInchFor(m_bus->project());
-    return inch.isEmpty() ? QStringLiteral("未知（错误工程）") : inch;
+    return deviceSizeInchFor();
 }
 
 QHttpServerResponse HttpReceiver::handleDeviceInfo()

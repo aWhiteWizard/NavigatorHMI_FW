@@ -196,7 +196,7 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
     out.formatVersion = pb.format_version();
     out.deviceWidth = pb.device_width();
     out.deviceHeight = pb.device_height();
-    out.deviceModel = s(pb.device_model());   // K-9 评论5：型号字段（旧工程空=按分辨率兜底）
+    out.deviceModel = s(pb.device_model());   // 工程目标设备型号（proto 22；设备身份由设备自身配置决定，与工程无关——2026-08-30 用户 Check 指正）
     out.showNavigationBar = pb.show_navigation_bar();
     out.enableVnc = pb.enable_vnc();
     out.navigationPosition = pb.navigation_position() == pb::NAV_TOP ? NavPosition::Top : NavPosition::Bottom;
