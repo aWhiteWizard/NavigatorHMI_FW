@@ -94,11 +94,25 @@ bool StorageInfo::replaceDefaultProject(const QString& srcPath)
         emit projectReplaced();   // 本身就是默认文件（用户对默认文件点加载）——仍通知刷新
         return true;
     }
+    // 用户 2026-08-30 方案：内部内存只保留一个可显示工程——SD/USB 加载替换默认工程前，
+    // 清旧瓦片目录（新工程若无瓦片，防单文件探测命中旧瓦片显示错配；有瓦片则落新后生效）
     // 原子替换：先拷临时文件再 rename（避免 copy 失败删掉原默认工程）
     const QString tmp = target + QStringLiteral(".tmp");
     QFile::remove(tmp);   // 清陈旧 tmp（上次异常中断残留）
     if (!QFile::copy(srcPath, tmp))
         return false;
+    // 审查 🟡：瓦片清理放在 tmp copy 成功之后——copy 失败时工程与瓦片完全不动（保持「失败不影响当前工程」直觉）；
+    // 检查 removeRecursively 返回值：失败 → qWarning + return false（QML 弹「替换失败」；防旧瓦片残留错配）
+    const QString tilesDir = QFileInfo(target).absolutePath() + QStringLiteral("/tiles");
+    if (QDir(tilesDir).exists()) {
+        QDir oldTiles(tilesDir);
+        if (!oldTiles.removeRecursively()) {
+            qWarning().noquote() << "旧瓦片目录清理失败（SD/USB 替换）:" << tilesDir;
+            QFile::remove(tmp);
+            return false;
+        }
+        qInfo().noquote() << "已清理旧瓦片目录（SD/USB 替换，内部内存单工程原则）:" << tilesDir;
+    }
     QFile::remove(target);
     if (!QFile::rename(tmp, target)) {
         // rename 失败兜底还原（target 已被 remove）

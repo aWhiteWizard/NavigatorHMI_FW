@@ -422,22 +422,17 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
             ? entry.value(QStringLiteral("Type")).toString() : entry.value(QStringLiteral("type")).toString();
         if (etype == QLatin1String("res")) ++resTotal;
     }
-    // Y3（B2 CONFLICT_SOFT，对齐 J-2 ZIP 分支 removeRecursively）：新包含瓦片时先清理工程目录旧 tiles/
-    // ——httreceiver 增量 copy 不删旧内容，单文件探测会命中陈旧瓦片（世界地图显示旧瓦片/瓦片校验假阴性）
-    bool hasTiles = false;
-    for (const QJsonValue& v : manifestArr) {
-        const QJsonObject entry = v.toObject();
-        const QString etype = entry.value(QStringLiteral("type")).toString().isEmpty()
-            ? entry.value(QStringLiteral("Type")).toString() : entry.value(QStringLiteral("type")).toString();
-        const QString etarget = entry.value(QStringLiteral("target")).toString().isEmpty()
-            ? entry.value(QStringLiteral("Target")).toString() : entry.value(QStringLiteral("target")).toString();
-        if (etype == QLatin1String("res") && etarget.startsWith(QLatin1String("tiles/"))) { hasTiles = true; break; }
-    }
-    if (hasTiles) {
+    // Y3（B2 CONFLICT_SOFT，对齐 J-2 ZIP 分支 removeRecursively）：**无条件清理工程目录旧 tiles/**
+    // ——内部内存只保留一个可显示工程（用户 2026-08-30 方案：换工程只走组态下载/SD/USB，内存不保留多工程）：
+    // 新包含瓦片 → 清旧后落新；新包无瓦片 → 清旧（防单文件探测命中陈旧瓦片，世界地图显示错配瓦片/校验假阴性）
+    {
         QDir oldTiles(deployDir + QStringLiteral("/tiles"));
         if (oldTiles.exists()) {
-            oldTiles.removeRecursively();
-            qInfo().noquote() << "已清理旧瓦片目录（防陈旧瓦片残留）:" << oldTiles.absolutePath();
+            // 审查 🟡：检查返回值——清理失败时旧瓦片残留 → 单文件探测命中 → 用户实测问题①（错配瓦片）复现；
+            // app 已原子替换无法回滚，至少失败可见不静默（fail-closed 报错，对齐 res 落盘 L454 风格）
+            if (!oldTiles.removeRecursively())
+                return QStringLiteral("旧瓦片目录清理失败: %1").arg(oldTiles.absolutePath());
+            qInfo().noquote() << "已清理旧瓦片目录（内部内存单工程原则）:" << oldTiles.absolutePath();
         }
     }
     int resDone = 0;

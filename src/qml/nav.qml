@@ -469,13 +469,15 @@ Item {
 
     // ═══════════════════════════════════════════════════
     // 存储管理页（来源切换 + 真实扫描 + 加载替换默认工程）
-    // B6-7: 来源卡片可点选中高亮(内存/SD/USB) + 真实状态 + 列表真实扫描
+    // B6-7: 来源卡片可点选中高亮(SD/USB) + 真实状态 + 列表真实扫描
+    // 2026-08-30 用户方案: 内部内存只保留一个可显示工程（换工程只走组态下载/SD/USB），内存来源已移除
     //       加载=复制替换默认文件 + 进度条 + 完成弹窗; 主题用 storagePageRoot.isDark
     // ═══════════════════════════════════════════════════
     component StoragePage: Item {
         id: storagePageRoot
         property bool isDark: false
-        property int currentSource: 0          // 0=内存 1=SD 2=USB
+        property int currentSource: 0          // 0=SD 1=USB（用户 2026-08-30 方案：内部内存不保留多工程/不支持内存切换，
+                                               // 换工程只走 组态软件下载 / SD 卡 / USB——内存来源已移除）
         property string selFile: ""            // 选中文件路径
         property string selName: ""            // 选中文件名
         property bool replacing: false         // 替换进行中（进度条）
@@ -484,7 +486,6 @@ Item {
         property bool showReplaceDialog: false // 完成弹窗
 
         readonly property var sourceDirs: [
-            { name: "内存", dir: "/mnt/user/userdata", status: "内置存储" },
             { name: "SD 卡", dir: "/mnt/sdcard", status: storageInfo ? storageInfo.sdStatusText() : "—" },
             { name: "USB", dir: "/mnt/udisk", status: storageInfo ? storageInfo.usbStatusText() : "—" }
         ]
@@ -530,15 +531,15 @@ Item {
             anchors.fill: parent
             spacing: 12
 
-            // 来源卡片（可点, 选中高亮主题色边框）
+            // 来源卡片（可点, 选中高亮主题色边框）——仅 SD/USB（内存来源已移除：内部内存只保留一个可显示工程）
             Grid {
-                columns: 3
+                columns: 2
                 spacing: 12
                 width: parent.width
                 Repeater {
                     model: storagePageRoot.sourceDirs
                     delegate: Rectangle {
-                        width: (parent.width - 24) / 3
+                        width: (parent.width - 12) / 2
                         height: 48
                         radius: 8
                         color: storagePageRoot.isDark ? "#3D3D3D" : "#FFFFFF"
