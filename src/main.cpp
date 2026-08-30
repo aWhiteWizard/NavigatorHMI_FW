@@ -319,8 +319,12 @@ static bool loadAndInject(QObject* rootObj,
             QDir c(d);
             if (c.exists()) {
                 const QStringList entries = c.entryList(QDir::Files);
-                for (const QString& f : entries) QFile::remove(c.filePath(f));
-                qInfo().noquote() << "QML 缓存已清理:" << d << entries.size() << "个文件";
+                int failed = 0;
+                for (const QString& f : entries)
+                    if (!QFile::remove(c.filePath(f))) failed++;   // N+18 审查：检查删除结果，失败计数告警（cpp-coding §5 不吞错误）
+                qInfo().noquote() << "QML 缓存已清理:" << d << entries.size() << "个文件" << (failed > 0 ? QStringLiteral("(失败 %1)").arg(failed) : QString());
+                if (failed > 0)
+                    qWarning().noquote() << "QML 缓存删除失败:" << d << failed << "个文件（旧缓存可能残留，动态 QML 可能不更新）";
             }
         }
     }

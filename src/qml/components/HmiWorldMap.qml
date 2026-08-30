@@ -226,7 +226,9 @@ Rectangle {
         source: root.backgroundImage !== "" ? "file://" + root.backgroundImage : ""
         visible: root.backgroundImage !== ""
         fillMode: Image.Stretch
-        // z:0（与作业点/范围点同层，根 Rectangle color 之上）——原 z:-2 实测底图不显示（疑似被根背景覆盖，Do 修复）
+        // z:0（与作业点/范围点同层，后声明在上；根 Rectangle color 最底，底图可覆盖）
+        // N+18 审查：原 z:-2 修改与缓存清理协同上板——Qt 语义子项（含负 z）在父背景之上，
+        // 底图不显示真因是 QML 磁盘缓存致 backgroundImage 注入失效（visible=false），z 序非主因；z:0 保留（与点层序更直观）
         z: 0
     }
 
