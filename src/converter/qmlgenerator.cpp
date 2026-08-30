@@ -7,6 +7,7 @@
 #include <QTextStream>
 #include <QStringList>
 #include <QRegularExpression>
+#include <QFileInfo>
 #include <cmath>
 
 namespace navihmi {
@@ -47,6 +48,24 @@ QString qmlEsc(const QString& s)
     return r;
 }
 
+// D-B2: 控件图片路径 → 设备端绝对落盘路径（resourceRoot/res/<rel>）
+// PC 打包 target 保留工程内相对路径（DeploymentPackageBuilder），FW 接收端落盘 工程目录/res/<target>
+// （httreceiver res 按 target 落盘）→ 图片文件实际在 <resourceRoot>/res/<rel>。
+// resourceRoot 空（纯转换器模式）或已是绝对路径 → 原样返回；相对路径 → 拼 resourceRoot/res/ 前缀。
+// 正斜杠统一（QML file 路径 Windows 反斜杠无效；设备端是 Linux 无歧义，统一防双平台不一致）。
+QString resolveResPath(const QString& raw, const QString& resourceRoot)
+{
+    QString p = raw.trimmed();
+    if (p.isEmpty() || resourceRoot.isEmpty())
+        return p;
+    if (QFileInfo(p).isAbsolute())
+        return p;
+    QString root = resourceRoot;
+    if (!root.endsWith(QLatin1Char('/')))
+        root += QLatin1Char('/');
+    return root + QStringLiteral("res/") + p;
+}
+
 // 属性行（仅非空/非零值）
 void appendProp(QTextStream& out, const QString& name, const QString& val)
 {
@@ -72,7 +91,10 @@ void appendProp(QTextStream& out, const QString& name, bool val)
 // 生成单控件 QML（事件信号占位）；proj 用于 TextList 的 listRef → content 展开（列表项拼入 content,
 // HmiTextList 用 content.split(",") 渲染——列表数据源在工程模型 ListDef 里）
 // screenName: 所属画面名（G-0: 控件加载/销毁时向 ObjectManager 注册/注销, 跨画面寻址依据）
-void generateWidget(QTextStream& out, const Widget& w, const Project& proj, const QString& screenName)
+// resourceRoot: 设备端资源根目录（工程目录绝对路径, 如 /mnt/user/userdata）——非空时控件图片路径
+//               解析为绝对落盘路径（D-B2: QML 相对路径按文档基址 /tmp/navihmi_gen/ 解析不指向工程目录）
+void generateWidget(QTextStream& out, const Widget& w, const Project& proj, const QString& screenName,
+                    const QString& resourceRoot = QString())
 {
     const QString type = widgetQmlType(w.type);
     out << "    " << type << " {\n";
@@ -128,7 +150,29 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
     appendProp(out, "fillColor", w.fillColor);
     appendProp(out, "strokeColor", w.strokeColor);
     appendProp(out, "strokeThickness", w.strokeThickness);
-    appendProp(out, "imagePath", w.imagePath);
+    // D-B2: Image 控件图片路径统一解析为设备端绝对落盘路径（resourceRoot/res/<rel>）——
+    // QML 相对路径按文档基址 /tmp/navihmi_gen/ 解析不指向工程目录（对齐 backgroundImage 先例）;
+    // resourceRoot 空（纯转换器模式）保持原样。
+    // ① 静态图 imagePath：非空时输出解析后绝对路径（替代裸相对）
+    // ② 列表 listItems：listRef 非空时按工程列表展开为 | 分隔绝对路径串（对齐 TextList content 展开先例;
+    //    路径含 | 字符的项会被拆错, 与 TextList 逗号分隔同局限, ListDef 项含分隔符需规避）
+    if (w.type == WidgetType::Image) {
+        if (!resourceRoot.isEmpty() && !w.imagePath.isEmpty())
+            appendProp(out, "imagePath", resolveResPath(w.imagePath, resourceRoot));
+        else
+            appendProp(out, "imagePath", w.imagePath);
+        if (!w.listRef.isEmpty()) {
+            const ListDef* imgList = proj.ListByName(w.listRef);
+            if (imgList) {
+                QStringList absItems;
+                for (const auto& item : imgList->items)
+                    absItems << resolveResPath(item, resourceRoot);
+                appendProp(out, "listItems", absItems.join(QLatin1Char('|')));
+            }
+        }
+    } else {
+        appendProp(out, "imagePath", w.imagePath);
+    }
     appendProp(out, "stretchMode", w.stretchMode);
     appendProp(out, "listRef", w.listRef);
     appendProp(out, "defaultIndex", w.defaultIndex);
@@ -240,7 +284,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
 
 } // anonymous namespace
 
-QString QmlGenerator::generateScreen(const Project& proj, const Screen& screen)
+QString QmlGenerator::generateScreen(const Project& proj, const Screen& screen, const QString& resourceRoot)
 {
     Q_UNUSED(proj)
     QString out;
@@ -256,7 +300,7 @@ QString QmlGenerator::generateScreen(const Project& proj, const Screen& screen)
     // R2: 画面空白背景浅灰（否则透出主壳深蓝 #0F5278；z:-1 在控件之下；世界地图特殊画面不含此背景）
     ts << "    Rectangle { anchors.fill: parent; color: \"#E8E8E8\"; z: -1 }\n";
     for (const auto& w : screen.widgets)
-        generateWidget(ts, w, proj, screen.name);
+        generateWidget(ts, w, proj, screen.name, resourceRoot);
     ts << "}\n";
     return out;
 }
@@ -326,7 +370,7 @@ QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileB
     return out;
 }
 
-QString QmlGenerator::generateOverlay(const Project& proj)
+QString QmlGenerator::generateOverlay(const Project& proj, const QString& resourceRoot)
 {
     QString out;
     QTextStream ts(&out);
@@ -341,14 +385,14 @@ QString QmlGenerator::generateOverlay(const Project& proj)
     for (const auto& sc : proj.screens) {
         if (sc.type == ScreenType::Template) {
             for (const auto& w : sc.widgets)
-                generateWidget(ts, w, proj, sc.name);
+                generateWidget(ts, w, proj, sc.name, resourceRoot);
         }
     }
     ts << "}\n";
     return out;
 }
 
-QList<QPair<QString, QString>> QmlGenerator::generateAll(const Project& proj)
+QList<QPair<QString, QString>> QmlGenerator::generateAll(const Project& proj, const QString& resourceRoot)
 {
     QList<QPair<QString, QString>> files;
     int idx = 0;
@@ -357,9 +401,9 @@ QList<QPair<QString, QString>> QmlGenerator::generateAll(const Project& proj)
             files.append({QStringLiteral("screen_%1.qml").arg(idx), generateWorldMap(proj)});
         } else if (sc.type == ScreenType::Template) {
             // 全局画面 → overlay.qml（单独文件）
-            files.append({QStringLiteral("overlay.qml"), generateOverlay(proj)});
+            files.append({QStringLiteral("overlay.qml"), generateOverlay(proj, resourceRoot)});
         } else {
-            files.append({QStringLiteral("screen_%1.qml").arg(idx), generateScreen(proj, sc)});
+            files.append({QStringLiteral("screen_%1.qml").arg(idx), generateScreen(proj, sc, resourceRoot)});
         }
         ++idx;
     }

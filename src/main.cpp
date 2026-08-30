@@ -277,11 +277,13 @@ static bool loadAndInject(QObject* rootObj,
         qCritical().noquote() << "工程加载失败:" << projectPath;
         return false;
     }
+    // D-B2: 工程部署目录（图片资源绝对路径解析基准——资源落盘 工程目录/res/<target>）
+    const QString deployDir = projectPath.isEmpty() ? QString()
+                              : QFileInfo(projectPath).dir().absolutePath();
     // N-1: 锁定视角底图探测——工程目录 worldmap_bg.png（PC 编译时拼好的单张 PNG，随工程包下发；
     // res 资源按 target 落盘到 工程目录/res/（httreceiver L438）——探测 res/ 子目录 + 工程根目录兜底）
     QString backgroundImagePath;
     if (!projectPath.isEmpty()) {
-        const QString deployDir = QFileInfo(projectPath).dir().absolutePath();
         const QStringList candidates = {
             deployDir + QStringLiteral("/res/worldmap_bg.png"),
             deployDir + QStringLiteral("/worldmap_bg.png"),
@@ -368,10 +370,10 @@ static bool loadAndInject(QObject* rootObj,
             content = navihmi::QmlGenerator::generateWorldMap(proj, tileBasePath, backgroundImagePath);   // R3: 工程自带瓦片; N-1: 锁定底图
         } else if (sc.type == navihmi::ScreenType::Template) {
             fname = overlayName;
-            content = navihmi::QmlGenerator::generateOverlay(proj);
+            content = navihmi::QmlGenerator::generateOverlay(proj, deployDir);   // D-B2: 传工程目录解析图片绝对路径
         } else {
             fname = QStringLiteral("screen_%1_%2.qml").arg(genSeq).arg(genIdx);   // N+19：带代次
-            content = navihmi::QmlGenerator::generateScreen(proj, sc);
+            content = navihmi::QmlGenerator::generateScreen(proj, sc, deployDir);   // D-B2: 传工程目录解析图片绝对路径
         }
         QFile f(genDir.filePath(fname));
         bool writeOk = false;
