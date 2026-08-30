@@ -307,6 +307,23 @@ static bool loadAndInject(QObject* rootObj,
     // 生成画面 QML 到临时目录（每画面 + overlay + 主壳）
     QDir genDir(QDir::tempPath() + "/navihmi_gen");
     genDir.mkpath(".");
+    // N-1 Do 修复：QML 磁盘缓存清理——screen_0.qml 等动态生成文件固定名，重载后内容变化
+    //（如 backgroundImage 注入）但引擎缓存旧编译结果 → 画面不更新（用户 Check：底图/按钮不显示）；
+    // 每次 loadAndInject 清 /.cache/NavigatorHMI_FW/qmlcache（E 循环已知缓存位置），保证动态 QML 新鲜
+    {
+        const QStringList cacheDirs = {
+            QStringLiteral("/.cache/NavigatorHMI_FW/qmlcache"),
+            QStringLiteral("/root/.cache/NavigatorHMI_FW/qmlcache"),
+        };
+        for (const QString& d : cacheDirs) {
+            QDir c(d);
+            if (c.exists()) {
+                const QStringList entries = c.entryList(QDir::Files);
+                for (const QString& f : entries) QFile::remove(c.filePath(f));
+                qInfo().noquote() << "QML 缓存已清理:" << d << entries.size() << "个文件";
+            }
+        }
+    }
     // 审查 M3(2026-08-23 G-0): overlay 文件名带递增序号——工程重载时同路径 source 相等
     // Loader 不重载, 旧 Template 控件残留注册; 序号保证每次路径不同强制重载
     // 审查 N-7(复审): 双文件轮换(a/b)封顶 2 文件, 防进程内多次替换累积

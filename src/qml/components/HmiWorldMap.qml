@@ -226,7 +226,8 @@ Rectangle {
         source: root.backgroundImage !== "" ? "file://" + root.backgroundImage : ""
         visible: root.backgroundImage !== ""
         fillMode: Image.Stretch
-        z: -2
+        // z:0（与作业点/范围点同层，根 Rectangle color 之上）——原 z:-2 实测底图不显示（疑似被根背景覆盖，Do 修复）
+        z: 0
     }
 
     // ── 地图底图（网格 + 边界, 模拟瓦片; 有工程瓦片/锁定底图时底色/网格被覆盖）──
