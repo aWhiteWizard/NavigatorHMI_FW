@@ -1,8 +1,14 @@
 #!/bin/sh
-# NavigatorHMI FW 开机自启 (B-4: QML 界面; B-5: 日志重定向)
+# NavigatorHMI FW 开机自启 (B-4: QML 界面; B-5: 日志重定向; D-B1: 崩溃自动拉起守护)
 # eglfs 全屏; 远程调试: -platform vnc:port=5900
 # Qt 插件路径: buildroot 装到 /usr/plugins (非默认路径)
 # QML 导入路径: buildroot 装到 /usr/qml (非默认路径)
+# D-B1 (2026-08-30): 守护循环——FW 进程崩溃(SIGSEGV, 如 VNC 客户端连接)后 5s 自动拉起,
+#                    防设备变砖(仅 SSH 可用)。stop 用标志文件防拉起循环。
+#                    守护用 setsid 脱离 SSH 会话(防 dropbear 会话关闭 SIGHUP 杀死)
+#                    + trap HUP 兜底; setsid EPERM(交互 shell 作业控制)时回退普通 &。
+#                    审查修复(2026-08-30): git 模式 100755(原 100644 开机不执行);
+#                    防重复 start; start 清 stale PID; 每次拉起写 trace 日志。
 
 export QT_QPA_PLATFORM=eglfs
 export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/plugins/platforms
@@ -11,20 +17,60 @@ export QML_IMPORT_PATH=/usr/qml
 export QML2_IMPORT_PATH=/usr/qml
 
 LOG=/tmp/navihmi.log
+GUARD_STOP=/tmp/navihmi-guard.stop
+GUARD_PID=/tmp/navihmi-guard.pid
+
+# 守护循环体（环境变量随 init.d 继承; setsid 分支内变量需内联到 sh -c 字符串）
+GUARD_BODY='n=0
+while [ ! -f /tmp/navihmi-guard.stop ]; do
+    n=$((n+1))
+    echo "[$(date +%H:%M:%S)] guard: relaunch #${n}" >> /tmp/navihmi.log
+    if [ -f /mnt/user/userdata/app.navihmi ]; then
+        /usr/bin/navigatorhmi-fw --project /mnt/user/userdata/app.navihmi >> /tmp/navihmi.log 2>&1
+    else
+        /usr/bin/navigatorhmi-fw >> /tmp/navihmi.log 2>&1
+    fi
+    sleep 5
+done
+rm -f /tmp/navihmi-guard.stop'
 
 case "$1" in
   start)
-    echo "Starting navigatorhmi-fw..."
-    sleep 3
-    # 有工程则加载, 无工程显示导航界面; 日志重定向便于排查
-    if [ -f /mnt/user/userdata/app.navihmi ]; then
-        /usr/bin/navigatorhmi-fw --project /mnt/user/userdata/app.navihmi > ${LOG} 2>&1 &
-    else
-        /usr/bin/navigatorhmi-fw > ${LOG} 2>&1 &
+    # 审查修复: 防重复 start（双 start / .bak 双执行先例）——已有守护则提示退出
+    if [ -f "${GUARD_PID}" ] && kill -0 "$(cat "${GUARD_PID}")" 2>/dev/null; then
+        echo "navigatorhmi-fw 守护已在运行 (pid $(cat "${GUARD_PID}"))，跳过 start"
+        exit 0
     fi
+    echo "Starting navigatorhmi-fw (守护模式)..."
+    sleep 3
+    rm -f "${GUARD_STOP}"
+    rm -f "${GUARD_PID}"   # 审查修复: 清 stale PID（跨重启残留防 stop 误杀复用 PID）
+    if command -v setsid >/dev/null 2>&1; then
+        # setsid: 新会话首进程, 脱离 SSH 会话; trap HUP 双保险
+        # 审查修复: 交互 shell 作业控制下 setsid 可能 EPERM 退出——启动后 kill -0 校验, 失败回退降级分支
+        setsid sh -c "trap '' HUP; ${GUARD_BODY}" &
+        GPID=$!
+        sleep 1
+        if ! kill -0 "${GPID}" 2>/dev/null; then
+            echo "setsid 启动失败(EPERM?), 回退普通 & 守护"
+            ( trap '' HUP; eval "${GUARD_BODY}" ) &
+            GPID=$!
+        fi
+    else
+        ( trap '' HUP; eval "${GUARD_BODY}" ) &
+        GPID=$!
+    fi
+    echo "${GPID}" > "${GUARD_PID}"
     ;;
   stop)
+    touch "${GUARD_STOP}"
     killall navigatorhmi-fw 2>/dev/null
+    if [ -f "${GUARD_PID}" ]; then
+        kill "$(cat "${GUARD_PID}")" 2>/dev/null
+        rm -f "${GUARD_PID}"
+    fi
+    # 审查复审🟡: 不在此 rm GUARD_STOP——与守护 sleep-5 窗口存在竞态（EPERM 回退路径守护为孙进程,
+    # stop 时可能仍在循环内）; start 段已负责 rm 标志（防 stale 标志卡死下次 start）, 此处删除闭环。
     ;;
   *)
     echo "Usage: $0 {start|stop}"
