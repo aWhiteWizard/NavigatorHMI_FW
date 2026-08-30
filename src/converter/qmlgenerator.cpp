@@ -306,7 +306,7 @@ QString QmlGenerator::generateWorldMap(const Project& proj, const QString& tileB
     // 范围点：输出**用户实际配置的范围点**（原样坐标与顺序，不再扩展成 min/max 矩形——
     // 2026-08-30 用户 Check 修复：作业范围显示不对根因=生成器把不规则四边形扩展成包围盒矩形；
     // HmiWorldMap 按 workRange 顶点顺序画多边形（实际形状），视口自适应（computeBounds）已覆盖
-    // workPoints + workRange 全部点，无需此处扩展；boundTag 透传（HmiWorldMap 范围点暂不解析 boundTag，用固定值）
+    // workPoints + workRange 全部点，无需此处扩展；boundTag 透传（N-5：HmiWorldMap 范围点与作业点同路径解析 boundTag）
     if (!proj.worldMap.workRangePoints.isEmpty()) {
         ts << "    workRange: [\n";
         for (int i = 0; i < proj.worldMap.workRangePoints.size(); ++i) {

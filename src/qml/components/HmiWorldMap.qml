@@ -67,7 +67,7 @@ Rectangle {
         }
         for (i = 0; i < root.workRange.length; i++) {
             p = root.workRange[i]
-            lng = p.lng; lat = p.lat
+            lng = root.pointLng(p); lat = root.pointLat(p)   // N-5：范围点与作业点同路径（boundTag 解析，未绑回退固定值）
             if (isNaN(lng) || isNaN(lat) || (lng === 0 && lat === 0)) continue
             minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng)
             minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat)
@@ -83,7 +83,8 @@ Rectangle {
         }
     }
     // viewBounds 为**加载时一次性拟合**（readonly 绑定在组件完成期求值，生成器静态数组已赋值）：
-    // boundTag 变量运行时值变化不重算视口（点本身活绑定会漂移出视口——作业点多为组态固定坐标，接受此语义；如需跟随改非 readonly 重算）
+    // boundTag 变量运行时值变化不重算视口；作业点/范围点同为加载时一次性快照（Q_INVOKABLE 取值无依赖跟踪，
+    // N-5 审查修正表述——点不随变量运行时移动；如需跟随需 Connections/Q_PROPERTY NOTIFY 订阅，超本批范围）
     readonly property var viewBounds: root.computeBounds()
 
     // 显示范围 → 视口中心 + 分辨率（按 bounds 自适应，含 10% padding）
@@ -318,14 +319,18 @@ Rectangle {
             var ctx = getContext("2d")
             ctx.reset()
             if (root.workRange.length < 3) return
-            // 多边形
+            // 多边形（N-5：范围点复用 pointLng/pointLat——boundTag 解析，与作业点同路径）
             ctx.beginPath()
+            var started = false
             for (var i = 0; i < root.workRange.length; i++) {
-                var sx = root.toScreenX(root.workRange[i].lng)
-                var sy = root.toScreenY(root.workRange[i].lat)
-                if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy)
+                var pl = root.pointLng(root.workRange[i]); var pt = root.pointLat(root.workRange[i])
+                // N-5 复审：与 computeBounds 同守卫——解析后 (0,0)/isNaN 顶点跳过（未配置坐标不参与绘制，防退化多边形伪影）
+                if (isNaN(pl) || isNaN(pt) || (pl === 0 && pt === 0)) continue
+                var sx = root.toScreenX(pl)
+                var sy = root.toScreenY(pt)
+                if (!started) { ctx.moveTo(sx, sy); started = true } else { ctx.lineTo(sx, sy) }
             }
-            ctx.closePath()
+            if (started) ctx.closePath()
             ctx.fillStyle = "rgba(255, 0, 0, 0.08)"
             ctx.fill()
             ctx.strokeStyle = "#D32F2F"
@@ -334,8 +339,11 @@ Rectangle {
             // 顶点红点
             ctx.fillStyle = "#D32F2F"
             for (var j = 0; j < root.workRange.length; j++) {
-                var rx = root.toScreenX(root.workRange[j].lng)
-                var ry = root.toScreenY(root.workRange[j].lat)
+                var rl = root.pointLng(root.workRange[j]); var rt = root.pointLat(root.workRange[j])
+                // N-5 复审：同守卫——(0,0)/isNaN 顶点不画红点（与多边形路径一致）
+                if (isNaN(rl) || isNaN(rt) || (rl === 0 && rt === 0)) continue
+                var rx = root.toScreenX(rl)
+                var ry = root.toScreenY(rt)
                 ctx.beginPath()
                 ctx.arc(rx, ry, 5, 0, Math.PI * 2)
                 ctx.fill()
