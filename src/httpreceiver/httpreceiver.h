@@ -49,6 +49,9 @@ signals:
     /// 校验通过、容器已落盘 → 主程序重载工程（projectPath=app.navihmi 路径）
     void projectPackageReady(const QString& projectPath);
 
+    /// D1：.fw 固件包校验通过、staging 就绪 → 主程序触发 OTA 安装（otaupdater；stagingPath 指向 staging .fw）
+    void firmwarePackageReady(const QString& stagingPath);
+
     /// K-9：设备闪烁请求（QML 覆盖层亮灭交替 ~1s；enable=false 停止恢复原画面）
     void blinkRequested(bool enable);
 
@@ -65,11 +68,16 @@ private:
     /// 后台线程执行安装，完成后经 finishTransfer 回主线程写响应（QTcpSocket 非线程安全）
     void handleTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder);
     /// 主线程收尾：写 HTTP 响应 + 释放并发锁 + 信号（成功→projectPackageReady；失败→progress(-1)）
-    void finishTransfer(const QString& error, const QString& projectPath);
+    /// D1：isFirmware=true 时成功不发 projectPackageReady（OTA 走 firmwarePackageReady 安装重启）
+    void finishTransfer(const QString& error, const QString& projectPath, bool isFirmware = false);
     QHttpServerResponse handleVnc(const QHttpServerRequest& request);    // K-9：POST /api/vnc {enable}
     QHttpServerResponse handleBlink(const QHttpServerRequest& request);  // K-9：POST /api/blink {enable}
     /// 校验 + 落盘；成功返回空错误串并输出 projectPath，失败返回原因（后台线程执行——只碰局部/线程安全成员）
-    QString receiveAndInstall(const QByteArray& body, QString& projectPathOut);
+    /// D1 审查 🔴：isFirmware 出参标识本次为 .fw OTA 传输——finishTransfer 据此跳过 projectPackageReady（工程重载）
+    QString receiveAndInstall(const QByteArray& body, QString& projectPathOut, bool* isFirmware = nullptr);
+    /// D1：.fw 固件包处理（NHFW 魔数嗅探分支）——校验 header sha + 组件表 → 写 staging → 触发 firmwarePackageReady；
+    /// 成功返回空错误串并输出 staging 路径，失败返回原因（后台线程执行）
+    QString handleFirmwarePackage(const QByteArray& body, QString& stagingPathOut);
     /// JSON 响应构造（Content-Type application/json）
     QHttpServerResponse jsonResponse(const QJsonObject& obj, QHttpServerResponse::StatusCode status);
     /// D-B4：进度值 → 阶段描述（派生，避免跨线程共享 QString）

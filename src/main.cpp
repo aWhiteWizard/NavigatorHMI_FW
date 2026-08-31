@@ -42,6 +42,7 @@
 #include "runtime/storageinfo.h"
 #include "runtime/vncmirror.h"
 #include "runtime/fwconfig.h"   // K-9 评论3：VNC 端口配置单点
+#include "ota/otaupdater.h"     // D1：.fw OTA 安装器（app 替换→重启；rootfs/kernel 分区路径）
 #include "runtime/touchcalibrator.h"
 #include "runtime/devicemeta.h"   // kDefaultDeviceWidth/Height 单点（K-9 评论1：默认分辨率收敛，替代本地 kDefaultDevW/H）
 #include "cli/commands.h"
@@ -696,8 +697,13 @@ int main(int argc, char *argv[])
     // R3: --project 是 ZIP 工程包时整包解压 → 内部 app.navihmi + tiles/ 瓦片
     QString tileBasePath;
     const QString resolvedProject = resolveProjectPackage(projectPath, tileBasePath);
+    // D1：OTA 安装器（httreceiver .fw staging → install → 重启；app 替换安全路径，rootfs/kernel 分区路径带板端验证开关）
+    navihmi::OtaUpdater otaUpdater;
     if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition))
         return 1;
+    // D1：启动成功标记（软件回滚依据）——新固件证明自己能启动（工程加载 OK）才记成功；
+    // 审查 🔴：必须在 install 外、启动成功路径调用（install 内预写会使回滚判定失效）
+    otaUpdater.markBootOk();
     qInfo().noquote() << "navigatorhmi-fw: loadAndInject 完成";   // 诊断(B6-8)
 
     // I-1: CLI 服务启动（工程加载后——命令数据源就绪）
@@ -719,6 +725,16 @@ int main(int argc, char *argv[])
         objectManager.setCurrentScreen(QString());
         objectManager.clearScreens();
         loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
+    });
+
+    // D1：.fw 固件包校验通过（httreceiver staging 就绪）→ OTA 安装器（otaUpdater 已在启动成功点前定义）
+    QObject::connect(&httpReceiver, &navihmi::HttpReceiver::firmwarePackageReady, &otaUpdater,
+                     [&otaUpdater, rootObj](const QString& stagingPath) {
+        const QString err = otaUpdater.install(stagingPath);
+        if (!err.isEmpty())
+            qCritical().noquote() << "OTA 安装失败:" << err;
+        else
+            QMetaObject::invokeMethod(rootObj, "stopRuntime");   // 安装完成 → 回导航（重启前避免停留在旧工程画面）
     });
 #endif
 

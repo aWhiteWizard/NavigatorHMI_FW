@@ -217,15 +217,18 @@ void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServer
     // 进度条无法重绘、触摸/VNC 无响应；后台线程执行安装，完成后回主线程写响应（QTcpSocket 非线程安全）
     std::thread([this, body]() {
         QString projectPath;
-        const QString error = receiveAndInstall(body, projectPath);
-        QMetaObject::invokeMethod(this, [this, error, projectPath]() {
-            finishTransfer(error, projectPath);
+        bool isFirmware = false;
+        const QString error = receiveAndInstall(body, projectPath, &isFirmware);
+        QMetaObject::invokeMethod(this, [this, error, projectPath, isFirmware]() {
+            finishTransfer(error, projectPath, isFirmware);
         }, Qt::QueuedConnection);
     }).detach();
 }
 
 /// M-3 ④：主线程收尾——写 HTTP 响应 + 释放并发锁 + 信号（成功→projectPackageReady；失败→progress(-1)）
-void HttpReceiver::finishTransfer(const QString& error, const QString& projectPath)
+/// D1 审查 🔴：isFirmware=true（.fw OTA 传输）时成功**不触发 projectPackageReady**（工程重载链）——
+/// OTA 走 firmwarePackageReady + otaupdater 安装重启；仅 .navihmi/zip 工程部署触发工程重载
+void HttpReceiver::finishTransfer(const QString& error, const QString& projectPath, bool isFirmware)
 {
     m_transferActive.storeRelease(false);
     if (!error.isEmpty()) {
@@ -243,10 +246,12 @@ void HttpReceiver::finishTransfer(const QString& error, const QString& projectPa
                                QHttpServerResponder::StatusCode::BadRequest);
     } else {
         // 校验通过、已落盘 → 通知主程序重载工程（下载事务性：失败路径不动当前工程）
-        emit projectPackageReady(projectPath);
+        // D1 审查 🔴：.fw OTA 传输（isFirmware）不发 projectPackageReady——OTA 走 firmwarePackageReady+安装重启
+        if (!isFirmware)
+            emit projectPackageReady(projectPath);
         const QJsonObject ok{
             { QStringLiteral("code"), QStringLiteral("SUCCESSFUL_REBOOT") },
-            { QStringLiteral("message"), QStringLiteral("部署成功，工程重载中") },
+            { QStringLiteral("message"), isFirmware ? QStringLiteral("固件安装完成，重启中") : QStringLiteral("部署成功，工程重载中") },
             { QStringLiteral("stage"), QStringLiteral("Finish") },
         };
         if (m_responder)
@@ -306,12 +311,20 @@ QHttpServerResponse HttpReceiver::jsonResponse(const QJsonObject& obj, QHttpServ
     return resp;
 }
 
-QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& projectPathOut)
+QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& projectPathOut, bool* isFirmware)
 {
     // 1. 尺寸/空包校验
     if (body.isEmpty()) return QStringLiteral("空上传体");
     if (body.size() > kMaxUploadBytes)
         return QStringLiteral("上传超过大小上限（%1 MB）").arg(kMaxUploadBytes / (1024 * 1024));
+
+    // 1b. D1：.fw 固件包嗅探（NHFW 魔数）——走 OTA 安装（校验 header sha → 组件表 → staging → 触发安装），
+    //     不走工程部署 zip 路径；.navihmi/deploy.zip（PK 魔数）保持原路径
+    //     复审 🔴：必须置位 isFirmware——finishTransfer 据此跳过 projectPackageReady（防 .fw 假工程重载）
+    if (body.size() >= 4 && qstrncmp(body.constData(), "NHFW", 4) == 0) {
+        if (isFirmware) *isFirmware = true;
+        return handleFirmwarePackage(body, projectPathOut);
+    }
 
     // 2. body → 临时 zip
     QTemporaryDir tmpDir;
@@ -492,6 +505,88 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
     m_lastProgress.storeRelaxed(100);   // D-B4：安装完成
     emit transferProgress(100, QStringLiteral("安装完成"));   // M-3 ④：满进度 → QML 停 1~2s 后自动打开
     qInfo().noquote() << "工程容器接收完成: app=" << appPath;
+    return QString();
+}
+
+/// D1：.fw 固件包处理（NHFW 魔数嗅探分支，receiveAndInstall 入口分流）。
+/// 流程：header 校验（magic 已验 / version 16B / timestamp 8B / count 4B / payload sha 64B）
+///     → payload 实际 SHA256 与 header 比对（防篡改，验收 7）
+///     → 组件表定长解析（每项 184B：name32+type16+target48+size8+sha64+version16；count 与表长核对）
+///     → 逐组件 payload 偏移/长度核对 + 组件 SHA256 比对（表内 sha）
+///     → 写 staging（/tmp/navihmi_ota_staging/，保留原 .fw 字节）→ 触发 firmwarePackageReady(stagingPath)
+///     → otaupdater 安装（分区写/备份/回滚由 otaupdater 负责，本处只做接收校验）
+/// 返回空串=成功（stagingPathOut 输出 staging 路径）；非空=失败原因。
+QString HttpReceiver::handleFirmwarePackage(const QByteArray& body, QString& stagingPathOut)
+{
+    // 1. header 校验（magic 已由调用方嗅探；定长字段布局见 FwPackageBuilder——单一事实源）
+    const int kHeaderSize = 128;
+    const int kEntrySize = 184;
+    if (body.size() < kHeaderSize)
+        return QStringLiteral(".fw 固件包损坏（不足 header 128B）");
+    // version(16B, 偏移 4) / timestamp(8B, 偏移 20) / count(4B, 偏移 28, LE) / payloadSha(64B, 偏移 32)
+    quint32 count = 0;
+    {
+        const QByteArray cntBytes = body.mid(28, 4);
+        for (int i = 0; i < 4; ++i)
+            count |= quint32(quint8(cntBytes.at(i))) << (8 * i);   // LE
+    }
+    if (count == 0 || count > 32)
+        return QStringLiteral(".fw 组件数非法: %1").arg(count);
+    const qint64 tableSize = qint64(count) * kEntrySize;
+    if (body.size() < kHeaderSize + tableSize)
+        return QStringLiteral(".fw 组件表不完整（count=%1）").arg(count);
+
+    // 2. payload sha 校验（header 偏移 32 的 64B hex vs payload 实际 SHA256——防篡改）
+    {
+        const QByteArray headerSha = body.mid(32, 64).trimmed();
+        const QByteArray payload = body.mid(kHeaderSize + tableSize);
+        const QByteArray actualSha = QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex();
+        if (headerSha != actualSha)
+            return QStringLiteral(".fw payload SHA256 校验失败（包被篡改或损坏）");
+    }
+
+    // 3. 组件表逐项核对（name/type/target 定长 + size 与 payload 偏移范围 + 组件 sha 比对）
+    qint64 payloadOffset = kHeaderSize + tableSize;
+    QStringList components;
+    for (quint32 i = 0; i < count; ++i) {
+        const int off = kHeaderSize + int(i) * kEntrySize;
+        const QByteArray name = body.mid(off, 32).trimmed();
+        const QByteArray type = body.mid(off + 32, 16).trimmed();
+        // size(8B, 偏移 off+96, LE)
+        quint64 size = 0;
+        for (int b = 0; b < 8; ++b)
+            size |= quint64(quint8(body.at(off + 96 + b))) << (8 * b);
+        // 审查 🟡：无符号比较防 quint64→qint64 溢出绕过（size ≥ 2^63 时 qint64 变负）
+        if (size == 0 || size > quint64(body.size()) - quint64(payloadOffset))
+            return QStringLiteral(".fw 组件 %1 长度越界（size=%2）").arg(QString::fromLatin1(name)).arg(size);
+        const QByteArray compSha = body.mid(off + 104, 64).trimmed();
+        const QByteArray compData = body.mid(payloadOffset, qint64(size));
+        const QByteArray actualCompSha = QCryptographicHash::hash(compData, QCryptographicHash::Sha256).toHex();
+        if (compSha != actualCompSha)
+            return QStringLiteral(".fw 组件 %1 SHA256 校验失败").arg(QString::fromLatin1(name));
+        components << QString::fromLatin1(type) + QLatin1Char('/') + QString::fromLatin1(name);
+        payloadOffset += qint64(size);
+    }
+
+    // 4. 写 staging（保留原 .fw 字节供 otaupdater 分区安装）——先清旧 staging 防残留
+    const QString stagingDir = QStringLiteral("/tmp/navihmi_ota_staging");
+    if (!QDir().mkpath(stagingDir))
+        return QStringLiteral("OTA staging 目录创建失败");
+    const QString stagingPath = stagingDir + QStringLiteral("/firmware.fw");
+    {
+        QFile f(stagingPath);
+        if (f.exists() && !f.remove())
+            return QStringLiteral("OTA staging 旧文件清理失败");
+        if (!f.open(QIODevice::WriteOnly))
+            return QStringLiteral("OTA staging 写入失败");
+        if (f.write(body) != body.size())
+            return QStringLiteral("OTA staging 写入不完整");
+    }
+    m_lastProgress.storeRelaxed(100);
+    emit transferProgress(100, QStringLiteral("固件校验通过，开始安装"));
+    stagingPathOut = stagingPath;
+    emit firmwarePackageReady(stagingPath);
+    qInfo().noquote() << ".fw 固件包校验通过，staging=" << stagingPath << "组件=" << components.join(QLatin1Char(','));
     return QString();
 }
 
