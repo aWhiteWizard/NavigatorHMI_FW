@@ -108,6 +108,10 @@ void HttpReceiver::setupRoutes()
     m_server.route(QStringLiteral("/api/version"), QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest&) { return handleVersion(); });
 
+    // D-B4：GET /api/progress——PC 轮询设备端下载/安装进度（真同步：PC 进度条显示设备实际处理进度）
+    m_server.route(QStringLiteral("/api/progress"), QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest&) { return handleProgress(); });
+
     // POST /api/transfer——工程部署容器上传（单客户端串行）
     // M-3 ④（R1）：responder 异步形式——qthttpserver 6.4 处理器运行在服务器对象所在线程（=GUI 主线程），
     // receiveAndInstall 秒级耗时若同步执行会冻结事件循环（进度条无法重绘）；改后台线程执行 + 主线程收尾
@@ -162,6 +166,31 @@ QHttpServerResponse HttpReceiver::handleVersion()
     return resp;
 }
 
+/// D-B4：GET /api/progress——PC 轮询设备端下载/安装进度（真同步）。
+/// 返回 { progress: 0~100（-1=无/失败）, stage: 阶段描述（由 progress 派生）, active: 是否传输中 }。
+/// progress 原子读取（receiveAndInstall 后台线程写，本 handler 服务器线程读——QAtomicInteger 无数据竞争）；
+/// stage 由 progress 派生——后台线程只写原子 int，不共享 QString（防数据竞争，审查 🔴 修复）。
+QHttpServerResponse HttpReceiver::handleProgress()
+{
+    const int pct = m_lastProgress.loadRelaxed();
+    const QJsonObject obj{
+        { QStringLiteral("progress"), pct },
+        { QStringLiteral("stage"), stageForProgress(pct) },
+        { QStringLiteral("active"), m_transferActive.loadRelaxed() },
+    };
+    return jsonResponse(obj, QHttpServerResponse::StatusCode::Ok);
+}
+
+/// D-B4：进度值 → 阶段描述（派生，不共享跨线程 QString；与 transferProgress 信号各 emit 点阶段一致）
+QString HttpReceiver::stageForProgress(int pct)
+{
+    if (pct < 0) return QStringLiteral("传输失败");
+    if (pct < 5) return QStringLiteral("接收中…");
+    if (pct < 50) return QStringLiteral("解压安装包…");
+    if (pct < 100) return QStringLiteral("写入资源…");
+    return QStringLiteral("安装完成");
+}
+
 void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder)
 {
     // 并发上限 1（单客户端串行；多余请求拒绝并报错——服务约束）
@@ -179,6 +208,7 @@ void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServer
 
     const QByteArray body = request.body();
     // M-3 ④：接收开始 → QML 屏幕进度条（退导航→进度→满停→自动打开）
+    m_lastProgress.storeRelaxed(5);   // D-B4：同步记录供 GET /api/progress 轮询（接收完成 5%）
     emit transferProgress(5, QStringLiteral("接收完成，开始安装"));
     m_responder = std::make_unique<QHttpServerResponder>(std::move(responder));
 
@@ -200,6 +230,7 @@ void HttpReceiver::finishTransfer(const QString& error, const QString& projectPa
     m_transferActive.storeRelease(false);
     if (!error.isEmpty()) {
         qWarning().noquote() << "传输失败:" << error;
+        m_lastProgress.storeRelaxed(-1);   // D-B4：失败 → 进度复位（PC 轮询得 -1 判定失败）
         emit transferProgress(-1, error);   // M-3 ④：失败 → QML 进度条恢复（隐藏）
         const QJsonObject err{
             { QStringLiteral("code"), QStringLiteral("TRANSFER_FAILED") },
@@ -327,8 +358,11 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
                 f.close();
                 ++extracted;
                 // M-3 ④：解压进度（5% → 45%）
-                if (totalEntries > 0 && (extracted % 16 == 0 || extracted == totalEntries))
-                    emit transferProgress(5 + 40 * extracted / totalEntries, QStringLiteral("解压安装包…"));
+                if (totalEntries > 0 && (extracted % 16 == 0 || extracted == totalEntries)) {
+                    const int pct = 5 + 40 * extracted / totalEntries;
+                    m_lastProgress.storeRelaxed(pct);   // D-B4：同步记录供轮询
+                    emit transferProgress(pct, QStringLiteral("解压安装包…"));
+                }
             } else {
                 return QStringLiteral("容器解压失败（无法创建: %1）").arg(target);
             }
@@ -446,12 +480,16 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
             return QStringLiteral("res 落盘失败: %1").arg(target);
         ++resDone;
         // M-3 ④：落盘进度（50% → 95%）
-        if (resTotal > 0 && (resDone % 16 == 0 || resDone == resTotal))
-            emit transferProgress(50 + 45 * resDone / resTotal, QStringLiteral("写入资源…"));
+        if (resTotal > 0 && (resDone % 16 == 0 || resDone == resTotal)) {
+            const int pct = 50 + 45 * resDone / resTotal;
+            m_lastProgress.storeRelaxed(pct);   // D-B4：同步记录供轮询
+            emit transferProgress(pct, QStringLiteral("写入资源…"));
+        }
     }
 
     // 6. 清理临时（QTemporaryDir 析构自动删）+ 返回
     projectPathOut = appPath;
+    m_lastProgress.storeRelaxed(100);   // D-B4：安装完成
     emit transferProgress(100, QStringLiteral("安装完成"));   // M-3 ④：满进度 → QML 停 1~2s 后自动打开
     qInfo().noquote() << "工程容器接收完成: app=" << appPath;
     return QString();

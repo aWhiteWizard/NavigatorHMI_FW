@@ -38,6 +38,13 @@ public:
     /// K-9：注入 VNC 镜像（VncMirror 构造晚于 HttpReceiver——engine.load 后调用）
     void setVncMirror(VncMirror* vm);
 
+    /// D-B4：最近一次传输进度（0~100；-1=无/失败；原子存储供 GET /api/progress 跨线程读取）
+    int lastProgress() const { return m_lastProgress.loadRelaxed(); }
+    /// D-B4：最近一次传输阶段描述——由 progress 值派生（后台线程只写原子进度，stage 无跨线程共享，防 QString 数据竞争）
+    QString lastProgressStage() const { return stageForProgress(m_lastProgress.loadRelaxed()); }
+    /// D-B4：是否传输中（GET /api/progress 的 active 字段——并发锁状态）
+    bool transferActive() const { return m_transferActive.loadRelaxed(); }
+
 signals:
     /// 校验通过、容器已落盘 → 主程序重载工程（projectPath=app.navihmi 路径）
     void projectPackageReady(const QString& projectPath);
@@ -52,6 +59,7 @@ private:
     void setupRoutes();
     QHttpServerResponse handleDeviceInfo();
     QHttpServerResponse handleVersion();
+    QHttpServerResponse handleProgress();   // D-B4：GET /api/progress——PC 轮询设备端进度（真同步）
     /// M-3 ④（R1 修复）：transfer 改为 responder 异步——qthttpserver 6.4 处理器跑在服务器对象线程（=GUI 主线程），
     /// receiveAndInstall 解压/校验/落盘为秒级耗时，同步执行会冻结事件循环 → 进度条无法重绘、触摸/VNC 无响应；
     /// 后台线程执行安装，完成后经 finishTransfer 回主线程写响应（QTcpSocket 非线程安全）
@@ -64,6 +72,8 @@ private:
     QString receiveAndInstall(const QByteArray& body, QString& projectPathOut);
     /// JSON 响应构造（Content-Type application/json）
     QHttpServerResponse jsonResponse(const QJsonObject& obj, QHttpServerResponse::StatusCode status);
+    /// D-B4：进度值 → 阶段描述（派生，避免跨线程共享 QString）
+    static QString stageForProgress(int pct);
     /// 设备型号（设备自身硬件身份：物理屏默认分辨率查 device-profiles.json，与工程无关；同 devicemeta 单点）
     QString deviceModel() const;
     /// 设备尺寸（"7寸"/"4寸"，型号查表；同 devicemeta 单点）
@@ -74,6 +84,7 @@ private:
     VncMirror* m_vncMirror = nullptr;   // K-9
     QHttpServer m_server;
     QAtomicInteger<bool> m_transferActive { false };
+    QAtomicInteger<int> m_lastProgress { -1 };   // D-B4：最近传输进度（-1=无/失败；原子跨线程读，后台线程 storeRelaxed）
     std::unique_ptr<QHttpServerResponder> m_responder;   // M-3 ④：活动传输的异步响应器（单客户端串行，唯一持有者）
 };
 
