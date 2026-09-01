@@ -479,6 +479,23 @@ void onSignal(int sig)
 {
     std::fprintf(stderr, "!!! navigatorhmi-fw 收到信号 %d\n", sig);
     std::fflush(stderr);
+    // N+23 修复（2026-08-30）：崩溃信号（SIGABRT/SIGSEGV）恢复默认处置并重新触发——
+    // 意图让内核产生 core dump 供 gdb 定位崩溃栈；原 `_Exit(128+sig)` 直接吞掉信号导致
+    // 永远无 core（VNC 越界写崩溃此前靠 gdbserver 才拿到栈）。
+    // ⚠️ 审查修正（2026-08-30）：glibc 下 signal handler 执行期间同信号被内核自动阻塞，
+    // 直接 std::raise 仅置 pending（不交付）；且 handler 内调用 std::raise 后 _Exit 会丢弃
+    // pending 信号 → re-raise 无效。正确做法：先 sigprocmask 解除阻塞再 raise，
+    // 信号立即以 SIG_DFL 交付 → 默认处置终止进程（可产 core）。
+    // 正常退出信号（TERM/HUP/INT）保持 _Exit 原语义（守护 stop/SSH 会话处理不受影响）。
+    if (sig == SIGABRT || sig == SIGSEGV) {
+        std::signal(sig, SIG_DFL);
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigaddset(&mask, sig);
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+        std::raise(sig);               // SIG_DFL 处置 → 终止进程（可产 core）
+        std::_Exit(128 + sig);         // 理论不可达（raise 已终止）；兜底防异常路径无返回
+    }
     std::_Exit(128 + sig);
 }
 } // namespace

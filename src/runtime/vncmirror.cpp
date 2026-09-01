@@ -309,9 +309,10 @@ void VncMirror::onAfterRendering()
     const int w = m_devW, h = m_devH;
 
     // 首帧：无缓存 → 全帧读回初始化
-    // N+22 修复（2026-08-30）：用原子标志 m_lastFrameReady 判定（不再读 m_lastFrame.size()——
-    // 渲染线程读 QByteArray 与 GUI 线程赋值并发 → 隐式共享引用计数 double free）
-    if (!m_lastFrameReady.loadRelaxed()) {
+    // N+22 修复（2026-08-30）：用原子标志判定（不再读 QByteArray size()——渲染线程读
+    // QByteArray 与 GUI 线程赋值并发 → 隐式共享引用计数 double free）
+    // N+23 修复（2026-08-30）：标志改名 m_firstFrameSent（原 m_lastFrame 缓存已删除，见 vncmirror.h）
+    if (!m_firstFrameSent.loadRelaxed()) {
         QByteArray rgba(w * h * 4, Qt::Uninitialized);
         f->glPixelStorei(GL_PACK_ALIGNMENT, 1);
         f->glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
@@ -329,6 +330,14 @@ void VncMirror::onAfterRendering()
         QMutexLocker lock(&m_dirtyMutex);
         dirty = m_dirtyRects;
         m_dirtyRects.clear();
+    }
+    // N+23 双保险：消费端再钳制一次（setDeviceSize 换工程尺寸后，队列里可能有旧尺寸
+    // 残留矩形；钳制保证后续 glReadPixels 读回区域 / 面积判断 / 增量发送全部落在帧内）
+    const QRect frame(0, 0, w, h);
+    for (auto it = dirty.begin(); it != dirty.end();) {
+        const QRect c = it->intersected(frame);
+        if (c.isEmpty()) it = dirty.erase(it);
+        else { *it = c; ++it; }
     }
     // 兜底：长时间无脏区报告时强制全帧（防止漏报导致画面冻结；1.5s 周期兼顾实时与开销）
     const qint64 now = m_elapsed.elapsed();
@@ -414,8 +423,15 @@ void VncMirror::markDirty(int x, int y, int w, int h)
 {
     if (w <= 0 || h <= 0)
         return;
+    // N+23 修复（2026-08-30）：越界钳制——QML 组件坐标可能超出 VNC 设备尺寸
+    // （工程 deviceWidth/Height 与主壳场景不一致、滚动内容坐标等），原无钳制直接消费，
+    // 越界矩形经 sendRegions 旧 memcpy 越界写 → 堆损坏 → double free 崩溃。
+    // 钳到 [0, devW]×[0, devH]，空矩形丢弃（出界组件的可见部分仍正确刷新）。
+    const QRect clipped = QRect(x, y, w, h).intersected(QRect(0, 0, m_devW, m_devH));
+    if (clipped.isEmpty())
+        return;
     QMutexLocker lock(&m_dirtyMutex);
-    m_dirtyRects.append(QRect(x, y, w, h));
+    m_dirtyRects.append(clipped);
     // 上限保护：防恶意/错误报告无限增长
     if (m_dirtyRects.size() > 256)
         m_dirtyRects.clear();
@@ -441,6 +457,7 @@ void VncMirror::sendRegions(const QVector<QRect>& rects, const QVector<QByteArra
 {
     if (rects.size() != datas.size() || rects.isEmpty())
         return;
+    (void)w; (void)h;   // N+23：原 m_lastFrame 同步已删除，帧尺寸不再需要（矩形已在上游钳制）
     QMutexLocker lock(&m_clientsMutex);
     QByteArray msg;
     msg.append(char(0)); msg.append(char(0));
@@ -451,15 +468,10 @@ void VncMirror::sendRegions(const QVector<QRect>& rects, const QVector<QByteArra
         put16(msg, quint16(r.width())); put16(msg, quint16(r.height()));
         put32(msg, 0);   // Raw
         msg.append(datas[i]);
-        // 同步 m_lastFrame 对应区域（供后续退化全帧比较）
-        // N+22：与首帧判定同源用原子标志（GUI 线程内读写 m_lastFrame 安全，标志保持语义一致）
-        if (m_lastFrameReady.loadRelaxed() && m_lastFrame.size() == w * h * 4) {
-            for (int row = 0; row < r.height(); ++row) {
-                memcpy(m_lastFrame.data() + ((r.y() + row) * w + r.x()) * 4,
-                       datas[i].constData() + row * r.width() * 4,
-                       r.width() * 4);
-            }
-        }
+        // N+23 修复（2026-08-30）：原「同步 m_lastFrame 对应区域」memcpy 已删除——
+        // m_lastFrame 缓存从不被读取（死代码），且无边界钳制的 memcpy 遇出界脏矩形
+        // （QML 组件坐标超出 VNC 设备尺寸）→ 堆越界写 → 后续 free 报 double free 崩溃。
+        // 出界防护在 markDirty / onAfterRendering 统一钳制（见 markDirty）。
     }
     for (auto* c : m_clients)
         c->socket->write(msg);
@@ -479,10 +491,8 @@ void VncMirror::sendFullFrame(const QByteArray& bgra, int w, int h)
     msg.append(bgra);
     for (auto* c : m_clients)
         c->socket->write(msg);
-    m_lastFrame = bgra;
-    m_lastFrameW = w;
-    m_lastFrameH = h;
-    m_lastFrameReady.storeRelaxed(true);   // N+22：缓存就绪（渲染线程据此跳过全帧，不再读 QByteArray）
+    // N+23：原 `m_lastFrame = bgra` 缓存赋值已删除（死缓存，从不被读取）
+    m_firstFrameSent.storeRelaxed(true);   // 首帧已下发（渲染线程据此跳过全帧读回）
 }
 
 void VncMirror::sendHeartbeat()

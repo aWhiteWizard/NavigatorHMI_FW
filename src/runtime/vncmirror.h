@@ -93,11 +93,11 @@ private:
     int m_devH = kDefaultDevH;
     QElapsedTimer m_elapsed;
     qint64 m_lastCaptureMs = -1000;   // 上次读帧时刻（节流用）
-    QByteArray m_lastFrame;           // 最近捕获帧缓存（连接时立即下发，静态画面可见）
-    int m_lastFrameW = 0, m_lastFrameH = 0;
-    // N+22 修复（2026-08-30）：m_lastFrame 是否已缓存——渲染线程只读此原子标志判定首帧，
-    // 不再触碰 m_lastFrame（QByteArray 隐式共享引用计数跨线程并发 → double free）
-    QAtomicInteger<bool> m_lastFrameReady { false };
+    // N+23 修复（2026-08-30）：首帧全帧已下发标志——渲染线程只读此原子标志判定首帧。
+    // （原 m_lastFrame QByteArray 缓存 + sendRegions memcpy 同步已删除：缓存从不被读取，
+    //   是死代码；且无边界钳制的 memcpy 遇出界脏矩形 → 堆越界写 → double free 崩溃——
+    //   详见 4_bugs/rk3562/vnc-client-connect-crash.md N+23）
+    QAtomicInteger<bool> m_firstFrameSent { false };
 
     // 生产端脏矩形报告（QML 层 markDirty 累积，渲染线程消费）
     QVector<QRect> m_dirtyRects;
