@@ -38,7 +38,8 @@ public:
     explicit VncMirror(QQuickWindow* window, QObject* parent = nullptr);
     ~VncMirror() override;
 
-    /// 设备尺寸（VNC 屏幕尺寸 = 工程 deviceWidth/Height，如 1024x600）
+    /// 设备尺寸（VNC 屏幕尺寸 = 设备物理屏分辨率——N+24 用户裁决：按连接设备型号查表
+    /// devicemeta.deviceResolutionFor()，与工程 deviceWidth/Height 解耦；如 7 寸 1024x600）
     void setDeviceSize(int w, int h);
 
     /// 启动监听（默认 kDefaultVncPort，定义于 fwconfig.h——VNC 端口单点；监听失败返回 false 并记日志）

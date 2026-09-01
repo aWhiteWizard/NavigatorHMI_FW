@@ -14,6 +14,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QPair>
 
 #include "runtime/projectmodel.h"
 
@@ -89,6 +90,28 @@ inline QString deviceSizeInchFor()
     if (model.isEmpty())
         return QString();
     return detail::sizeInchForModel(model);
+}
+
+/// 设备物理屏分辨率（型号查表；与工程无关）——VNC 读帧区域/宣告尺寸用
+/// （2026-08-30 N+24 用户裁决：VNC 尺寸应 = 连接的设备，而非工程 deviceWidth/Height——
+///   工程 800×480 时 VNC 曾按 800×480 读帧，与 7 寸物理屏 1024×600 不符）
+inline QPair<int, int> deviceResolutionFor()
+{
+    const QString model = deviceModelFor();
+    if (!model.isEmpty()) {
+        const QJsonArray& table = detail::deviceProfileTable();
+        for (const QJsonValue& v : table) {
+            const QJsonObject o = v.toObject();
+            if (o.value(QStringLiteral("model")).toString() == model) {
+                const int w = o.value(QStringLiteral("width")).toInt();
+                const int h = o.value(QStringLiteral("height")).toInt();
+                if (w > 0 && h > 0)
+                    return { w, h };
+            }
+        }
+    }
+    // 型号表缺失/查不到 → 物理屏默认分辨率兜底（与 deviceModelFor 推导同源）
+    return { kDefaultDeviceWidth, kDefaultDeviceHeight };
 }
 
 } // namespace navihmi

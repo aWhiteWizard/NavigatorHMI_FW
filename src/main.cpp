@@ -431,10 +431,13 @@ static bool loadAndInject(QObject* rootObj,
     // 运行时指令 vnc on/off 覆盖；否则下载 enable_vnc=false 的工程会把用户手动开着的 VNC 停掉）
     // 审查 🟡 边缘：冷启动无工程（空导航）时首载在空工程上决策（enableVnc=false → stop），
     // 之后下载 enable_vnc=true 工程重载不自动启动——需手动 `vnc on`（与 K-9"启动默认值"语义一致，接受）
-    // 审查 🟡：setDeviceSize **不门控**——每次 loadAndInject 同步设备尺寸（VNC 读帧区域/握手帧尺寸用
-    // m_devW/H，重载不同尺寸工程后必须更新，否则 glReadPixels 区域/宣告尺寸陈旧）；仅启停决策走 s_initialVncApplied
-    if (vncMirror)
-        vncMirror->setDeviceSize(devW, devH);
+    // N+24 修复（2026-08-30 用户裁决）：VNC 尺寸 = 连接的设备（物理屏分辨率，型号查表）——
+    // 不再用工程 deviceWidth/Height（工程 800×480 时 VNC 按 800×480 读帧/宣告，与 7 寸屏 1024×600 不符）；
+    // 与工程解耦后重载任意尺寸工程 VNC 尺寸恒定，无需更新
+    if (vncMirror) {
+        const QPair<int, int> devRes = navihmi::deviceResolutionFor();
+        vncMirror->setDeviceSize(devRes.first, devRes.second);
+    }
     if (vncMirror && !s_initialVncApplied) {
         s_initialVncApplied = true;
         int force = 1;
