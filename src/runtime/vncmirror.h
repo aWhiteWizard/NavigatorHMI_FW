@@ -95,6 +95,9 @@ private:
     qint64 m_lastCaptureMs = -1000;   // 上次读帧时刻（节流用）
     QByteArray m_lastFrame;           // 最近捕获帧缓存（连接时立即下发，静态画面可见）
     int m_lastFrameW = 0, m_lastFrameH = 0;
+    // N+22 修复（2026-08-30）：m_lastFrame 是否已缓存——渲染线程只读此原子标志判定首帧，
+    // 不再触碰 m_lastFrame（QByteArray 隐式共享引用计数跨线程并发 → double free）
+    QAtomicInteger<bool> m_lastFrameReady { false };
 
     // 生产端脏矩形报告（QML 层 markDirty 累积，渲染线程消费）
     QVector<QRect> m_dirtyRects;

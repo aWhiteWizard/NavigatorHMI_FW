@@ -309,7 +309,9 @@ void VncMirror::onAfterRendering()
     const int w = m_devW, h = m_devH;
 
     // 首帧：无缓存 → 全帧读回初始化
-    if (m_lastFrame.size() != w * h * 4) {
+    // N+22 修复（2026-08-30）：用原子标志 m_lastFrameReady 判定（不再读 m_lastFrame.size()——
+    // 渲染线程读 QByteArray 与 GUI 线程赋值并发 → 隐式共享引用计数 double free）
+    if (!m_lastFrameReady.loadRelaxed()) {
         QByteArray rgba(w * h * 4, Qt::Uninitialized);
         f->glPixelStorei(GL_PACK_ALIGNMENT, 1);
         f->glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
@@ -450,7 +452,8 @@ void VncMirror::sendRegions(const QVector<QRect>& rects, const QVector<QByteArra
         put32(msg, 0);   // Raw
         msg.append(datas[i]);
         // 同步 m_lastFrame 对应区域（供后续退化全帧比较）
-        if (m_lastFrame.size() == w * h * 4) {
+        // N+22：与首帧判定同源用原子标志（GUI 线程内读写 m_lastFrame 安全，标志保持语义一致）
+        if (m_lastFrameReady.loadRelaxed() && m_lastFrame.size() == w * h * 4) {
             for (int row = 0; row < r.height(); ++row) {
                 memcpy(m_lastFrame.data() + ((r.y() + row) * w + r.x()) * 4,
                        datas[i].constData() + row * r.width() * 4,
@@ -479,6 +482,7 @@ void VncMirror::sendFullFrame(const QByteArray& bgra, int w, int h)
     m_lastFrame = bgra;
     m_lastFrameW = w;
     m_lastFrameH = h;
+    m_lastFrameReady.storeRelaxed(true);   // N+22：缓存就绪（渲染线程据此跳过全帧，不再读 QByteArray）
 }
 
 void VncMirror::sendHeartbeat()
