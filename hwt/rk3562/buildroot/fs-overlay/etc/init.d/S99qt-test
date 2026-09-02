@@ -1,53 +1,59 @@
 #!/bin/sh
-# NavigatorHMI FW 开机自启 (B-4: QML 界面; B-5: 日志重定向; D-B1: 崩溃自动拉起守护)
-# eglfs 全屏; 远程调试: -platform vnc:port=5900
-# Qt 插件路径: buildroot 装到 /usr/plugins (非默认路径)
-# QML 导入路径: buildroot 装到 /usr/qml (非默认路径)
-# D-B1 (2026-08-30): 守护循环——FW 进程崩溃(SIGSEGV, 如 VNC 客户端连接)后 5s 自动拉起,
-#                    防设备变砖(仅 SSH 可用)。stop 用标志文件防拉起循环。
-#                    守护用 setsid 脱离 SSH 会话(防 dropbear 会话关闭 SIGHUP 杀死)
-#                    + trap HUP 兜底; setsid EPERM(交互 shell 作业控制)时回退普通 &。
-#                    审查修复(2026-08-30): git 模式 100755(原 100644 开机不执行);
-#                    防重复 start; start 清 stale PID; 每次拉起写 trace 日志。
+# NavigatorHMI FW 开机自启 + 崩溃守护 (O 轮批 D D-1/D-2 改造，2026-09)
+# eglfs 全屏; Qt 插件/QML 路径环境集中在 /usr/sbin/start_runtime.sh（本脚本调用它——绝对路径不依赖 PATH）。
+# D-B1 (2026-08-30): 守护循环——FW 进程崩溃(SIGSEGV, 如 VNC 客户端连接)后 5s 自动拉起, 防设备变砖。
+# O-D D-1 (2026-09): 守护改调 start_runtime.sh（环境集中/单实例预检/期望 md5 校验都在统一入口）;
+#                    start 前清理 init.d 残留 .bak/.off 备份脚本执行位（N+28 双启动根因防护——
+#                    busybox rcS 按 S??* 匹配所有 S 开头可执行文件，.bak.off 也会被执行）。
+# O-D D-2 (2026-09): 单实例监控——守护循环每次拉起前收敛多余 navigatorhmi-fw 实例（杀多余保留一个，
+#                    防 EGL/DRM 双启动黑屏 + HTTP 80 冲突）；start_runtime.sh 内含版本(md5)期望校验。
 
-export QT_QPA_PLATFORM=eglfs
-export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/plugins/platforms
-export QT_PLUGIN_PATH=/usr/plugins
-export QML_IMPORT_PATH=/usr/qml
-export QML2_IMPORT_PATH=/usr/qml
-
+START_RUNTIME=/usr/sbin/start_runtime.sh
 LOG=/tmp/navihmi.log
 GUARD_STOP=/tmp/navihmi-guard.stop
 GUARD_PID=/tmp/navihmi-guard.pid
 
-# 守护循环体（环境变量随 init.d 继承; setsid 分支内变量需内联到 sh -c 字符串）
+# 守护循环体（O-D D-2 修正——轮询式：FW 后台运行 + 守护每 3s 巡检。
+# 原前台阻塞式缺陷（上板实测发现）：守护阻塞在 FW 上，注入第二实例时守护不执行收敛代码
+# （要等 FW 退出才恢复循环）——多实例并存无法实时收敛；且崩溃拉起依赖 FW 退出才 sleep-5 循环。
+# 轮询式：0 实例 → start_runtime.sh 拉起；>1 实例 → 杀多余保留最早（单实例收敛实时生效）。）
 GUARD_BODY='n=0
 while [ ! -f /tmp/navihmi-guard.stop ]; do
     n=$((n+1))
-    echo "[$(date +%H:%M:%S)] guard: relaunch #${n}" >> /tmp/navihmi.log
-    if [ -f /mnt/user/userdata/app.navihmi ]; then
-        /usr/bin/navigatorhmi-fw --project /mnt/user/userdata/app.navihmi >> /tmp/navihmi.log 2>&1
-    else
-        /usr/bin/navigatorhmi-fw >> /tmp/navihmi.log 2>&1
+    cnt=$(pgrep -x navigatorhmi-fw | wc -l)
+    if [ "${cnt}" -eq 0 ]; then
+        echo "[$(date +%H:%M:%S)] guard: relaunch #${n}" >> /tmp/navihmi.log
+        /usr/sbin/start_runtime.sh &   # 后台拉起（start_runtime 内含单实例预检 + 期望 md5 校验）
+    elif [ "${cnt}" -gt 1 ]; then
+        echo "[$(date +%H:%M:%S)] guard: 检测到 ${cnt} 个实例——收敛为单实例" >> /tmp/navihmi.log
+        # 保留最早启动的（PID 最小），杀其余（防 EGL/DRM 双启动黑屏 + HTTP 80 冲突）
+        keep=$(pgrep -x navigatorhmi-fw | sort -n | head -1)
+        for p in $(pgrep -x navigatorhmi-fw); do
+            [ "${p}" != "${keep}" ] && kill "${p}" 2>/dev/null
+        done
     fi
-    sleep 5
+    sleep 3
 done
 rm -f /tmp/navihmi-guard.stop'
 
 case "$1" in
   start)
-    # 审查修复: 防重复 start（双 start / .bak 双执行先例）——已有守护则提示退出
+    # 防重复 start（双 start / .bak 双执行先例）——已有守护则提示退出
     if [ -f "${GUARD_PID}" ] && kill -0 "$(cat "${GUARD_PID}")" 2>/dev/null; then
         echo "navigatorhmi-fw 守护已在运行 (pid $(cat "${GUARD_PID}"))，跳过 start"
         exit 0
     fi
-    echo "Starting navigatorhmi-fw (守护模式)..."
+    # O-D D-1: 清理 init.d 残留备份脚本执行位（N+28 根因防护——rcS 会执行 S??* 全部可执行文件）
+    for f in /etc/init.d/S99qt-test.bak /etc/init.d/S99qt-test.off /etc/init.d/*.bak.off; do
+        [ -f "${f}" ] && chmod -x "${f}" 2>/dev/null && echo "init.d 残留备份去执行位: ${f}"
+    done
+    echo "Starting navigatorhmi-fw (守护模式 → start_runtime.sh)..."
     sleep 3
     rm -f "${GUARD_STOP}"
-    rm -f "${GUARD_PID}"   # 审查修复: 清 stale PID（跨重启残留防 stop 误杀复用 PID）
+    rm -f "${GUARD_PID}"   # 清 stale PID（跨重启残留防 stop 误杀复用 PID）
     if command -v setsid >/dev/null 2>&1; then
         # setsid: 新会话首进程, 脱离 SSH 会话; trap HUP 双保险
-        # 审查修复: 交互 shell 作业控制下 setsid 可能 EPERM 退出——启动后 kill -0 校验, 失败回退降级分支
+        # setsid 交互 shell 作业控制下可能 EPERM——启动后 kill -0 校验, 失败回退降级分支
         setsid sh -c "trap '' HUP; ${GUARD_BODY}" &
         GPID=$!
         sleep 1
@@ -69,7 +75,7 @@ case "$1" in
         kill "$(cat "${GUARD_PID}")" 2>/dev/null
         rm -f "${GUARD_PID}"
     fi
-    # 审查复审🟡: 不在此 rm GUARD_STOP——与守护 sleep-5 窗口存在竞态（EPERM 回退路径守护为孙进程,
+    # 不在此 rm GUARD_STOP——与守护 sleep-5 窗口存在竞态（EPERM 回退路径守护为孙进程,
     # stop 时可能仍在循环内）; start 段已负责 rm 标志（防 stale 标志卡死下次 start）, 此处删除闭环。
     ;;
   *)

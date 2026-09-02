@@ -45,6 +45,10 @@ public:
     /// D-B4：是否传输中（GET /api/progress 的 active 字段——并发锁状态）
     bool transferActive() const { return m_transferActive.loadRelaxed(); }
 
+    /// 批 D 收尾（httreceiver「假成功」缺陷修复）：.fw OTA 安装结果回调（main.cpp 桥接 OtaUpdater.installFinished →
+    /// 本方法，普通方法非信号）——以**真实安装结果**写 .fw 传输响应（原实现校验通过即报成功，install 失败静默误判成功）
+    void completeFirmwareInstall(const QString& error);
+
 signals:
     /// 校验通过、容器已落盘 → 主程序重载工程（projectPath=app.navihmi 路径）
     void projectPackageReady(const QString& projectPath);
@@ -82,6 +86,8 @@ private:
     QHttpServerResponse jsonResponse(const QJsonObject& obj, QHttpServerResponse::StatusCode status);
     /// D-B4：进度值 → 阶段描述（派生，避免跨线程共享 QString）
     static QString stageForProgress(int pct);
+    /// 批 D 收尾：写 .fw OTA 传输最终响应（completeFirmwareInstall 内部）——install 结果成功/失败分支
+    void writeFirmwareTransferResult(const QString& error);
     /// 设备型号（设备自身硬件身份：物理屏默认分辨率查 device-profiles.json，与工程无关；同 devicemeta 单点）
     QString deviceModel() const;
     /// 设备尺寸（"7寸"/"4寸"，型号查表；同 devicemeta 单点）
@@ -94,6 +100,7 @@ private:
     QAtomicInteger<bool> m_transferActive { false };
     QAtomicInteger<int> m_lastProgress { -1 };   // D-B4：最近传输进度（-1=无/失败；原子跨线程读，后台线程 storeRelaxed）
     std::unique_ptr<QHttpServerResponder> m_responder;   // M-3 ④：活动传输的异步响应器（单客户端串行，唯一持有者）
+    bool m_pendingFirmwareInstall = false;   // 批 D 收尾：.fw OTA 校验通过已触发安装，等待 installFinished 回传真实结果
 };
 
 } // namespace navihmi

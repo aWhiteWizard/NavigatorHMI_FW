@@ -228,6 +228,9 @@ void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServer
 /// M-3 ④：主线程收尾——写 HTTP 响应 + 释放并发锁 + 信号（成功→projectPackageReady；失败→progress(-1)）
 /// D1 审查 🔴：isFirmware=true（.fw OTA 传输）时成功**不触发 projectPackageReady**（工程重载链）——
 /// OTA 走 firmwarePackageReady + otaupdater 安装重启；仅 .navihmi/zip 工程部署触发工程重载
+/// 批 D 收尾（httreceiver「假成功」修复）：.fw OTA 校验通过 = staging 就绪 ≠ 安装成功——此处成功分支
+/// **不立即写响应**（m_pendingFirmwareInstall=true，响应器保留），等 OtaUpdater.installFinished →
+/// completeFirmwareInstall 以真实结果写响应（原实现校验通过即报成功，install 失败静默 → PC 误判升级成功）
 void HttpReceiver::finishTransfer(const QString& error, const QString& projectPath, bool isFirmware)
 {
     m_transferActive.storeRelease(false);
@@ -244,14 +247,57 @@ void HttpReceiver::finishTransfer(const QString& error, const QString& projectPa
             m_responder->write(QJsonDocument(err).toJson(QJsonDocument::Compact),
                                QByteArrayLiteral("application/json"),
                                QHttpServerResponder::StatusCode::BadRequest);
+        m_responder.reset();
+        m_pendingFirmwareInstall = false;
+    } else if (isFirmware) {
+        // .fw OTA：staging 就绪（校验通过），但安装未执行/未完成——**defer 响应**，等 installFinished
+        qInfo().noquote() << ".fw 固件 staging 就绪，等待 OTA 安装结果回传（httreceiver deferred 响应）";
+        m_pendingFirmwareInstall = true;
+        // 保留 m_responder（不 reset）——completeFirmwareInstall 写真实结果后释放
     } else {
         // 校验通过、已落盘 → 通知主程序重载工程（下载事务性：失败路径不动当前工程）
-        // D1 审查 🔴：.fw OTA 传输（isFirmware）不发 projectPackageReady——OTA 走 firmwarePackageReady+安装重启
-        if (!isFirmware)
-            emit projectPackageReady(projectPath);
+        emit projectPackageReady(projectPath);
         const QJsonObject ok{
             { QStringLiteral("code"), QStringLiteral("SUCCESSFUL_REBOOT") },
-            { QStringLiteral("message"), isFirmware ? QStringLiteral("固件安装完成，重启中") : QStringLiteral("部署成功，工程重载中") },
+            { QStringLiteral("message"), QStringLiteral("部署成功，工程重载中") },
+            { QStringLiteral("stage"), QStringLiteral("Finish") },
+        };
+        if (m_responder)
+            m_responder->write(QJsonDocument(ok).toJson(QJsonDocument::Compact),
+                               QByteArrayLiteral("application/json"),
+                               QHttpServerResponder::StatusCode::Ok);
+        m_responder.reset();
+    }
+}
+
+/// 批 D 收尾：.fw OTA 安装结果回调（main.cpp 桥接 OtaUpdater.installFinished）——写真实传输响应。
+/// 主线程调用（installFinished 经 connect 队列到主线程——与 responder 写线程一致，防 QTcpSocket 跨线程）。
+void HttpReceiver::completeFirmwareInstall(const QString& error)
+{
+    writeFirmwareTransferResult(error);
+    m_pendingFirmwareInstall = false;
+}
+
+void HttpReceiver::writeFirmwareTransferResult(const QString& error)
+{
+    if (!error.isEmpty()) {
+        qWarning().noquote() << "OTA 安装失败:" << error;
+        m_lastProgress.storeRelaxed(-1);
+        emit transferProgress(-1, error);
+        const QJsonObject err{
+            { QStringLiteral("code"), QStringLiteral("OTA_INSTALL_FAILED") },
+            { QStringLiteral("message"), error },
+            { QStringLiteral("stage"), QStringLiteral("Install") },
+        };
+        if (m_responder)
+            m_responder->write(QJsonDocument(err).toJson(QJsonDocument::Compact),
+                               QByteArrayLiteral("application/json"),
+                               QHttpServerResponder::StatusCode::BadRequest);
+    } else {
+        qInfo().noquote() << "OTA 安装成功——响应 PC";
+        const QJsonObject ok{
+            { QStringLiteral("code"), QStringLiteral("SUCCESSFUL_REBOOT") },
+            { QStringLiteral("message"), QStringLiteral("固件安装完成，重启中") },
             { QStringLiteral("stage"), QStringLiteral("Finish") },
         };
         if (m_responder)

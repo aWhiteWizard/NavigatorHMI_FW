@@ -15,7 +15,7 @@ namespace navihmi {
 namespace {
 // 版本号（与 CMake project VERSION 对齐；无宏时兜底）
 #ifndef NAVIGATORHMI_VERSION_STR
-#define NAVIGATORHMI_VERSION_STR "1.1.1"
+#define NAVIGATORHMI_VERSION_STR "1.1.2"
 #endif
 } // namespace
 

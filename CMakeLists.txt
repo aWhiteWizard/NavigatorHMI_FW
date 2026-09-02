@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(NavigatorHMI_FW VERSION 1.1.1 LANGUAGES C CXX)
+project(NavigatorHMI_FW VERSION 1.1.2 LANGUAGES C CXX)
 
 # ============================================================
 # NavigatorHMI FW 应用（跨平台）

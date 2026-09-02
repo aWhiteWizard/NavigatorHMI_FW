@@ -577,7 +577,7 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("NavigatorHMI_FW"));
-    app.setApplicationVersion(QStringLiteral("1.1.1"));
+    app.setApplicationVersion(QStringLiteral("1.1.2"));
 
     // 启动诊断（B6-8）: 信号处理器——退出原因定位
     std::signal(SIGSEGV, onSignal);
@@ -717,10 +717,22 @@ int main(int argc, char *argv[])
     // R3: --project 是 ZIP 工程包时整包解压 → 内部 app.navihmi + tiles/ 瓦片
     QString tileBasePath;
     const QString resolvedProject = resolveProjectPackage(projectPath, tileBasePath);
-    // D1：OTA 安装器（httreceiver .fw staging → install → 重启；app 替换安全路径，rootfs/kernel 分区路径带板端验证开关）
+    // D1：OTA 安装器（httreceiver .fw staging → install → 重启；app 替换 + rootfs 文件级，见 otaupdater）
+    // O-D D-3b：启动失败回滚接线——启动前置检查：bootFailCount>=N（上次 rootfs 文件级更新后连续启动失败）
+    // → 从 userdata ota-backup 恢复旧文件（回滚后再试启动，规避「更新坏文件导致起不来」变砖）
     navihmi::OtaUpdater otaUpdater;
-    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition))
+    if (otaUpdater.bootFailCount() >= navihmi::OtaUpdater::maxBootFailForRestore()) {
+        qWarning().noquote() << "OTA 启动失败计数达到上限——执行 rootfs 文件级回滚（userdata ota-backup）";
+        const QString restoreErr = otaUpdater.restoreFromUserdataBackup(true);
+        if (!restoreErr.isEmpty())
+            qCritical().noquote() << "OTA 回滚失败: " << restoreErr;
+    }
+    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition)) {
+        // O-D D-3b：启动失败路径——记录失败计数（供下次启动前置回滚判定）；连续失败达上限不硬停（守护会拉起，
+        // 前置检查已触发回滚）。loadAndInject 失败多为工程数据问题（非固件文件），计数避免无限循环（markBootOk 成功清零）
+        otaUpdater.recordBootFail();
         return 1;
+    }
     // D1：启动成功标记（软件回滚依据）——新固件证明自己能启动（工程加载 OK）才记成功；
     // 审查 🔴：必须在 install 外、启动成功路径调用（install 内预写会使回滚判定失效）
     otaUpdater.markBootOk();
@@ -748,13 +760,16 @@ int main(int argc, char *argv[])
     });
 
     // D1：.fw 固件包校验通过（httreceiver staging 就绪）→ OTA 安装器（otaUpdater 已在启动成功点前定义）
+    // 批 D 收尾（httreceiver「假成功」修复）：install 结果经 installFinished → completeFirmwareInstall
+    // 回传 httreceiver——传输响应反映**真实安装结果**（原实现校验通过即报成功，install 失败静默）
     QObject::connect(&httpReceiver, &navihmi::HttpReceiver::firmwarePackageReady, &otaUpdater,
-                     [&otaUpdater, rootObj](const QString& stagingPath) {
+                     [&otaUpdater, &httpReceiver, rootObj](const QString& stagingPath) {
         const QString err = otaUpdater.install(stagingPath);
         if (!err.isEmpty())
             qCritical().noquote() << "OTA 安装失败:" << err;
         else
             QMetaObject::invokeMethod(rootObj, "stopRuntime");   // 安装完成 → 回导航（重启前避免停留在旧工程画面）
+        httpReceiver.completeFirmwareInstall(err);   // 真实结果回传（成功=空串 → PC 收 SUCCESSFUL_REBOOT）
     });
 #endif
 
