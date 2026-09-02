@@ -577,7 +577,7 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("NavigatorHMI_FW"));
-    app.setApplicationVersion(QStringLiteral("1.1.2"));
+    app.setApplicationVersion(QStringLiteral("1.1.3"));
 
     // 启动诊断（B6-8）: 信号处理器——退出原因定位
     std::signal(SIGSEGV, onSignal);

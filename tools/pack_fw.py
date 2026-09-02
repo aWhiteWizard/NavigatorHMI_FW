@@ -78,7 +78,17 @@ def build_rootfs_files_payload(entries):
     return bytes(out)
 
 
-def build(version: str, components, out_dir: str) -> str:
+def size_to_inch(size: str) -> str:
+    """尺寸（"7寸"/"7"）→ 文件名 inch 段（7inch/4inch；与 PC FirmwareFolderService.SizeToInchTag 同口径）。"""
+    s = (size or "").strip().lower()
+    if not s:
+        return "unknown"
+    if s.endswith("inch"):
+        return s
+    return s.replace("寸", "") + "inch"
+
+
+def build(version: str, components, out_dir: str, size: str = "") -> str:
     if not version or len(version) > 16:
         raise ValueError("version 必填且 ≤16 字符")
     if not all(c in "0123456789." for c in version) or not 1 <= len(version.split(".")) <= 3:
@@ -116,12 +126,12 @@ def build(version: str, components, out_dir: str) -> str:
     out += fixed(payload_sha, 64)
     out += b" " * (HEADER_SIZE - len(out))
 
-    # Component Table（184B/项）
-    for name, ctype, target, size, sha in table:
+    # Component Table（184B/项）——循环变量用 csize 防覆盖 build 的 size 参数（2026-09 命名参数冲突修复）
+    for name, ctype, target, csize, sha in table:
         out += fixed(name, 32)
         out += fixed(ctype, 16)
         out += fixed(target, 48)
-        out += struct.pack("<q", size)       # 8B LE
+        out += struct.pack("<q", csize)      # 8B LE
         out += fixed(sha, 64)
         out += fixed(version, 16)
         assert len(out) % ENTRY_SIZE == HEADER_SIZE % ENTRY_SIZE  # 布局防御
@@ -130,7 +140,8 @@ def build(version: str, components, out_dir: str) -> str:
     out += payload
 
     os.makedirs(out_dir, exist_ok=True)
-    fw_name = f"NavigatorHMI_v{version}.fw"
+    # 2026-09 命名标准：size 提供 → NavigatorHMI_<尺寸>inch_v<版本>.fw（7寸→7inch）；无 → 旧命名兼容
+    fw_name = f"NavigatorHMI_v{version}.fw" if not size else f"NavigatorHMI_{size_to_inch(size)}_v{version}.fw"
     fw_path = os.path.join(out_dir, fw_name)
     tmp = fw_path + ".tmp"
     with open(tmp, "wb") as f:
@@ -144,6 +155,7 @@ def main():
     ap = argparse.ArgumentParser(description="D1 OTA 固件打包（NHFW，与 PC FwPackageBuilder 互读）")
     ap.add_argument("--version", required=True, help="固件版本（x.y.z 纯数字）")
     ap.add_argument("--out", required=True, help="输出目录")
+    ap.add_argument("--size", default="", help="设备尺寸（7寸→文件名 NavigatorHMI_7inch_v...fw；省略 → 旧命名 NavigatorHMI_v...fw）")
     ap.add_argument("--app", help="app 组件路径（/usr/bin/navigatorhmi-fw 源文件）")
     ap.add_argument("--rootfs-files", help="rootfs 文件级组件目录（递归收集常规文件 → 文件段 payload）")
     ap.add_argument("--kernel", help="kernel 组件路径（boot.img——O-D D-3 backup 容量不足，本轮不建议）")
@@ -161,7 +173,7 @@ def main():
         comps.append(("rootfs", "rootfs", "/", args.rootfs))
     if not comps:
         ap.error("至少提供一个组件：--app / --rootfs-files / --rootfs / --kernel")
-    build(args.version, comps, args.out)
+    build(args.version, comps, args.out, args.size)
 
 
 if __name__ == "__main__":
