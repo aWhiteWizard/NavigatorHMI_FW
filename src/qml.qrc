@@ -22,6 +22,7 @@
     <file>qml/components/HmiPolygon.qml</file>
     <file>qml/components/HmiWorldMap.qml</file>
     <file>qml/components/HmiTrendChart.qml</file>   <!-- P-4 趋势图（2026-09-02） -->
+    <file>qml/components/HmiHistoryView.qml</file>   <!-- P-5 历史记录（2026-09-02） -->
     <file>qml/images/logo_white.png</file>
     <file>qml/images/logo_white_small.png</file>
   </qresource>

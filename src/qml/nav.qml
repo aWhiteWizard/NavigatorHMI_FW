@@ -43,8 +43,7 @@ Item {
             NavItem { label: "首页"; page: "home"; expanded: navRoot.navExpanded }
             NavItem { label: "设备信息"; page: "info"; expanded: navRoot.navExpanded }
             NavItem { label: "存储管理"; page: "storage"; expanded: navRoot.navExpanded }
-            NavItem { label: "通信控制"; page: "network"; expanded: navRoot.navExpanded }
-            NavItem { label: "历史记录"; page: "history"; expanded: navRoot.navExpanded }   // I-2
+            NavItem { label: "通信控制"; page: "network"; expanded: navRoot.navExpanded }   // P-5：历史记录导航项已删——报警历史→AlarmView 缓冲区、变量历史→HistoryView 控件承接
         }
 
         // 底部: 日夜 + 收起
@@ -110,12 +109,7 @@ Item {
                 height: pages.height
                 isDark: navRoot.isDark
             }
-            // 4: 历史记录（I-2：DataLogger 采样查询展示）
-            HistoryPage {
-                width: pages.width
-                height: pages.height
-                isDark: navRoot.isDark
-            }
+            // P-5：历史记录页已删（报警历史→AlarmView 缓冲区模式、变量历史→HistoryView 控件承接——v1.1-design §5.3）
         }
     }
 
@@ -142,12 +136,11 @@ Item {
         property bool expanded: true
         signal clicked()
 
-        // 页索引映射（供高亮）
+        // 页索引映射（供高亮；P-5：history 页已删——映射同步移除）
         readonly property int navItemIndex: page === "home" ? 0
             : page === "info" ? 1
             : page === "storage" ? 2
-            : page === "network" ? 3
-            : page === "history" ? 4 : -1
+            : page === "network" ? 3 : -1
 
         Row {
             anchors.fill: parent
@@ -848,156 +841,6 @@ Item {
         }
     }
 
-    // ── 历史记录页（I-2：DataLogger 采样查询展示；趋势图控件 V1.1 组态先做）──
-    component HistoryPage: Item {
-        id: historyPageRoot
-        property bool isDark: false
-        property int currentTab: 0          // 0=变量历史 1=报警历史
-        property string selTag: ""          // 当前选中变量
-
-        property var tagRows: []
-        property var alarmRows: []
-        property var tagNamesModel: []
-
-        function refreshTags() {
-            if (selTag === "") { tagRows = []; return }
-            tagRows = dataLogger ? dataLogger.queryTagHistory(selTag, 50) : []   // 最近 50 条（与 CLI alarm history 一致）
-        }
-        function refreshAlarms() {
-            alarmRows = dataLogger ? dataLogger.queryAlarmHistory(50) : []   // 最近 50 条（与 CLI alarm history 一致）
-        }
-        function refresh() {
-            if (currentTab === 0) refreshTags(); else refreshAlarms()
-        }
-
-        // 审查修复：页面可见时重载变量表 + 刷新（C++ setProject 晚于 QML onCompleted——
-        // onCompleted 时 tagNames 恒空；StackLayout 非当前页 visible=false，切入时触发）
-        onVisibleChanged: {
-            if (!visible) return
-            tagNamesModel = dataManager ? dataManager.tagNames() : []
-            if (tagNamesModel.length === 0) { selTag = ""; refresh(); return }
-            // selTag 失效校验（工程重载/变量增减后）：不在新列表 → 重置为第一个
-            if (tagNamesModel.indexOf(selTag) < 0) selTag = tagNamesModel[0]
-            refresh()
-        }
-        onCurrentTabChanged: refresh()
-
-        // ── 页头：两个标签按钮 ──
-        Row {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: 40
-            spacing: 10
-            Repeater {
-                model: ["变量历史", "报警历史"]
-                delegate: Rectangle {
-                    width: 130; height: 34
-                    radius: 6
-                    color: historyPageRoot.currentTab === index
-                           ? (historyPageRoot.isDark ? "#1B5E85" : "#1382B1") : "transparent"
-                    border.color: historyPageRoot.isDark ? "#555" : "#CCC"
-                    border.width: 1
-                    Text {
-                        anchors.centerIn: parent
-                        text: modelData
-                        color: historyPageRoot.currentTab === index ? "white"
-                              : (historyPageRoot.isDark ? "#EEE" : "#333")
-                        font.pixelSize: 14
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: historyPageRoot.currentTab = index
-                    }
-                }
-            }
-        }
-
-        // ── 变量历史区 ──
-        Column {
-            anchors.top: parent.top
-            anchors.topMargin: 50
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            spacing: 8
-            visible: historyPageRoot.currentTab === 0
-
-            // 变量选择行
-            Row {
-                width: parent.width; height: 32
-                spacing: 8
-                Text { text: "变量:"; width: 50; height: 30; verticalAlignment: Text.AlignVCenter
-                       color: historyPageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 13 }
-                ComboBox {
-                    id: tagCombo
-                    width: parent.width - 60; height: 30
-                    model: historyPageRoot.tagNamesModel
-                    currentIndex: {
-                        for (var i = 0; i < historyPageRoot.tagNamesModel.length; i++)
-                            if (historyPageRoot.tagNamesModel[i] === historyPageRoot.selTag) return i
-                        return 0
-                    }
-                    onActivated: {
-                        historyPageRoot.selTag = currentText
-                        historyPageRoot.refreshTags()
-                    }
-                }
-            }
-            // 记录列表
-            ListView {
-                width: parent.width; height: parent.height - 40
-                clip: true
-                model: historyPageRoot.tagRows
-                delegate: Rectangle {
-                    width: parent.width; height: 28
-                    color: index % 2 === 0 ? "transparent" : (historyPageRoot.isDark ? "#123A52" : "#DCEFF7")
-                    Row {
-                        anchors.left: parent.left; anchors.leftMargin: 8
-                        anchors.right: parent.right; anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        Text { text: modelData.ts; width: parent.width * 0.5; color: historyPageRoot.isDark ? "#BBB" : "#555"; font.pixelSize: 12 }
-                        Text { text: modelData.value; width: parent.width * 0.5; color: historyPageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 12 }
-                    }
-                }
-            }
-        }
-
-        // ── 报警历史区 ──
-        ListView {
-            anchors.top: parent.top
-            anchors.topMargin: 50
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            clip: true
-            visible: historyPageRoot.currentTab === 1
-            model: historyPageRoot.alarmRows
-            delegate: Rectangle {
-                width: parent.width; height: 30
-                color: index % 2 === 0 ? "transparent" : (historyPageRoot.isDark ? "#123A52" : "#DCEFF7")
-                Row {
-                    anchors.left: parent.left; anchors.leftMargin: 8
-                    anchors.right: parent.right; anchors.rightMargin: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 4
-                    // 级别色块（0 紧急红 / 1 重要橙 / 2 警告黄 / 3 提示蓝）——审查补级别展示
-                    Rectangle {
-                        width: 6; height: 18; radius: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: modelData.level === 0 ? "#E53935"
-                             : modelData.level === 1 ? "#FB8C00"
-                             : modelData.level === 2 ? "#FDD835"
-                             : "#1E88E5"
-                    }
-                    Text { text: modelData.ts; width: parent.width * 0.26; color: historyPageRoot.isDark ? "#BBB" : "#555"; font.pixelSize: 12 }
-                    Text { text: modelData.tag_name; width: parent.width * 0.2; color: historyPageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 12; elide: Text.ElideRight }
-                    Text { text: modelData.message; width: parent.width * 0.36; color: historyPageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 12; elide: Text.ElideRight }
-                    Text { text: modelData.event; width: parent.width * 0.12; color: historyPageRoot.isDark ? "#9AD" : "#36C"; font.pixelSize: 12 }
-                }
-            }
-        }
-    }
 
     // ── 开关组件 ──
     component ToggleSwitch: Rectangle {

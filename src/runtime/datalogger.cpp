@@ -58,6 +58,34 @@ void DataLogger::setDataManager(DataManager* dm)
     m_dataManager = dm;
 }
 
+bool DataLogger::clearAlarmHistory()
+{
+    // P-5（2026-09-02）：清空报警历史表。语义（用户定稿）：未确认的当前活动报警不清除——
+    // 活动报警集由 AlarmEngine 内存管理（alarmTriggered 也写 TRIGGER 行作历史——审查 🔵 注释口径修正），
+    // 清表不影响内存活动集 →「清除后历史空但活动未确认保留」成立（模式0 列表仍显示活动）。
+    if (!openDb())
+        return false;
+    QSqlQuery q(*m_db);
+    if (!q.exec(QStringLiteral("DELETE FROM alarm_history"))) {
+        qWarning().noquote() << "DataLogger: alarm_history 清空失败" << q.lastError().text();
+        return false;
+    }
+    qInfo().noquote() << "DataLogger: alarm_history 已清空（clear-alarm-history）";
+    return true;
+}
+
+void DataLogger::setDbPath(const QString& path)
+{
+    // P-5（2026-09-02）：FW 单库架构——tag_history/alarm_history 采样与查询共用默认库；
+    // HistoryView dbPath 属性可配（PC 契约），但运行时切库会破坏采样一致性，P-5 首版
+    // 仅接受默认路径（空或 navihmi_history.db），非默认值告警（V1.1 评估多库支持）。
+    const QString norm = path.trimmed();
+    if (norm.isEmpty() || norm == QStringLiteral("navihmi_history.db"))
+        return;
+    qWarning().noquote() << "DataLogger: setDbPath 非默认路径" << path
+                         << "——FW 单库架构暂不支持运行时切库（V1.1 评估），继续使用默认库" << dbPath();
+}
+
 QString DataLogger::dbPath() const
 {
 #if defined(Q_OS_WIN)

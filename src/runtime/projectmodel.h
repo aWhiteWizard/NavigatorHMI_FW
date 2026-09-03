@@ -110,7 +110,11 @@ struct Widget {
     QString lineColor;              // 曲线颜色 CSS
     double lineWidth = 0;           // 曲线粗细（0 = 用默认 1.5）
     int refreshRateMs = 0;          // 刷新率 ms（0 = 用默认 500）
-    // 历史记录 (19, P-5 2026-09-02) 字段 P-5 加
+    // 历史记录 (19, P-5 2026-09-02)
+    QStringList historyTags;         // HistoryView 变量列表（多变量，运行时切换）
+    QString historyDbPath;           // HistoryView 数据库路径（空=设备端默认 navihmi_history.db）
+    // 窗口控件扩展 (P-5)
+    int displayMode = 0;             // WindowWidget AlarmView 显示模式：0=当前报警 1=报警缓冲区（DisplayMode 权威）
 };
 
 struct Screen {

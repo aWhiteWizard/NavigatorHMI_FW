@@ -32,9 +32,16 @@ public:
     void recordAlarmEvent(const QString& ruleName, const QString& tagName, int level,
                           const QString& message, const QString& event);
 
-    // ── 查询接口（趋势图预留 / AlarmView 历史）──
-    Q_INVOKABLE QVariantList queryTagHistory(const QString& tagName, int limit = 100);   // 默认 100 条（历史页/CLI 传 50 覆盖）
-    Q_INVOKABLE QVariantList queryAlarmHistory(int limit = 100);   // 默认 100 条（同上）
+    // ── 查询接口（趋势图预留 / AlarmView 缓冲 / HistoryView）──
+    Q_INVOKABLE QVariantList queryTagHistory(const QString& tagName, int limit = 100);   // 默认 100（HistoryView 传 200；CLI tag history 传 50）
+    Q_INVOKABLE QVariantList queryAlarmHistory(int limit = 100);   // 默认 100（AlarmView 缓冲传 200；CLI alarm history 传 50）
+
+    /// P-5（2026-09-02）：清空报警历史（未确认的当前活动报警不清除——活动集由 AlarmEngine 内存管理，清表不影响）。
+    /// 返回 true=清空成功；false=数据库未就绪/删除失败（调用方不得无条件报成功——防假成功，审查 🟡）。
+    Q_INVOKABLE bool clearAlarmHistory();
+
+    /// P-5（2026-09-02）：设置数据库路径（空/默认=保持默认库——FW 单库架构恒用默认 navihmi_history.db；非默认仅告警不切库，审查 🔵-3）
+    Q_INVOKABLE void setDbPath(const QString& path);
 
     /// 数据库路径（调试/日志）
     Q_INVOKABLE QString dbPath() const;

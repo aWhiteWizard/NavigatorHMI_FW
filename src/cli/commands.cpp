@@ -166,7 +166,7 @@ QString CommandService::cmdTag(const QStringList& args)
 QString CommandService::cmdAlarm(const QStringList& args)
 {
     if (!m_ae) return QStringLiteral("ERROR: 报警引擎未初始化");
-    if (args.isEmpty()) return QStringLiteral("用法: alarm list | ack <id> | history");
+    if (args.isEmpty()) return QStringLiteral("用法: alarm list | ack <id> | history | clear");
 
     const QString sub = args[0].toLower();
     if (sub == QLatin1String("list")) {
@@ -198,7 +198,7 @@ QString CommandService::cmdAlarm(const QStringList& args)
     }
     if (sub == QLatin1String("history")) {
         if (!m_dl) return QStringLiteral("ERROR: 数据记录未初始化");
-        const QVariantList rows = m_dl->queryAlarmHistory(50);   // 最近 50 条（与历史页 nav.qml 一致，2026-08-26 注释对齐）
+        const QVariantList rows = m_dl->queryAlarmHistory(50);   // 最近 50 条（AlarmView 缓冲模式传 200——CLI 精简 50，审查 🔵-1 锚点更新）
         if (rows.isEmpty()) return QStringLiteral("报警历史为空");
         QString out = QStringLiteral("报警历史 (最近 %1):").arg(rows.size());
         for (const QVariant& r : rows) {
@@ -210,7 +210,16 @@ QString CommandService::cmdAlarm(const QStringList& args)
         }
         return out;
     }
-    return QStringLiteral("用法: alarm list | ack <id> | history");
+    if (sub == QLatin1String("clear")) {
+        // P-5（2026-09-02）：清空报警历史（未确认的当前活动报警不清除——活动集由 AlarmEngine 内存管理）
+        if (!m_dl) return QStringLiteral("ERROR: 数据记录未初始化");
+        if (!isAdmin(m_clientUid)) return QStringLiteral("ERROR: 权限不足（清除报警历史需 root）");
+        // 返回 bool——失败不得报成功（审查 🟡 防假成功，同文件 alarm ack 先例）
+        if (!m_dl->clearAlarmHistory())
+            return QStringLiteral("ERROR: 报警历史清除失败（数据库未就绪或删除出错）");
+        return QStringLiteral("✓ 报警历史已清除（活动报警未确认项保留）");
+    }
+    return QStringLiteral("用法: alarm list | ack <id> | history | clear");
 }
 
 // ── system ────────────────────────────────────────────────
@@ -310,7 +319,7 @@ QString CommandService::helpText() const
         "NavigatorHMI FW 命令（root 全权 / 非 root 只读）\n"
         "  screen list | current | switch <name>   画面\n"
         "  tag list | read <name> | write <name> <value>   变量\n"
-        "  alarm list | ack <id> | history   报警\n"
+        "  alarm list | ack <id> | history | clear   报警\n"
         "  system info | reboot confirm   设备信息/重启\n"
         "  device info [-j]   设备信息（型号/尺寸/ID/固件版本，-j=JSON）\n"
         "  vnc on | off   VNC 运行时启停（端口见 /etc/navigatorhmi/fw-config.json）\n"

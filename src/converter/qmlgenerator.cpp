@@ -40,11 +40,7 @@ bool widgetQmlType(WidgetType t, QString& out)
     case WidgetType::Window: out = "HmiWindow"; return true;
     case WidgetType::Polygon: out = "HmiPolygon"; return true;
     case WidgetType::TrendChart: out = "HmiTrendChart"; return true;   // P-4
-    case WidgetType::HistoryView:
-        // P-5 预留：枚举/模型/解析已到位，但 HmiHistoryView.qml 组件未实现（P-5 落地）——
-        // 组件就位前显式跳过（qWarning），防生成 QML 引用不存在类型致整画面加载失败（审查 🟡；比 F8 跳过单控件更安全）
-        qWarning("qmlgenerator: HistoryView 控件组件未实现（P-5）——跳过该控件 QML 生成");
-        return false;
+    case WidgetType::HistoryView: out = "HmiHistoryView"; return true;   // P-5（组件已实现 2026-09-02）
     default:
         qWarning("qmlgenerator: 未知控件类型 %d —— 跳过该控件 QML 生成", static_cast<int>(t));
         return false;
@@ -206,6 +202,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
     // Window 专属属性（仅 W_WINDOW 类型输出, 避免其他组件收到无关属性）
     if (w.type == WidgetType::Window) {
         appendProp(out, "windowType", int(w.windowType));
+        appendProp(out, "displayMode", w.displayMode);   // P-5：AlarmView 显示模式（0=当前 1=缓冲）
         appendProp(out, "winTitle", w.winTitle);
         appendProp(out, "showTitleBar", w.showTitleBar);
         appendProp(out, "showHistory", w.showHistory);
@@ -253,6 +250,18 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
         appendProp(out, "lineColor", w.lineColor);
         if (w.lineWidth > 0) appendProp(out, "lineWidth", w.lineWidth);
         if (w.refreshRateMs > 0) appendProp(out, "refreshRateMs", w.refreshRateMs);
+    }
+    // P-5 历史记录属性（仅 W_HISTORY_VIEW 类型输出）
+    if (w.type == WidgetType::HistoryView) {
+        if (!w.historyTags.isEmpty()) {
+            out << "    historyTags: [";
+            for (int i = 0; i < w.historyTags.size(); ++i) {
+                if (i) out << ", ";
+                out << "\"" << qmlEsc(w.historyTags[i]) << "\"";
+            }
+            out << "]\n";
+        }
+        appendProp(out, "historyDbPath", w.historyDbPath);
     }
 
     // 事件占位：onClick 等 → 信号处理器（联动 ActionRunner 后续循环接入）

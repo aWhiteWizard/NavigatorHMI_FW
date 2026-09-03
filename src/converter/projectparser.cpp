@@ -184,6 +184,11 @@ bool mapWidget(const pb::Widget& p, Widget& w)
     w.lineColor = s(p.line_color());
     w.lineWidth = p.line_width();
     w.refreshRateMs = p.refresh_rate_ms();
+    // P-5 历史记录字段（73-74）+ Window DisplayMode（54）
+    for (const auto& tag : p.history_tags())
+        w.historyTags.append(s(tag));
+    w.historyDbPath = s(p.history_db_path());
+    w.displayMode = p.display_mode();
     // 事件（未知事件类型 → 跳过该事件；未知动作类型 → 跳过该动作——不静默回退默认）
     for (const auto& pe : p.events()) {
         WidgetEvent we;

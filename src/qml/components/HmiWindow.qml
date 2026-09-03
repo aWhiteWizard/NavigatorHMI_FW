@@ -19,6 +19,7 @@ Rectangle {
     property string textDecoration: "None"
     property string boundTag: ""
     property int windowType: 0
+    property int displayMode: 0   // P-5：AlarmView 显示模式（0=当前报警 1=报警缓冲区；DisplayMode 权威）
     property string winTitle: ""
     property bool showTitleBar: true
     property bool showHistory: false
@@ -291,9 +292,11 @@ Rectangle {
             }
         }
 
-        // ══════════ AlarmView (1): 活动报警列表（G-1b 重写——变量阈值驱动模拟源）══════════
+        // ══════════ AlarmView (1): 活动报警列表（G-1b 重写——变量阈值驱动模拟源）
+        // P-5 双模式（2026-09-02, DisplayMode 权威）：displayMode=0 当前报警（下方 header/list/ackBar）；
+        // displayMode=1 报警缓冲区（历史模式容器——queryAlarmHistory 滚动 + 清除，未确认活动不清除）
         Item {
-            visible: root.windowType === 1
+            visible: root.windowType === 1 && root.displayMode === 0   // P-5：当前报警模式
             anchors.fill: parent
             clip: true
 
@@ -476,6 +479,123 @@ Rectangle {
                         }
                     }
                 }
+            }
+        }
+
+        // P-5 报警缓冲区模式（displayMode=1）：queryAlarmHistory 全部历史滚动 + 清除按钮（未确认活动不清除）
+        Item {
+            id: alarmHistRoot   // P-5 复审 🟡：显式 id 供后代 handler 调用 refreshHistory（仓库 robotListRoot.refreshCards 先例）
+            visible: root.windowType === 1 && root.displayMode === 1
+            anchors.fill: parent
+            clip: true
+
+            // 表头（时间/级别/内容 + 清除按钮）
+            Rectangle {
+                id: histHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 20
+                color: "#ECEFF1"
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "报警历史（缓冲区）"
+                    font.pixelSize: 10
+                    color: "#666666"
+                    font.bold: true
+                }
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 3
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 44; height: 15
+                    radius: 2
+                    color: "#C62828"
+                    // P-5 审查 🟡-2：GUI 清除门控与 CLI root 对等（fail-closed——userSystem && canManage，L138 先例逐字一致）
+                    visible: userSystem && userSystem.canManage
+                    Text {
+                        anchors.centerIn: parent
+                        text: "清除"
+                        color: "white"
+                        font.pixelSize: 8
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            // 审查 🟡：clearAlarmHistory 返回 bool——失败不置空 model（防假成功）；不发 hmiAck（
+                            // OnAck 语义=确认报警，清除是本地 DB 操作，复用会误触发已配置确认类动作且带残留 payload）
+                            if (dataLogger && dataLogger.clearAlarmHistory())
+                                alarmHistRoot.refreshHistory()
+                        }
+                    }
+                }
+            }
+
+            // 历史列表刷新（审查 🟡-1 修正：子项 onVisibleChanged 不随父容器显隐触发——接受「进入即查 + 清除后重查」
+            // 语义，由 Component.onCompleted 与清除按钮调用；画面每次进入经 Loader 重建 → onCompleted 即刷新）
+            function refreshHistory() {
+                if (dataLogger) histList.model = dataLogger.queryAlarmHistory(200)
+            }
+
+            // 历史滚动列表
+            ListView {
+                id: histList
+                anchors.top: histHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                clip: true
+                delegate: Rectangle {
+                    width: histList.width
+                    height: 17
+                    color: index % 2 === 0 ? "#FFFFFF" : "#F5F5F5"
+                    border.color: "#DDDDDD"
+                    border.width: 1
+                    property var histData: modelData
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 3
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: histData.ts
+                        font.pixelSize: 9
+                        color: "#444444"
+                        width: 96
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 104
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 10
+                        radius: 2
+                        color: Number(histData.level) === 0 ? "#D32F2F"
+                             : Number(histData.level) === 1 ? "#F57C00"
+                             : Number(histData.level) === 2 ? "#F9A825"
+                             : "#1976D2"
+                    }
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 128
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: histData.message
+                        font.pixelSize: 9
+                        color: "#333333"
+                        elide: Text.ElideRight
+                        width: parent.width - 140
+                    }
+                }
+                // 空态（审查 🔵 补）
+                Text {
+                    anchors.centerIn: parent
+                    text: "暂无报警历史"
+                    font.pixelSize: 11
+                    color: "#999999"
+                    visible: histList.model === undefined || histList.model.length === 0
+                }
+                // 构造加载一次（db 此时已由 DataLogger.setProject 打开）
+                Component.onCompleted: alarmHistRoot.refreshHistory()
             }
         }
 
