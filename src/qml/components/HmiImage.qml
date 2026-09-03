@@ -32,12 +32,26 @@ Image {
     property int currentIndex: 0
 
     // D-B2: 当前实际显示的图片路径——绑列表 → items[索引]；否则 imagePath（静态）
+    // O-A3 修复（2026-09）：本地绝对路径需 file:// 前缀（QML Image source 裸 /mnt/... 会被当 qrc 资源
+    // → Cannot open 白图——对齐 main.qml/HmiWorldMap 先例 file:// + path）
     property string currentImagePath: {
+        var p = ""
         if (root.items.length > 0) {
             var i = Math.max(0, Math.min(root.currentIndex, root.items.length - 1))
-            return root.items[i]
+            p = root.items[i]
+        } else {
+            p = root.imagePath
         }
-        return root.imagePath
+        return root.toFileUrl(p)
+    }
+
+    // 本地绝对文件路径 → file:// URL；空/已带前缀/qrc 资源原样返回（QQuickImage 需显式 file:// 加载本地文件）
+    function toFileUrl(p) {
+        if (p === undefined || p === null || p === "") return p
+        if (p.indexOf("file://") === 0 || p.indexOf("qrc:/") === 0 || p.indexOf("http://") === 0 || p.indexOf("https://") === 0)
+            return p
+        if (p.charAt(0) === "/") return "file://" + p
+        return p
     }
 
     // D-B2: 索引钳制入口（变量回写/初始化共用，对齐 HmiTextList.setIndex）
@@ -184,7 +198,7 @@ Image {
                 Image {
                     anchors.fill: parent
                     anchors.margins: 3
-                    source: modelData
+                    source: root.toFileUrl(modelData)   // O-A3 修复：绝对路径加 file://（裸路径被当 qrc → 白图）
                     fillMode: Image.PreserveAspectFit
                 }
                 MouseArea {
