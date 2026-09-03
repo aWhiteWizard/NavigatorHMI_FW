@@ -50,6 +50,8 @@ bool mapWidgetType(pb::WidgetType t, WidgetType& out)
     case pb::W_DATETIME: out = WidgetType::DateTime; return true;
     case pb::W_WINDOW: out = WidgetType::Window; return true;
     case pb::W_POLYGON: out = WidgetType::Polygon; return true;
+    case pb::W_TREND_CHART: out = WidgetType::TrendChart; return true;   // P-4
+    case pb::W_HISTORY_VIEW: out = WidgetType::HistoryView; return true;   // P-5（枚举一次到位）
     default:
         qWarning("projectparser: 未知控件类型 %d —— 跳过该控件（旧 FW 读新工程产物？）", static_cast<int>(t));
         return false;
@@ -173,6 +175,15 @@ bool mapWidget(const pb::Widget& p, Widget& w)
     for (const auto& pt : p.points()) {
         w.points.append(QPointF(pt.x(), pt.y()));
     }
+    // P-4 趋势图字段（65-72）
+    w.trendMode = p.trend_mode();
+    w.trendTagA = s(p.trend_tag_a());
+    w.trendTagB = s(p.trend_tag_b());
+    w.sampleIntervalMs = p.sample_interval_ms();
+    w.timeWindowSeconds = p.time_window_seconds();
+    w.lineColor = s(p.line_color());
+    w.lineWidth = p.line_width();
+    w.refreshRateMs = p.refresh_rate_ms();
     // 事件（未知事件类型 → 跳过该事件；未知动作类型 → 跳过该动作——不静默回退默认）
     for (const auto& pe : p.events()) {
         WidgetEvent we;

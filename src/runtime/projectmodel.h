@@ -26,7 +26,9 @@ enum class WidgetType {
     Button = 0, Text = 1, Label = 2, Rectangle = 3, Image = 4, NumericDisplay = 5,
     Switch = 6, Line = 7, Circle = 8, Ellipse = 9, IoField = 10,
     CheckBox = 11, TextList = 12, Frame = 13, ProgressBar = 14,
-    DateTime = 15, Window = 16, Polygon = 17
+    DateTime = 15, Window = 16, Polygon = 17,
+    TrendChart = 18,   // P-4：趋势图（2026-09-02）
+    HistoryView = 19   // P-5：历史记录（2026-09-02，枚举一次到位）
 };
 enum class EventType {
     OnClick = 0, OnPress = 1, OnRelease = 2, OnValueChange = 3,
@@ -100,6 +102,15 @@ struct Widget {
     QList<QHash<QString, QString>> robotSlots;   // 每项: id/status/location/detail/oper
     // 多边形 (17)
     QList<QPointF> points;                       // 顶点画面坐标
+    // 趋势图 (18, P-4 2026-09-02)
+    int trendMode = 0;              // 0=时间-数据 1=变量A-B
+    QString trendTagA, trendTagB;
+    int sampleIntervalMs = 0;       // 采样间隔 ms（0 = 用默认 1000）
+    int timeWindowSeconds = 0;      // 时间窗 s（0 = 用默认 60）
+    QString lineColor;              // 曲线颜色 CSS
+    double lineWidth = 0;           // 曲线粗细（0 = 用默认 1.5）
+    int refreshRateMs = 0;          // 刷新率 ms（0 = 用默认 500）
+    // 历史记录 (19, P-5 2026-09-02) 字段 P-5 加
 };
 
 struct Screen {

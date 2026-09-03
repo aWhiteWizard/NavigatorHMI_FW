@@ -180,14 +180,32 @@ void DataLogger::cleanup()
     delOld.addBindValue(cutoff);
     if (!delOld.exec())
         qWarning().noquote() << "DataLogger: alarm_history 过期清理失败" << delOld.lastError().text();
-    QSqlQuery cap(*m_db);
-    if (!cap.exec(QStringLiteral("DELETE FROM tag_history WHERE id NOT IN"
-                            " (SELECT id FROM tag_history ORDER BY id DESC LIMIT 500000)")))
-        qWarning().noquote() << "DataLogger: tag_history 条数上限清理失败" << cap.lastError().text();
-    if (!cap.exec(QStringLiteral("DELETE FROM alarm_history WHERE id NOT IN"
-                            " (SELECT id FROM alarm_history ORDER BY id DESC LIMIT 500000)")))
-        qWarning().noquote() << "DataLogger: alarm_history 条数上限清理失败" << cap.lastError().text();
-    qInfo().noquote() << "DataLogger: 保留策略清理完成（7 天 / 50 万条）";
+    // P-4d（2026-09-02）F6：NOT IN 反连接 50 万条卡 → id<=MAX 窗删（v1.1-design §5.3 F6 配套——
+    // NOT IN 在 50 万行反连接全表扫描极慢；id<=MAX 走索引一次范围删）
+    // P-4d（2026-09-02）F6：NOT IN 反连接 50 万条卡 → id<=MAX 窗删（v1.1-design §5.3 F6 配套——
+    // NOT IN 在 50 万行反连接全表扫描极慢；id<=MAX 走 rowid 索引一次范围删。
+    // 语义近似：由「精确保留最新 50 万行」变为「id 窗保留」（id/ts 顺序极端背离如时钟回拨时可能少删/误删，
+    // 与「7 天或 50 万条先到」保留策略近似一致——审查 🔵 标注）。每表独立查询实例防同连接多语句纠缠（审查 🔵）。
+    auto capByWindow = [this](const QString& table) {
+        QSqlQuery maxQ(*m_db);
+        if (!maxQ.exec(QStringLiteral("SELECT MAX(id) FROM ") + table)) {
+            qWarning().noquote() << "DataLogger:" << table << "MAX(id) 查询失败" << maxQ.lastError().text();
+            return;
+        }
+        if (!maxQ.next()) return;
+        const qint64 maxId = maxQ.value(0).toLongLong();
+        const qint64 keepFrom = maxId - 500000 + 1;   // 保留最新 50 万条（keepFrom<=1 表示未超限）
+        if (maxId > 0 && keepFrom > 1) {
+            QSqlQuery delQ(*m_db);
+            delQ.prepare(QStringLiteral("DELETE FROM ") + table + QStringLiteral(" WHERE id < ?"));
+            delQ.addBindValue(keepFrom);
+            if (!delQ.exec())
+                qWarning().noquote() << "DataLogger:" << table << "条数上限清理失败" << delQ.lastError().text();
+        }
+    };
+    capByWindow(QStringLiteral("tag_history"));
+    capByWindow(QStringLiteral("alarm_history"));
+    qInfo().noquote() << "DataLogger: 保留策略清理完成（7 天 / 50 万条, id<=MAX 窗删）";
 }
 
 QVariantList DataLogger::queryTagHistory(const QString& tagName, int limit)

@@ -39,6 +39,12 @@ bool widgetQmlType(WidgetType t, QString& out)
     case WidgetType::DateTime: out = "HmiDateTime"; return true;
     case WidgetType::Window: out = "HmiWindow"; return true;
     case WidgetType::Polygon: out = "HmiPolygon"; return true;
+    case WidgetType::TrendChart: out = "HmiTrendChart"; return true;   // P-4
+    case WidgetType::HistoryView:
+        // P-5 预留：枚举/模型/解析已到位，但 HmiHistoryView.qml 组件未实现（P-5 落地）——
+        // 组件就位前显式跳过（qWarning），防生成 QML 引用不存在类型致整画面加载失败（审查 🟡；比 F8 跳过单控件更安全）
+        qWarning("qmlgenerator: HistoryView 控件组件未实现（P-5）——跳过该控件 QML 生成");
+        return false;
     default:
         qWarning("qmlgenerator: 未知控件类型 %d —— 跳过该控件 QML 生成", static_cast<int>(t));
         return false;
@@ -236,6 +242,17 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
                 << ", y: " << QString::number(w.points[i].y(), 'f', 2) << " }";
         }
         out << "]\n";
+    }
+    // P-4 趋势图属性（仅 W_TREND_CHART 类型输出）
+    if (w.type == WidgetType::TrendChart) {
+        appendProp(out, "trendMode", w.trendMode);
+        appendProp(out, "trendTagA", w.trendTagA);
+        appendProp(out, "trendTagB", w.trendTagB);
+        if (w.sampleIntervalMs > 0) appendProp(out, "sampleIntervalMs", w.sampleIntervalMs);
+        if (w.timeWindowSeconds > 0) appendProp(out, "timeWindowSeconds", w.timeWindowSeconds);
+        appendProp(out, "lineColor", w.lineColor);
+        if (w.lineWidth > 0) appendProp(out, "lineWidth", w.lineWidth);
+        if (w.refreshRateMs > 0) appendProp(out, "refreshRateMs", w.refreshRateMs);
     }
 
     // 事件占位：onClick 等 → 信号处理器（联动 ActionRunner 后续循环接入）
