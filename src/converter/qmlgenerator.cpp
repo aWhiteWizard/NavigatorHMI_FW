@@ -8,35 +8,40 @@
 #include <QStringList>
 #include <QRegularExpression>
 #include <QFileInfo>
+#include <QDebug>
 #include <cmath>
 
 namespace navihmi {
 
 namespace {
 
-// 控件类型 → QML 组件名（映射表，B4-5）
-QString widgetQmlType(WidgetType t)
+// P-2c（2026-09-02）：控件类型 → QML 组件名——default 不再静默回退 HmiRectangle（错读比跳过危险）。
+// 正常管线经 P-2b 解析过滤（未知控件不进模型），此处 default 为防御残留（防未来绕过 parser 直构模型）；
+// 未知 → 返回 false + qWarning 告警，调用方跳过该控件（不生成其 QML）。与 F1 解析端策略一致（v1.1-design §5.3 F8）。
+bool widgetQmlType(WidgetType t, QString& out)
 {
     switch (t) {
-    case WidgetType::Button: return "HmiButton";
-    case WidgetType::Text: return "HmiText";
-    case WidgetType::Label: return "HmiLabel";
-    case WidgetType::Rectangle: return "HmiRectangle";
-    case WidgetType::Image: return "HmiImage";
-    case WidgetType::NumericDisplay: return "HmiNumericDisplay";
-    case WidgetType::Switch: return "HmiSwitch";
-    case WidgetType::Line: return "HmiLine";
-    case WidgetType::Circle: return "HmiCircle";
-    case WidgetType::Ellipse: return "HmiEllipse";
-    case WidgetType::IoField: return "HmiIoField";
-    case WidgetType::CheckBox: return "HmiCheckBox";
-    case WidgetType::TextList: return "HmiTextList";
-    case WidgetType::Frame: return "HmiFrame";
-    case WidgetType::ProgressBar: return "HmiProgressBar";
-    case WidgetType::DateTime: return "HmiDateTime";
-    case WidgetType::Window: return "HmiWindow";
-    case WidgetType::Polygon: return "HmiPolygon";
-    default: return "HmiRectangle";
+    case WidgetType::Button: out = "HmiButton"; return true;
+    case WidgetType::Text: out = "HmiText"; return true;
+    case WidgetType::Label: out = "HmiLabel"; return true;
+    case WidgetType::Rectangle: out = "HmiRectangle"; return true;
+    case WidgetType::Image: out = "HmiImage"; return true;
+    case WidgetType::NumericDisplay: out = "HmiNumericDisplay"; return true;
+    case WidgetType::Switch: out = "HmiSwitch"; return true;
+    case WidgetType::Line: out = "HmiLine"; return true;
+    case WidgetType::Circle: out = "HmiCircle"; return true;
+    case WidgetType::Ellipse: out = "HmiEllipse"; return true;
+    case WidgetType::IoField: out = "HmiIoField"; return true;
+    case WidgetType::CheckBox: out = "HmiCheckBox"; return true;
+    case WidgetType::TextList: out = "HmiTextList"; return true;
+    case WidgetType::Frame: out = "HmiFrame"; return true;
+    case WidgetType::ProgressBar: out = "HmiProgressBar"; return true;
+    case WidgetType::DateTime: out = "HmiDateTime"; return true;
+    case WidgetType::Window: out = "HmiWindow"; return true;
+    case WidgetType::Polygon: out = "HmiPolygon"; return true;
+    default:
+        qWarning("qmlgenerator: 未知控件类型 %d —— 跳过该控件 QML 生成", static_cast<int>(t));
+        return false;
     }
 }
 
@@ -96,7 +101,9 @@ void appendProp(QTextStream& out, const QString& name, bool val)
 void generateWidget(QTextStream& out, const Widget& w, const Project& proj, const QString& screenName,
                     const QString& resourceRoot = QString())
 {
-    const QString type = widgetQmlType(w.type);
+    QString type;
+    if (!widgetQmlType(w.type, type))
+        return;   // P-2c：未知控件类型 → 跳过该控件（不生成 QML；qWarning 已打——与 F1 解析端一致）
     out << "    " << type << " {\n";
     out << "        objectName: \"" << qmlEsc(w.objectName) << "\"\n";
     appendProp(out, "x", w.x);
