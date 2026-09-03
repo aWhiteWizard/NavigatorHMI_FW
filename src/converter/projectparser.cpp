@@ -17,6 +17,7 @@
 #include <QFile>
 #include <QDateTime>
 #include <QHash>
+#include <QDebug>
 
 namespace navihmi {
 namespace pb = ::navihmi_pb;
@@ -25,88 +26,100 @@ namespace {
 
 QString s(const std::string& v) { return QString::fromUtf8(v.data(), int(v.size())); }
 
-WidgetType mapWidgetType(pb::WidgetType t)
+// P-2b（2026-09-02）：控件/事件/动作类型映射——default 不再静默回退（错读比跳过危险）。
+// 未知类型（旧 FW 读新 PC 产物含 18/19 等）→ 返回 false + qWarning 告警，调用方跳过该控件/事件/动作，
+// 工程其余部分正常加载（不因单坏控件拒整个工程；「拒绝整个工程」模式留 V1.1 降级策略可配化——v1.1-design §5.3 F1 P1）。
+bool mapWidgetType(pb::WidgetType t, WidgetType& out)
 {
     switch (t) {
-    case pb::W_BUTTON: return WidgetType::Button;
-    case pb::W_TEXT: return WidgetType::Text;
-    case pb::W_LABEL: return WidgetType::Label;
-    case pb::W_RECTANGLE: return WidgetType::Rectangle;
-    case pb::W_IMAGE: return WidgetType::Image;
-    case pb::W_NUMERIC_DISPLAY: return WidgetType::NumericDisplay;
-    case pb::W_SWITCH: return WidgetType::Switch;
-    case pb::W_LINE: return WidgetType::Line;
-    case pb::W_CIRCLE: return WidgetType::Circle;
-    case pb::W_ELLIPSE: return WidgetType::Ellipse;
-    case pb::W_IO_FIELD: return WidgetType::IoField;
-    case pb::W_CHECKBOX: return WidgetType::CheckBox;
-    case pb::W_TEXT_LIST: return WidgetType::TextList;
-    case pb::W_FRAME: return WidgetType::Frame;
-    case pb::W_PROGRESS_BAR: return WidgetType::ProgressBar;
-    case pb::W_DATETIME: return WidgetType::DateTime;
-    case pb::W_WINDOW: return WidgetType::Window;
-    case pb::W_POLYGON: return WidgetType::Polygon;
-    default: return WidgetType::Rectangle;
+    case pb::W_BUTTON: out = WidgetType::Button; return true;
+    case pb::W_TEXT: out = WidgetType::Text; return true;
+    case pb::W_LABEL: out = WidgetType::Label; return true;
+    case pb::W_RECTANGLE: out = WidgetType::Rectangle; return true;
+    case pb::W_IMAGE: out = WidgetType::Image; return true;
+    case pb::W_NUMERIC_DISPLAY: out = WidgetType::NumericDisplay; return true;
+    case pb::W_SWITCH: out = WidgetType::Switch; return true;
+    case pb::W_LINE: out = WidgetType::Line; return true;
+    case pb::W_CIRCLE: out = WidgetType::Circle; return true;
+    case pb::W_ELLIPSE: out = WidgetType::Ellipse; return true;
+    case pb::W_IO_FIELD: out = WidgetType::IoField; return true;
+    case pb::W_CHECKBOX: out = WidgetType::CheckBox; return true;
+    case pb::W_TEXT_LIST: out = WidgetType::TextList; return true;
+    case pb::W_FRAME: out = WidgetType::Frame; return true;
+    case pb::W_PROGRESS_BAR: out = WidgetType::ProgressBar; return true;
+    case pb::W_DATETIME: out = WidgetType::DateTime; return true;
+    case pb::W_WINDOW: out = WidgetType::Window; return true;
+    case pb::W_POLYGON: out = WidgetType::Polygon; return true;
+    default:
+        qWarning("projectparser: 未知控件类型 %d —— 跳过该控件（旧 FW 读新工程产物？）", static_cast<int>(t));
+        return false;
     }
 }
 
-EventType mapEventType(pb::EventType t)
+bool mapEventType(pb::EventType t, EventType& out)
 {
     switch (t) {
-    case pb::EV_ON_CLICK: return EventType::OnClick;
-    case pb::EV_ON_PRESS: return EventType::OnPress;
-    case pb::EV_ON_RELEASE: return EventType::OnRelease;
-    case pb::EV_ON_VALUE_CHANGE: return EventType::OnValueChange;
-    case pb::EV_ON_ALARM_TRIGGER: return EventType::OnAlarmTrigger;
-    case pb::EV_ON_ALARM_ACK: return EventType::OnAlarmAck;
-    case pb::EV_ON_ALARM_CLEAR: return EventType::OnAlarmClear;
-    case pb::EV_ON_SCREEN_LOAD: return EventType::OnScreenLoad;
-    case pb::EV_ON_SCREEN_UNLOAD: return EventType::OnScreenUnload;
-    case pb::EV_ON_TIMER: return EventType::OnTimer;
-    case pb::EV_ON_SYSTEM_START: return EventType::OnSystemStart;
-    case pb::EV_ON_SYSTEM_SHUTDOWN: return EventType::OnSystemShutdown;
-    case pb::EV_ON_INPUT: return EventType::OnInput;
-    case pb::EV_ON_ON: return EventType::OnOn;
-    case pb::EV_ON_OFF: return EventType::OnOff;
-    case pb::EV_ON_PROGRESS_COMPLETE: return EventType::OnProgressComplete;
-    case pb::EV_ON_USER_CHANGED: return EventType::OnUserChanged;
-    case pb::EV_ON_ACK: return EventType::OnAck;
-    case pb::EV_ON_SELECT: return EventType::OnSelect;
-    default: return EventType::OnClick;
+    case pb::EV_ON_CLICK: out = EventType::OnClick; return true;
+    case pb::EV_ON_PRESS: out = EventType::OnPress; return true;
+    case pb::EV_ON_RELEASE: out = EventType::OnRelease; return true;
+    case pb::EV_ON_VALUE_CHANGE: out = EventType::OnValueChange; return true;
+    case pb::EV_ON_ALARM_TRIGGER: out = EventType::OnAlarmTrigger; return true;
+    case pb::EV_ON_ALARM_ACK: out = EventType::OnAlarmAck; return true;
+    case pb::EV_ON_ALARM_CLEAR: out = EventType::OnAlarmClear; return true;
+    case pb::EV_ON_SCREEN_LOAD: out = EventType::OnScreenLoad; return true;
+    case pb::EV_ON_SCREEN_UNLOAD: out = EventType::OnScreenUnload; return true;
+    case pb::EV_ON_TIMER: out = EventType::OnTimer; return true;
+    case pb::EV_ON_SYSTEM_START: out = EventType::OnSystemStart; return true;
+    case pb::EV_ON_SYSTEM_SHUTDOWN: out = EventType::OnSystemShutdown; return true;
+    case pb::EV_ON_INPUT: out = EventType::OnInput; return true;
+    case pb::EV_ON_ON: out = EventType::OnOn; return true;
+    case pb::EV_ON_OFF: out = EventType::OnOff; return true;
+    case pb::EV_ON_PROGRESS_COMPLETE: out = EventType::OnProgressComplete; return true;
+    case pb::EV_ON_USER_CHANGED: out = EventType::OnUserChanged; return true;
+    case pb::EV_ON_ACK: out = EventType::OnAck; return true;
+    case pb::EV_ON_SELECT: out = EventType::OnSelect; return true;
+    default:
+        qWarning("projectparser: 未知事件类型 %d —— 跳过该事件", static_cast<int>(t));
+        return false;
     }
 }
 
-ActionType mapActionType(pb::ActionType t)
+bool mapActionType(pb::ActionType t, ActionType& out)
 {
     switch (t) {
-    case pb::ACT_TAG_WRITE: return ActionType::TagWrite;
-    case pb::ACT_SCREEN_SWITCH: return ActionType::ScreenSwitch;
-    case pb::ACT_SET_PROPERTY: return ActionType::SetProperty;
-    case pb::ACT_RUN_COMMAND: return ActionType::RunCommand;
-    case pb::ACT_SHOW_POPUP: return ActionType::ShowPopup;
-    case pb::ACT_SEND_NOTIFICATION: return ActionType::SendNotification;
-    case pb::ACT_SCREEN_PREV: return ActionType::ScreenPrev;
-    case pb::ACT_SCREEN_NEXT: return ActionType::ScreenNext;
-    case pb::ACT_TAG_ADD: return ActionType::TagAdd;
-    case pb::ACT_TAG_SUBTRACT: return ActionType::TagSubtract;
-    case pb::ACT_TAG_TOGGLE: return ActionType::TagToggle;
-    case pb::ACT_SET_BIT: return ActionType::SetBit;
-    case pb::ACT_RESET_BIT: return ActionType::ResetBit;
-    case pb::ACT_SET_DATETIME: return ActionType::SetDatetime;
-    case pb::ACT_GET_DATETIME: return ActionType::GetDatetime;
-    case pb::ACT_ACKNOWLEDGE_ALARM: return ActionType::AcknowledgeAlarm;
-    case pb::ACT_SET_SYSTEM_TIME: return ActionType::SetSystemTime;
-    case pb::ACT_STOP_RUNTIME: return ActionType::StopRuntime;
-    default: return ActionType::TagWrite;
+    case pb::ACT_TAG_WRITE: out = ActionType::TagWrite; return true;
+    case pb::ACT_SCREEN_SWITCH: out = ActionType::ScreenSwitch; return true;
+    case pb::ACT_SET_PROPERTY: out = ActionType::SetProperty; return true;
+    case pb::ACT_RUN_COMMAND: out = ActionType::RunCommand; return true;
+    case pb::ACT_SHOW_POPUP: out = ActionType::ShowPopup; return true;
+    case pb::ACT_SEND_NOTIFICATION: out = ActionType::SendNotification; return true;
+    case pb::ACT_SCREEN_PREV: out = ActionType::ScreenPrev; return true;
+    case pb::ACT_SCREEN_NEXT: out = ActionType::ScreenNext; return true;
+    case pb::ACT_TAG_ADD: out = ActionType::TagAdd; return true;
+    case pb::ACT_TAG_SUBTRACT: out = ActionType::TagSubtract; return true;
+    case pb::ACT_TAG_TOGGLE: out = ActionType::TagToggle; return true;
+    case pb::ACT_SET_BIT: out = ActionType::SetBit; return true;
+    case pb::ACT_RESET_BIT: out = ActionType::ResetBit; return true;
+    case pb::ACT_SET_DATETIME: out = ActionType::SetDatetime; return true;
+    case pb::ACT_GET_DATETIME: out = ActionType::GetDatetime; return true;
+    case pb::ACT_ACKNOWLEDGE_ALARM: out = ActionType::AcknowledgeAlarm; return true;
+    case pb::ACT_SET_SYSTEM_TIME: out = ActionType::SetSystemTime; return true;
+    case pb::ACT_STOP_RUNTIME: out = ActionType::StopRuntime; return true;
+    default:
+        qWarning("projectparser: 未知动作类型 %d —— 跳过该动作", static_cast<int>(t));
+        return false;
     }
 }
 
-void mapWidget(const pb::Widget& p, Widget& w)
+// P-2b：返回 bool 表示控件类型是否已知。已知类型 → 下方字段拷贝全量执行（各类型共用扁平字段，无类型专属分流）；
+// 未知类型（false）→ 早退，整控件（含其事件/动作）跳过——Widget 无类型专属语义，跳过无副作用（审查 🟡 注释措辞澄清）。
+bool mapWidget(const pb::Widget& p, Widget& w)
 {
+    if (!mapWidgetType(p.type(), w.type))
+        return false;
     w.x = p.x(); w.y = p.y(); w.width = p.width(); w.height = p.height();
     w.objectName = s(p.object_name());
     w.boundTag = s(p.bound_tag());
-    w.type = mapWidgetType(p.type());
     w.text = s(p.text());
     w.content = s(p.content());
     w.hAlign = s(p.h_align());
@@ -160,14 +173,16 @@ void mapWidget(const pb::Widget& p, Widget& w)
     for (const auto& pt : p.points()) {
         w.points.append(QPointF(pt.x(), pt.y()));
     }
-    // 事件
+    // 事件（未知事件类型 → 跳过该事件；未知动作类型 → 跳过该动作——不静默回退默认）
     for (const auto& pe : p.events()) {
         WidgetEvent we;
-        we.type = mapEventType(pe.type());
+        if (!mapEventType(pe.type(), we.type))
+            continue;
         we.condition = s(pe.condition());
         for (const auto& pa : pe.actions()) {
             EventAction ea;
-            ea.type = mapActionType(pa.type());
+            if (!mapActionType(pa.type(), ea.type))
+                continue;
             for (const auto& kv : pa.parameters()) {
                 ea.parameters.insert(s(kv.first), s(kv.second));
             }
@@ -175,6 +190,7 @@ void mapWidget(const pb::Widget& p, Widget& w)
         }
         w.events.append(we);
     }
+    return true;
 }
 
 } // anonymous namespace
@@ -215,8 +231,8 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
         sc.navOrder = ps.nav_order();
         for (const auto& pw : ps.widgets()) {
             Widget w;
-            mapWidget(pw, w);
-            sc.widgets.append(w);
+            if (mapWidget(pw, w))   // P-2b：未知控件类型 → 跳过该控件（qWarning 已打），工程其余正常
+                sc.widgets.append(w);
         }
         out.screens.append(sc);
     }
@@ -303,11 +319,13 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
         }
         for (const auto& pe : wm.events()) {
             WidgetEvent we;
-            we.type = mapEventType(pe.type());
+            if (!mapEventType(pe.type(), we.type))
+                continue;   // P-2b：未知事件类型 → 跳过该事件
             we.condition = s(pe.condition());
             for (const auto& pa : pe.actions()) {
                 EventAction ea;
-                ea.type = mapActionType(pa.type());
+                if (!mapActionType(pa.type(), ea.type))
+                    continue;   // P-2b：未知动作类型 → 跳过该动作
                 for (const auto& kv : pa.parameters())
                     ea.parameters.insert(s(kv.first), s(kv.second));
                 we.actions.append(ea);
