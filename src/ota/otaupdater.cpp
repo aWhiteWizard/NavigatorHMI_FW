@@ -9,6 +9,8 @@
  */
 #include "ota/otaupdater.h"
 
+#include "runtime/deviceinfo.h"   // 2026-09-04：kOtaInstalledTsFile 共享常量（ts 标记 writer/reader 单点防漂移）
+
 #include <QFile>
 #include <QDir>
 #include <QFileInfo>
@@ -85,6 +87,15 @@ QString OtaUpdater::install(const QString& stagingFwPath)
     }
 
     emit progress(100, QStringLiteral("OTA 安装完成，即将重启"));
+    // 2026-09-04 调试 OTA：全部组件安装成功 → 记录 .fw header 打包时刻（PC 端同版 v1.1.0 覆盖判断依据——
+    // 调试期版本恒 v1.1.0，靠打包时刻先后区分每次调试固件；用户 2026-09-04 裁决「按打包时间」）
+    // header 布局（FwPackageBuilder 单一事实源）：magic4 + version16 + timestamp8(LE, 偏移 20) + count4 + sha64
+    {
+        quint64 packTs = 0;
+        for (int b = 0; b < 8; ++b)
+            packTs |= quint64(quint8(body.at(20 + b))) << (8 * b);
+        markOtaInstalled(packTs);
+    }
     // 注：markBootOk 不在 install 内调用——审查 🔴：重启前预写 .boot_ok 会标记「未验证的启动为成功」，
     // 使软件回滚判定失效。启动成功标记由 main() 在 engine.load + 工程加载 OK 后调用（新固件证明自己能启动才记成功）。
     qInfo().noquote() << "OTA 安装完成，重启生效: " << installed.join(QLatin1Char(','));
@@ -358,6 +369,20 @@ void OtaUpdater::markRootfsInstalled(const QString& fwVersion)
     }
 }
 
+void OtaUpdater::markOtaInstalled(quint64 packTimestamp)
+{
+    // 写当前生效固件的 OTA 打包时刻（调试同版覆盖判断；deviceinfo::otaTimestamp 读取上报）
+    QDir().mkpath(QStringLiteral("/etc/navigatorhmi"));
+    QFile f(QString::fromLatin1(kOtaInstalledTsFile));
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        f.write(QByteArray::number(packTimestamp));
+        f.close();
+    } else {
+        qWarning().noquote() << "OTA 打包时刻标记写入失败（" << kOtaInstalledTsFile
+                             << "）——PC 端同版覆盖判断将退化";
+    }
+}
+
 int OtaUpdater::recordBootFail()
 {
     int count = bootFailCount() + 1;
@@ -421,8 +446,11 @@ QString OtaUpdater::restoreFromUserdataBackup(bool latestOnly)
     walk(backupDir);
     // 回滚成功标记：清失败计数（恢复后进入「再试启动」状态）
     QFile::remove(QLatin1String(kBootFailPath));
+    // 2026-09-04 审查 🟡：回滚后清除 ota-installed-ts（置空 = 视作无记录 → PC 端归 0 → 任意调试包可重装）——
+    // 否则 ts 标记仍是「失败包时刻」，与「firmware_ts=当前生效固件打包时刻」语义背离（PC 会误拒最后一次好包）
+    QFile::remove(QString::fromLatin1(kOtaInstalledTsFile));
     qInfo().noquote() << "OTA rootfs 回滚完成（来源 " << picked << "）：恢复 " << restored
-                      << " 文件，删除 " << removed << " 新文件";
+                      << " 文件，删除 " << removed << " 新文件（打包时刻标记已清）";
     return QString();
 }
 

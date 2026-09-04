@@ -48,6 +48,10 @@ public:
     /// 文件级已逐文件备份，恢复走 restoreFromUserdataBackup；本方法供扩展）
     void markRootfsInstalled(const QString& fwVersion);
 
+    /// 2026-09-04 调试 OTA：安装成功后记录 .fw header 打包时刻 → /etc/navigatorhmi/ota-installed-ts
+    /// （deviceinfo::otaTimestamp 上报；PC 端同版 v1.1.0 覆盖判断 = 包时刻 > 设备当前时刻）
+    void markOtaInstalled(quint64 packTimestamp);
+
     /// 检查连续失败次数（/mnt/user/userdata/.boot_fail 计数）——O-D D-3b 接线（main 启动失败路径递增；
     /// main.cpp 启动前置回滚判定需要 → public）
     int bootFailCount() const;

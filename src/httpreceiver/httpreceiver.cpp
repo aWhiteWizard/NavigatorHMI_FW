@@ -143,11 +143,15 @@ QHttpServerResponse HttpReceiver::handleDeviceInfo()
 {
     const QString ip = m_deviceInfo ? m_deviceInfo->ipAddress() : QString();
     const QString fw = m_deviceInfo ? m_deviceInfo->appVersion() : QString();
+    // 2026-09-04 调试 OTA：firmware_ts = 当前生效固件 OTA 打包时刻（未 OTA 装过/旧固件 "0"）——
+    // PC 端版本前置对调试包（恒 v1.1.0）改按打包时刻先后判断（后打的包可覆盖前一个）
+    const QString fwTs = m_deviceInfo ? m_deviceInfo->otaTimestamp() : QStringLiteral("0");
     const QJsonObject obj{
         { QStringLiteral("model"), deviceModel() },
         { QStringLiteral("sizeInch"), deviceSizeInch() },
         { QStringLiteral("id"), ip },
         { QStringLiteral("version"), fw },      // 固件版本（术语口径：/api/device/info version=固件版本）
+        { QStringLiteral("firmware_ts"), fwTs },   // 当前固件 OTA 打包时刻（调试同版覆盖判断用）
     };
     QHttpServerResponse resp(QJsonDocument(obj).toJson(QJsonDocument::Compact), QHttpServerResponse::StatusCode::Ok);
     resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));

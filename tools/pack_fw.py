@@ -20,6 +20,9 @@ payload = 连续文件段（对齐 FW otaupdater installRootfsFiles 解析）：
   pack_fw.py --version 1.1.0 --out /path/to \
       --app /usr/bin/navigatorhmi-fw  \
       [--rootfs-files /path/to/file-tree-dir] [--kernel /path/to/boot.img] [--rootfs /path/to/rootfs.img]
+  # 调试 OTA（2026-09-04 用户规范）：版本恒 v1.1.0 + --name-ts <本地时刻 YYYYMMDDHHMMSS>
+  #   → NavigatorHMI_v1.1.0_7inch_20260904185622.fw（例：Windows 侧 `Get-Date -Format yyyyMMddHHmmss` 取值，
+  #     容器内 date 为 UTC 会差 8 小时——时刻由调用方给本地时间）
 组件类型（用户 2026-08-30 分组）：app / rootfs（文件级或整镜像）/ kernel；U-Boot 不打包。
 kernel 分区写需 backup 分区兜底——O-D D-3 板端勘察 backup 32MB 装不下 boot 64MB → 本轮不产 kernel 包。
 """
@@ -88,7 +91,7 @@ def size_to_inch(size: str) -> str:
     return s.replace("寸", "") + "inch"
 
 
-def build(version: str, components, out_dir: str, size: str = "") -> str:
+def build(version: str, components, out_dir: str, size: str = "", name_ts: str = "") -> str:
     if not version or len(version) > 16:
         raise ValueError("version 必填且 ≤16 字符")
     if not all(c in "0123456789." for c in version) or not 1 <= len(version.split(".")) <= 3:
@@ -140,8 +143,18 @@ def build(version: str, components, out_dir: str, size: str = "") -> str:
     out += payload
 
     os.makedirs(out_dir, exist_ok=True)
-    # 2026-09 命名标准：size 提供 → NavigatorHMI_<尺寸>inch_v<版本>.fw（7寸→7inch）；无 → 旧命名兼容
-    fw_name = f"NavigatorHMI_v{version}.fw" if not size else f"NavigatorHMI_{size_to_inch(size)}_v{version}.fw"
+    # 命名（2026-09-04 用户调试 OTA 规范 + 旧格式兼容）：
+    #   name_ts 提供 → 调试命名 NavigatorHMI_v<版本>_<尺寸inch>_<打包时刻 YYYYMMDDHHMMSS>.fw
+    #     （调试期每次编译版本恒 v1.1.0，靠时间戳区分——时刻由调用方给本地时间，防容器 UTC 差 8 小时；
+    #       GUI ParseFwVersion 从 "_v" 截取语义版本，尾段非数字归 0 → 仍解析为 1.1.0）
+    #   size 提供（无 name_ts）→ 标准命名 NavigatorHMI_<尺寸>inch_v<版本>.fw（7寸→7inch）
+    #   无 → 旧命名兼容 NavigatorHMI_v<版本>.fw
+    if name_ts:
+        fw_name = f"NavigatorHMI_v{version}_{size_to_inch(size)}_{name_ts}.fw"
+    elif size:
+        fw_name = f"NavigatorHMI_{size_to_inch(size)}_v{version}.fw"
+    else:
+        fw_name = f"NavigatorHMI_v{version}.fw"
     fw_path = os.path.join(out_dir, fw_name)
     tmp = fw_path + ".tmp"
     with open(tmp, "wb") as f:
@@ -155,7 +168,8 @@ def main():
     ap = argparse.ArgumentParser(description="D1 OTA 固件打包（NHFW，与 PC FwPackageBuilder 互读）")
     ap.add_argument("--version", required=True, help="固件版本（x.y.z 纯数字）")
     ap.add_argument("--out", required=True, help="输出目录")
-    ap.add_argument("--size", default="", help="设备尺寸（7寸→文件名 NavigatorHMI_7inch_v...fw；省略 → 旧命名 NavigatorHMI_v...fw）")
+    ap.add_argument("--size", default="", help="设备尺寸（7寸→文件名 inch 段 7inch；省略 → 旧命名 NavigatorHMI_v...fw）")
+    ap.add_argument("--name-ts", default="", help="调试命名时间戳（YYYYMMDDHHMMSS，本地时间；提供则输出 NavigatorHMI_v<版本>_<尺寸>_<时间戳>.fw——2026-09-04 用户调试 OTA 规范）")
     ap.add_argument("--app", help="app 组件路径（/usr/bin/navigatorhmi-fw 源文件）")
     ap.add_argument("--rootfs-files", help="rootfs 文件级组件目录（递归收集常规文件 → 文件段 payload）")
     ap.add_argument("--kernel", help="kernel 组件路径（boot.img——O-D D-3 backup 容量不足，本轮不建议）")
@@ -173,7 +187,7 @@ def main():
         comps.append(("rootfs", "rootfs", "/", args.rootfs))
     if not comps:
         ap.error("至少提供一个组件：--app / --rootfs-files / --rootfs / --kernel")
-    build(args.version, comps, args.out, args.size)
+    build(args.version, comps, args.out, args.size, args.name_ts)
 
 
 if __name__ == "__main__":

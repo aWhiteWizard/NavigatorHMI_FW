@@ -13,6 +13,10 @@ namespace navihmi {
 /// ip/ifconfig 命令等待超时（ms）——超时回落 0.0.0.0（2026-08-26 魔法数字整改命名）。
 constexpr int kCmdWaitTimeoutMs = 1500;
 
+/// OTA 安装固件打包时刻标记文件（writer=otaupdater::markOtaInstalled / reader=deviceinfo::otaTimestamp
+/// 单点共享防拼写漂移——2026-09-04 调试 OTA：PC 端同版覆盖判断 = 包打包时刻 > 此文件记录）
+inline constexpr const char* kOtaInstalledTsFile = "/etc/navigatorhmi/ota-installed-ts";
+
 class DeviceInfo : public QObject
 {
     Q_OBJECT
@@ -29,6 +33,9 @@ public:
     QString kernelVersion() const;
     QString appVersion() const;           // 编译期版本（CMake project VERSION）
     QString bootloaderVersion() const;    // 占位（当前无读取来源）
+    /// 当前生效固件的 OTA 打包时刻（/etc/navigatorhmi/ota-installed-ts，Unix 秒字符串；
+    /// 未 OTA 装过/旧固件无标记 → "0"）——2026-09-04 调试 OTA：版本恒 v1.1.0，PC 端按打包时刻先后判断是否可覆盖
+    QString otaTimestamp() const;
 
     /// 运行时间（/proc/uptime 秒 → "Xd Xh Ym"），QML Timer 周期调用
     Q_INVOKABLE QString uptimeText() const;

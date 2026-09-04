@@ -577,7 +577,7 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("NavigatorHMI_FW"));
-    app.setApplicationVersion(QStringLiteral("1.1.5"));   // v1.1.5 = P 循环可视化+视频批（2026-09-04）
+    app.setApplicationVersion(QStringLiteral("1.1.0"));   // v1.1.0 = 调试基线（2026-09-04 用户定：调试期每次编译 FW 版本恒 v1.1.0，OTA 包文件名带打包时刻区分——NavigatorHMI_v1.1.0_7inch_<YYYYMMDDHHMMSS>.fw）
 
     // 启动诊断（B6-8）: 信号处理器——退出原因定位
     std::signal(SIGSEGV, onSignal);

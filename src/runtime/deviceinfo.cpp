@@ -14,8 +14,9 @@ namespace navihmi {
 
 namespace {
 // 版本号（与 CMake project VERSION 对齐；无宏时兜底）
+// 2026-09-04：v1.1.0 = 调试基线（用户定：调试期每次编译 FW 版本恒 v1.1.0，OTA 包唯一性靠打包时刻——见 otaTimestamp）
 #ifndef NAVIGATORHMI_VERSION_STR
-#define NAVIGATORHMI_VERSION_STR "1.1.4"
+#define NAVIGATORHMI_VERSION_STR "1.1.0"
 #endif
 } // namespace
 
@@ -27,6 +28,16 @@ DeviceInfo::DeviceInfo(QObject* parent)
 QString DeviceInfo::appVersion() const
 {
     return QStringLiteral("v") + QStringLiteral(NAVIGATORHMI_VERSION_STR);
+}
+
+QString DeviceInfo::otaTimestamp() const
+{
+    // 审查 🔵（2026-09-04）：内容非数字防御——损坏/半写残留返回 "0"（PC 端归 0 放行，fail-safe）
+    const QString t = readFile(kOtaInstalledTsFile);
+    if (t.isEmpty()) return QStringLiteral("0");
+    bool ok = false;
+    const quint64 n = t.toULongLong(&ok);
+    return ok ? QString::number(n) : QStringLiteral("0");
 }
 
 QString DeviceInfo::bootloaderVersion() const
