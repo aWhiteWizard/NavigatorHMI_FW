@@ -1,4 +1,4 @@
-﻿// P-4: HmiTrendView——趋势图控件（2026-09-02, v1.1-design §5.3 C1/C2）
+// P-4: HmiTrendView——趋势图控件（2026-09-02, v1.1-design §5.3 C1/C2）
 // 时间-数据模式（trendMode=0）：单变量实时曲线——Connections dataManager.valueChanged 增量入环形缓冲（非轮询——F17）；
 //   历史回放（点按「实时/历史」切换）：dataLogger.queryTagHistory(trendTagA, 500) 显示降采样历史。
 // 变量A-B 模式（trendMode=1）：变量B 随变量A 变化的 X-Y 散点（时间戳对齐——A 变化时取 B 当前值画点）。
@@ -216,62 +216,128 @@ Rectangle {
             ctx.reset()
             ctx.fillStyle = "#FFFFFF"
             ctx.fillRect(0, 0, width, height)
+            // Q-5③（2026-09-04）：坐标轴 + 网格——绘图区预留轴标签位（左 Y 刻度 / 下 X 刻度）
+            var axL = 36, axR = 8, axT = 6, axB = 16
+            var pw = width - axL - axR
+            var ph = height - axT - axB
+            // 轴/网格样式
+            ctx.strokeStyle = "#D8DEE6"
+            ctx.fillStyle = "#888888"
+            ctx.font = "9px sans-serif"
             if (!root.hasData) {
+                // 空数据：画空框 + 提示（轴刻度占位 0-100/时分占位）
+                ctx.strokeStyle = "#E0E0E0"
+                ctx.strokeRect(axL, axT, pw, ph)
                 ctx.fillStyle = "#BBBBBB"
                 ctx.font = "11px sans-serif"
                 ctx.textAlign = "center"
                 ctx.fillText("（无数据——未绑定变量或未开始采样）", width / 2, height / 2)
                 return
             }
+            // 值域（模式相关）
+            var minV = Number.MAX_VALUE, maxV = -Number.MAX_VALUE, spanV = 1
+            var minX = Number.MAX_VALUE, maxX = -Number.MAX_VALUE, spanX = 1
+            var i
+            if (root.trendMode === 1) {
+                for (i = 0; i < root.xyPoints.length; ++i) {
+                    var pp = root.xyPoints[i]
+                    if (pp.x < minX) minX = pp.x
+                    if (pp.x > maxX) maxX = pp.x
+                }
+                for (i = 0; i < root.xyPoints.length; ++i) {
+                    var pp2 = root.xyPoints[i]
+                    if (pp2.y < minV) minV = pp2.y
+                    if (pp2.y > maxV) maxV = pp2.y
+                }
+                spanX = (maxX - minX) || 1
+                spanV = (maxV - minV) || 1
+            } else {
+                for (i = 0; i < root.samples.length; ++i) {
+                    var ss = root.samples[i]
+                    if (ss.v < minV) minV = ss.v
+                    if (ss.v > maxV) maxV = ss.v
+                }
+                spanV = (maxV - minV) || 1
+            }
+            // 画网格 + Y 轴刻度（4 分位，右对齐 axL 左侧）
+            ctx.lineWidth = 1
+            ctx.textAlign = "right"
+            var yMax = root.trendMode === 1 ? maxV : maxV
+            var yMin = root.trendMode === 1 ? minV : minV
+            for (i = 0; i <= 4; ++i) {
+                var frac = i / 4
+                var gy = axT + ph - frac * ph
+                ctx.strokeStyle = "#ECF0F4"
+                ctx.beginPath()
+                ctx.moveTo(axL, gy)
+                ctx.lineTo(width - axR, gy)
+                ctx.stroke()
+                var val = yMin + frac * (yMax - yMin)
+                ctx.fillStyle = "#777777"
+                ctx.fillText(trimNum(val), axL - 4, gy + 3)
+            }
+            // X 轴：时间模式 = 时间窗 4 等分时刻；历史/XY = 等分序号/数值
+            ctx.textAlign = "center"
+            for (i = 0; i <= 4; ++i) {
+                var gx = axL + pw * (i / 4)
+                ctx.strokeStyle = "#ECF0F4"
+                ctx.beginPath()
+                ctx.moveTo(gx, axT)
+                ctx.lineTo(gx, axT + ph)
+                ctx.stroke()
+                var xlabel
+                if (root.trendMode === 0 && !root.historyMode) {
+                    var t = Date.now() - root.timeWindowSeconds * 1000 + (i / 4) * root.timeWindowSeconds * 1000
+                    xlabel = timeLabel(t)
+                } else if (root.trendMode === 1) {
+                    xlabel = trimNum(minX + (i / 4) * spanX)
+                } else {
+                    xlabel = (i === 0 ? "0" : "")   // 历史等分不标时间（无真实时间戳）
+                }
+                if (xlabel !== "")
+                    ctx.fillText(xlabel, gx, height - 4)
+            }
+            // 轴框
+            ctx.strokeStyle = "#C8D0DA"
+            ctx.strokeRect(axL, axT, pw, ph)
+            // 曲线（绘图区内）
             var pen = root.lineColor !== "" ? root.lineColor : "#1E90FF"
             ctx.strokeStyle = pen
             ctx.lineWidth = root.lineWidth > 0 ? root.lineWidth : 1.5
             ctx.beginPath()
+            var j, q, px, py, m, sm, tx, tv, pyy, first
             if (root.trendMode === 1) {
-                // 变量A-B 散点：连线 + 点（x/y 各自 min-max 归一）
-                var minX = Number.MAX_VALUE, maxX = -Number.MAX_VALUE
-                var minY = Number.MAX_VALUE, maxY = -Number.MAX_VALUE
-                for (var i = 0; i < root.xyPoints.length; ++i) {
-                    var p = root.xyPoints[i]
-                    if (p.x < minX) minX = p.x
-                    if (p.x > maxX) maxX = p.x
-                    if (p.y < minY) minY = p.y
-                    if (p.y > maxY) maxY = p.y
-                }
-                var spanX = (maxX - minX) || 1
-                var spanY = (maxY - minY) || 1
-                var pad = 10
-                for (var j = 0; j < root.xyPoints.length; ++j) {
-                    var q = root.xyPoints[j]
-                    var px = pad + (q.x - minX) / spanX * (width - 2 * pad)
-                    var py = height - pad - (q.y - minY) / spanY * (height - 2 * pad)
+                for (j = 0; j < root.xyPoints.length; ++j) {
+                    q = root.xyPoints[j]
+                    px = axL + (q.x - minX) / spanX * pw
+                    py = axT + ph - (q.y - minV) / spanV * ph
                     if (j === 0) ctx.moveTo(px, py)
                     else ctx.lineTo(px, py)
                 }
             } else {
-                // 时间-数据：按时间窗归一 x（最近 timeWindowSeconds），y min-max
-                var minV = Number.MAX_VALUE, maxV = -Number.MAX_VALUE
-                var t0 = Date.now() - root.timeWindowSeconds * 1000
-                for (var k = 0; k < root.samples.length; ++k) {
-                    var s = root.samples[k]
-                    if (s.v < minV) minV = s.v
-                    if (s.v > maxV) maxV = s.v
-                }
-                var spanV = (maxV - minV) || 1
-                var pad2 = 10
-                var first = true
-                for (var m = 0; m < root.samples.length; ++m) {
-                    var sm = root.samples[m]
-                    // 历史回放样本 t 为索引（无真实时间戳）——按等分画
-                    var tx, tv
-                    if (root.historyMode) { tx = pad2 + m / Math.max(1, root.samples.length - 1) * (width - 2 * pad2); tv = Number(sm.v) }
-                    else { tx = pad2 + (sm.t - t0) / (root.timeWindowSeconds * 1000) * (width - 2 * pad2); tv = sm.v }
-                    var pyy = height - pad2 - (tv - minV) / spanV * (height - 2 * pad2)
+                first = true
+                for (m = 0; m < root.samples.length; ++m) {
+                    sm = root.samples[m]
+                    if (root.historyMode) { tx = axL + m / Math.max(1, root.samples.length - 1) * pw; tv = Number(sm.v) }
+                    else { tx = axL + Math.max(0, Math.min(1, (sm.t - (Date.now() - root.timeWindowSeconds * 1000)) / (root.timeWindowSeconds * 1000))) * pw; tv = sm.v }
+                    pyy = axT + ph - (tv - minV) / spanV * ph
                     if (first) { ctx.moveTo(tx, pyy); first = false }
                     else ctx.lineTo(tx, pyy)
                 }
             }
             ctx.stroke()
+        }
+        // 数值标签（去尾零/限位）
+        function trimNum(v) {
+            var r = Math.round(v * 100) / 100
+            return String(r)
+        }
+        // 毫秒时间 → HH:MM:SS 刻度标签
+        function timeLabel(ms) {
+            var d = new Date(ms)
+            var h = d.getHours(), mi = d.getMinutes(), s = d.getSeconds()
+            function p2(n) { return n < 10 ? "0" + n : String(n) }
+            return p2(h) + ":" + p2(mi) + ":" + p2(s)
         }
     }
 }
