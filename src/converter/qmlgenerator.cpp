@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @FilePath: \NavigatorHMI_FW\src\converter\qmlgenerator.cpp
  * @Description: HMIProject 运行时模型 → 每画面 QML 文件
  */
@@ -279,6 +279,15 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
             for (int i = 0; i < w.historyTags.size(); ++i) {
                 if (i) out << ", ";
                 out << "\"" << qmlEsc(w.historyTags[i]) << "\"";
+            }
+            out << "]\n";
+        }
+        // Q-6(2026-09-04): 列显示名平行输出（HmiHistoryView 列头用；空=显示变量名——老工程兼容）
+        if (!w.historyTagTitles.isEmpty() && w.historyTagTitles.size() == w.historyTags.size()) {
+            out << "    historyTitles: [";
+            for (int i = 0; i < w.historyTagTitles.size(); ++i) {
+                if (i) out << ", ";
+                out << "\"" << qmlEsc(w.historyTagTitles[i]) << "\"";
             }
             out << "]\n";
         }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @FilePath: \NavigatorHMI_FW\src\converter\projectparser.cpp
  * @Description: .navihmi → HMIProject 运行时模型（protobuf 解析 + 字段映射）
  *
@@ -187,6 +187,8 @@ bool mapWidget(const pb::Widget& p, Widget& w)
     // P-5 历史记录字段（73-74）+ Window DisplayMode（54）
     for (const auto& tag : p.history_tags())
         w.historyTags.append(s(tag));
+    for (const auto& t : p.history_tag_titles())   // Q-6: 列显示名（空=老工程，QML 回退变量名）
+        w.historyTagTitles.append(s(t));
     w.historyDbPath = s(p.history_db_path());
     w.displayMode = p.display_mode();
     // P-6 Frame 视频字段（75-76）

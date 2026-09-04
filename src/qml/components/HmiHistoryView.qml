@@ -18,6 +18,7 @@ Rectangle {
     // ── 历史专有属性（生成器输出）──
     property string objectName: ""
     property var historyTags: []      // 变量列表（多变量）
+    property var historyTitles: []    // Q-6(2026-09-04): 各变量列显示名（平行 historyTags[i]；空=显示变量名——老工程兼容）
     property string historyDbPath: "" // 数据库路径（空=默认）
 
     // ── 并集字段容忍（生成器统一输出，组件各自忽略）──
@@ -90,6 +91,16 @@ Rectangle {
     property var historyRows: []
     property bool loaded: false
 
+    // Q-6: 变量显示名（titles[i] 非空用 title，否则回退变量名——老工程/缺省）
+    function displayName(tagName) {
+        var idx = root.historyTags.indexOf(tagName)
+        if (idx >= 0 && root.historyTitles && idx < root.historyTitles.length) {
+            var t = root.historyTitles[idx]
+            if (t !== undefined && t !== null && t !== "") return t
+        }
+        return tagName
+    }
+
     function loadHistory(tagName) {
         if (tagName === "") { historyRows = []; return }
         currentTag = tagName
@@ -130,7 +141,7 @@ Rectangle {
         }
     }
 
-    // 表头（时间/值）
+    // 表头（变量 title / 时间 / 值）
     Rectangle {
         id: listHeader
         anchors.top: titleBar.bottom
@@ -138,7 +149,9 @@ Rectangle {
         anchors.right: parent.right
         height: 16
         color: "#ECEFF1"
-        Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: "时间"; font.pixelSize: 9; color: "#666"; font.bold: true }
+        // Q-6: 变量列显示 title（displayName 回退变量名）
+        Text { anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; text: root.displayName(root.currentTag); font.pixelSize: 9; color: "#666"; font.bold: true; width: 90; elide: Text.ElideMiddle }
+        Text { anchors.left: parent.left; anchors.leftMargin: 100; anchors.verticalCenter: parent.verticalCenter; text: "时间"; font.pixelSize: 9; color: "#666"; font.bold: true }
         Text { anchors.right: parent.right; anchors.rightMargin: 30; anchors.verticalCenter: parent.verticalCenter; text: "值"; font.pixelSize: 9; color: "#666"; font.bold: true }
     }
 
@@ -157,12 +170,12 @@ Rectangle {
             property var rowData: modelData
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: 6
+                anchors.leftMargin: 100   // 对齐表头（变量列 90px 后）
                 anchors.verticalCenter: parent.verticalCenter
                 text: rowData.ts
                 font.pixelSize: 9
                 color: "#444"
-                width: parent.width - 70
+                width: parent.width - 170
                 elide: Text.ElideRight
             }
             Text {

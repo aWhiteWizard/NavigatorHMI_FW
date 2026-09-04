@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @FilePath: \NavigatorHMI_FW\src\runtime\projectmodel.h
  * @Description: 运行时模型（从 .navihmi 契约解析后的内存模型）
  *               与 fw/proto/navihmi.proto 对应；QML/报警/渲染只依赖本模型，不直接碰 protobuf
@@ -113,6 +113,7 @@ struct Widget {
     // 历史记录 (19, P-5 2026-09-02)
     QStringList historyTags;         // HistoryView 变量列表（多变量，运行时切换）
     QString historyDbPath;           // HistoryView 数据库路径（空=设备端默认 navihmi_history.db）
+    QStringList historyTagTitles;    // Q-6(2026-09-04): 各变量列显示名（平行 historyTags[i]；空=显示变量名——老工程兼容）
     // 窗口控件扩展 (P-5)
     int displayMode = 0;             // WindowWidget AlarmView 显示模式：0=当前报警 1=报警缓冲区（DisplayMode 权威）
     // Frame 视频 (P-6 2026-09-02)
