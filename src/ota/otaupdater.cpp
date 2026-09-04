@@ -1,11 +1,14 @@
 /*
  * @FilePath: \NavigatorHMI_FW\src\ota\otaupdater.cpp
- * @Description: D1 OTA 固件安装器实现（2026-08-30 批 2）。
- *               app：备份 → 写新 → sha 校验 → 重启（应用层替换，无分区写，安全）；
- *               rootfs/kernel：backup 分区 dd 备份 → 主分区写 → 回滚标记（软件回滚 .boot_ok 计数）。
- *               ⚠️ 分区写（rootfs/kernel）需板端实测验证（rknetupdate-upgrade-hang 先例）——
- *                 本实现**默认整体拒绝非 app 组件**（install() all-or-nothing 预检，任何写入前返回），
- *                 app-only .fw 可先行；分区链路待板端验证后再放开（见 installPartition）。
+ * @Description: D1 OTA 固件安装器实现（2026-08-30 批 2；O-D D-3 2026-09 rootfs 文件级；
+ *               2026-09-04 全量包 symlink 安全替换）。
+ *               app：备份 → 写新 → sha 校验 → 重启（应用层替换，无分区写，安全主路径）；
+ *               rootfs：**文件级更新**（O-D D-3 用户裁决——backup 分区 32MB 装不下整镜像）——
+ *                 逐文件：新内容先落 tmp → 目标三态分流（常规文件备份 / 符号链接安全替换(.symlink 标记
+ *                 备份链接本身 → 删链接 → 写常规文件，不跟随链接写) / 不存在记 .new）→ rename 原子落位 →
+ *                 失败回滚 = 从 userdata/ota-backup 恢复（含 .symlink 重建链接 / .new 删新文件）。
+ *               kernel：分区写（boot.img）backup 32MB 装不下 boot 64MB → 本轮不开放（installPartition 持续拒绝）。
+ *               版本检查前置由 PC 端 DeployFirmwareHandler 完成；本模块只做安装。
  */
 #include "ota/otaupdater.h"
 
@@ -223,7 +226,9 @@ QString OtaUpdater::installRootfsFiles(const Component& comp, const QByteArray& 
     //   循环到 payload 尾：
     //     4B LE 路径长度 + 路径 UTF8（相对 / 的安装路径，如 usr/sbin/start_runtime.sh）
     //     8B LE 内容长度 + 内容
-    // 安装 = 逐文件：备份旧版（存在则拷到 userdata/ota-backup/<fwver>/<路径>）→ 写新（tmp + ::rename 原子）→
+    // 安装 = 逐文件：备份旧版（存在则拷到 userdata/ota-backup/<fwver>/<路径>；**符号链接目标 = 备份链接本身
+    // （.symlink 标记记链接目标）→ 删链接 → 写常规文件**——2026-09-04 用户裁决全量 OTA 包设备无关，
+    // 安全语义不变：不跟随链接写，链接指向目标不动）→ 写新（tmp + ::rename 原子）→
     // 完成后 markRootfsInstalled（写版本标记）；重启生效。启动失败回滚见 restoreFromUserdataBackup。
     const QString fwVer = comp.version.isEmpty() ? QStringLiteral("unknown") : comp.version.trimmed();
 
@@ -270,37 +275,18 @@ QString OtaUpdater::installRootfsFiles(const Component& comp, const QByteArray& 
     if (entries.isEmpty())
         return QStringLiteral("rootfs 文件级包为空（无文件条目）");
 
-    // 2. 全条目预检（防半装）：目标父目录可创建性 + 备份空间假设——先收集目标路径
-    QStringList targets;
-    for (const auto& e : entries)
-        targets << QStringLiteral("/") + e.relPath;
-
-    // 3. 逐文件：备份旧版到 userdata ota-backup → 写新（tmp + rename 原子，断电保护）
+    // 3. 逐文件：新内容先落 tmp（断电保护）→ 备份/链接处理 → rename 原子落位。
+    //    2026-09-04 审查 🟡 重排：备份与删链必须在 tmp 就绪后执行——避免「链接已删、新文件未就绪」的半装态；
+    //    原「全条目预检（targets 收集）」为死代码（无任何检查），已删。
     // 备份目录：/mnt/user/userdata/ota-backup/<fwver>/<relPath>（保留相对路径树）
     const QString backupRoot = QString::fromLatin1(kOtaBackupRoot) + QLatin1Char('/') + fwVer;
     int done = 0;
     for (int i = 0; i < entries.size(); ++i) {
         const QString target = QStringLiteral("/") + entries[i].relPath;
         const QString backupPath = backupRoot + QLatin1Char('/') + entries[i].relPath;
-        // 3a. 备份旧版（若目标存在且非符号链接——文件级覆盖常规文件）
-        if (QFile::exists(target)) {
-            QFileInfo ti(target);
-            if (ti.isSymLink())
-                return QStringLiteral("目标为符号链接，拒绝覆盖（安全）: %1").arg(target);
-            if (!QDir().mkpath(QFileInfo(backupPath).absolutePath()))
-                return QStringLiteral("rootfs 备份目录创建失败: %1").arg(QFileInfo(backupPath).absolutePath());
-            if (QFile::exists(backupPath) && !QFile::remove(backupPath))
-                return QStringLiteral("rootfs 备份清理失败: %1").arg(backupPath);
-            if (!QFile::copy(target, backupPath))
-                return QStringLiteral("rootfs 备份失败: %1 → %2").arg(target).arg(backupPath);
-        } else {
-            // 目标不存在：记占位（恢复时删除新文件）
-            if (!QDir().mkpath(QFileInfo(backupPath).absolutePath()))
-                return QStringLiteral("rootfs 备份目录创建失败: %1").arg(QFileInfo(backupPath).absolutePath());
-            QFile marker(backupPath + QStringLiteral(".new"));
-            if (marker.open(QIODevice::WriteOnly | QIODevice::Truncate)) { marker.write("x"); marker.close(); }
-        }
-        // 3b. 写新（tmp + ::rename 原子）
+        QString savedLinkTarget;   // symlink 分支记录链接目标（rename 失败兜底重建用）
+
+        // 3a'. 新文件先落 tmp（写入失败/不完整 → 清理 tmp 返回，原目标从未被动）
         if (!QDir().mkpath(QFileInfo(target).absolutePath()))
             return QStringLiteral("rootfs 目标目录创建失败: %1").arg(QFileInfo(target).absolutePath());
         const QString tmp = target + QStringLiteral(".ota_tmp");
@@ -315,17 +301,80 @@ QString OtaUpdater::installRootfsFiles(const Component& comp, const QByteArray& 
             }
             w.close();
         }
+
+        // 备份目录准备辅助：mkpath + 同 relPath 三形态标记统一清理
+        // （审查 🟡：恒 v1.1.0 调试流程同 fwver 备份目录复用——不清陈旧 .new/.symlink 会被回滚重放/顺序依赖）
+        auto prepareBackupDir = [&]() -> bool {
+            if (!QDir().mkpath(QFileInfo(backupPath).absolutePath())) return false;
+            for (const auto& suffix : { QStringLiteral(""), QStringLiteral(".new"), QStringLiteral(".symlink") }) {
+                const QString p = backupPath + suffix;
+                if (QFile::exists(p) && !QFile::remove(p)) return false;
+            }
+            return true;
+        };
+        auto failTmp = [&]() { QFile::remove(tmp); };
+
+        // 3b'. 目标状态分流 + 备份（tmp 已就绪——此段失败仅清理 tmp，原目标保持原状，无半装）
+        // 2026-09-04 用户裁决（全量 OTA 包设备无关——板端 buildroot 库为 symlink 布局）：符号链接目标**安全替换**
+        // ——备份链接本身（.symlink 标记记录链接目标，回滚据此重建）→ 删除链接 → 以常规文件写入。
+        // **不跟随链接写**：链接指向的目标文件原样不动（原「拒绝覆盖（安全）」防的写穿语义不变）。
+        // 判定 isSymLink 优先（审查 🟡：QFile::exists 跟随链接——断链 exists=false 会误入 .new 分支致 rename 撞占用）
+        const QFileInfo ti(target);
+        const bool wasSymlink = ti.isSymLink();   // isSymLink 不跟随（断链也为 true）
+        if (wasSymlink) {
+            savedLinkTarget = ti.symLinkTarget();
+            if (!prepareBackupDir()) {
+                failTmp();
+                return QStringLiteral("rootfs 备份目录准备失败: %1").arg(backupPath);
+            }
+            QFile marker(backupPath + QStringLiteral(".symlink"));
+            if (!marker.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                failTmp();
+                return QStringLiteral("rootfs 链接备份标记写入失败: %1").arg(backupPath + QStringLiteral(".symlink"));
+            }
+            const qint64 written = marker.write(savedLinkTarget.toUtf8());
+            marker.close();
+            if (written != qint64(savedLinkTarget.toUtf8().size())) {   // 审查 🟡：write 返回值检查（磁盘满/短写防空标记）
+                failTmp();
+                return QStringLiteral("rootfs 链接备份标记写入不完整: %1").arg(backupPath + QStringLiteral(".symlink"));
+            }
+            if (!QFile::remove(target)) {
+                failTmp();
+                return QStringLiteral("rootfs 符号链接删除失败: %1").arg(target);
+            }
+        } else if (QFile::exists(target)) {
+            if (!prepareBackupDir()) {
+                failTmp();
+                return QStringLiteral("rootfs 备份目录准备失败: %1").arg(backupPath);
+            }
+            if (!QFile::copy(target, backupPath)) {
+                failTmp();
+                return QStringLiteral("rootfs 备份失败: %1 → %2").arg(target).arg(backupPath);
+            }
+        } else {
+            // 目标不存在：记占位（恢复时删除新文件）
+            if (!prepareBackupDir()) {
+                failTmp();
+                return QStringLiteral("rootfs 备份目录准备失败: %1").arg(backupPath);
+            }
+            QFile marker(backupPath + QStringLiteral(".new"));
+            if (marker.open(QIODevice::WriteOnly | QIODevice::Truncate)) { marker.write("x"); marker.close(); }   // 占位尽力（既有语义）
+        }
+
+        // 3c'. rename 落位（原子；symlink 分支链接已删 → exists false → QFile::rename 常规文件路径）
         if (QFile::exists(target)) {
             if (::rename(tmp.toLocal8Bit().constData(), target.toLocal8Bit().constData()) != 0) {
+                const QString errnoStr = QString::fromLocal8Bit(strerror(errno));
                 QFile::remove(tmp);
+                // 兜底：symlink 分支 rename 失败 → 重建链接恢复原状（避免目标缺失半装；常规覆盖失败原目标仍在）
+                if (wasSymlink && !savedLinkTarget.isEmpty())
+                    QFile::link(savedLinkTarget, target);
                 return QStringLiteral("rootfs 替换失败（::rename 原子覆盖）: %1 (%2)")
-                    .arg(target).arg(QString::fromLocal8Bit(strerror(errno)));
+                    .arg(target).arg(errnoStr);
             }
-            // 3c. 恢复原权限（上板实测缺陷修复：覆盖 /etc/init.d/S99qt-test 等脚本后新文件 0644
-            //     失去执行位 → 守护/rcS 无法执行 → FW 起不来）。rename 后权限 = tmp 创建默认（0644），
-            //     需从备份（=原文件权限，QFile::copy 保留）或目标原权限恢复
-            QFileInfo ti(target);
-            const QFile::Permissions origPerm = ti.permissions();
+            // 3c''. 恢复原权限（覆盖路径——脚本执行位教训：rename 后新文件 0644，从备份/原目标恢复）
+            QFileInfo nti(target);
+            const QFile::Permissions origPerm = nti.permissions();
             QFileInfo backupFi(backupPath);
             const QFile::Permissions perm = backupFi.exists() ? backupFi.permissions() : origPerm;
             if (!QFile::setPermissions(target, perm))
@@ -333,9 +382,11 @@ QString OtaUpdater::installRootfsFiles(const Component& comp, const QByteArray& 
         } else {
             if (!QFile::rename(tmp, target)) {
                 QFile::remove(tmp);
+                if (wasSymlink && !savedLinkTarget.isEmpty())
+                    QFile::link(savedLinkTarget, target);   // 兜底同上
                 return QStringLiteral("rootfs 替换失败（rename）: %1").arg(target);
             }
-            // 3c. 新文件默认 0644——若路径惯例为可执行（sbin/ 或 init.d/ 下）补执行位
+            // 新文件默认 0644——若路径惯例为可执行（sbin/ 或 init.d/ 下）补执行位
             //     （pack_fw.py 源文件在 Windows 检出无 Unix 执行位 → 打包内容权限不可靠，此处按路径惯例兜底）
             if (entries[i].relPath.contains(QLatin1String("sbin/"))
                 || entries[i].relPath.contains(QLatin1String("init.d/"))) {
@@ -423,9 +474,13 @@ QString OtaUpdater::restoreFromUserdataBackup(bool latestOnly)
         for (const auto& fi : all) {
             if (fi.isDir()) { walk(QDir(fi.absoluteFilePath())); continue; }
             QString rel = backupDir.relativeFilePath(fi.absoluteFilePath());
-            const bool isNewMarker = rel.endsWith(QStringLiteral(".new"));
+            // 2026-09-04：.symlink 标记 = 原目标为符号链接被安全替换为常规文件 → 回滚 = 删常规文件 + 重建链接
+            const bool isSymlinkMarker = rel.endsWith(QStringLiteral(".symlink"));
+            const bool isNewMarker = !isSymlinkMarker && rel.endsWith(QStringLiteral(".new"));
             if (isNewMarker)
                 rel = rel.left(rel.size() - 4);          // 去掉 .new
+            else if (isSymlinkMarker)
+                rel = rel.left(rel.size() - 8);          // 去掉 .symlink
             const QString target = QStringLiteral("/") + rel;
             if (isNewMarker) {
                 // 原目标不存在 → 删除本次安装的新文件
@@ -433,6 +488,19 @@ QString OtaUpdater::restoreFromUserdataBackup(bool latestOnly)
                     qWarning().noquote() << "回滚删除失败: " << target;
                 else if (QFile::exists(target))
                     ++removed;
+            } else if (isSymlinkMarker) {
+                // 原目标为符号链接 → 删本次写入的常规文件 + 按标记内容重建链接（恢复原布局）
+                if (QFile::exists(target) && !QFile::remove(target))
+                    qWarning().noquote() << "回滚删除失败（symlink 替换文件）: " << target;
+                QFile mf(fi.absoluteFilePath());
+                QString linkTarget;
+                if (mf.open(QIODevice::ReadOnly)) { linkTarget = QString::fromUtf8(mf.readAll()).trimmed(); mf.close(); }
+                if (linkTarget.isEmpty())
+                    qWarning().noquote() << "回滚 symlink 标记空（无法重建）: " << fi.absoluteFilePath();
+                else if (!QFile::link(linkTarget, target))
+                    qWarning().noquote() << "回滚重建链接失败: " << target << " → " << linkTarget;
+                else
+                    ++restored;
             } else {
                 if (!QDir().mkpath(QFileInfo(target).absolutePath()))
                     continue;
