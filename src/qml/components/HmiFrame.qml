@@ -18,6 +18,8 @@ Rectangle {
     property double strokeThickness: 0
     property string titleColor: "#000000"
     property double fontSize: 13
+    property bool showVideo: false  // P-6: 视频模式（生成器仅视频 Frame 输出 true）——Loader 动态挂 HmiFrameVideo
+    property string videoSource: ""  // P-6: 视频源（生成器 resolveVideoPath 重定位：本地绝对路径 / RTSP/网络 URL 原样）
     property string text: ""  // 并集字段容忍(生成器统一输出)
     property string content: ""  // 并集字段容忍(生成器统一输出)
     property string hAlign: "Left"  // 并集字段容忍(生成器统一输出)
@@ -73,6 +75,39 @@ Rectangle {
     signal hmiUserChanged()
     signal hmiAck()
     signal hmiSelect()
+
+    // P-6: 视频模式——Loader 动态加载 HmiFrameVideo.qml（独立 import QtMultimedia：
+    // 非视频 Frame 不依赖媒体模块，模块缺失不拖垮普通 Frame）；视频层铺满控件，
+    // titleBar 在其上（title 非空时标题悬浮视频顶部）；视频源为空或加载失败由组件内提示
+    Loader {
+        id: videoLayer
+        anchors.fill: parent
+        visible: false
+        active: root.showVideo && root.videoSource !== ""
+        source: active ? "HmiFrameVideo.qml" : ""
+        onLoaded: {
+            item.videoSource = root.videoSource
+            visible = true
+        }
+        // 审查 🟡（2026-09-04）：模块缺失/import 失败不得静默（Loader 永不 onLoaded、无任何反馈）——
+        // Error 状态显式提示 + 日志（对齐「不静默失败」纪律）
+        onStatusChanged: {
+            if (status === Loader.Error) {
+                videoErrorText.visible = true
+                console.warn("[HmiFrame] 视频组件加载失败（QtMultimedia 未部署？）source=" + root.videoSource)
+            }
+        }
+    }
+
+    // 视频组件加载失败提示（import 缺失/模块不可用；正常情况恒不可见）
+    Text {
+        id: videoErrorText
+        anchors.centerIn: parent
+        visible: false
+        text: "视频模块不可用"
+        color: "#FF5252"
+        font.pixelSize: 13
+    }
 
     Rectangle {
         id: titleBar

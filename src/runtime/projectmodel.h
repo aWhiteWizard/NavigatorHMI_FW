@@ -115,6 +115,9 @@ struct Widget {
     QString historyDbPath;           // HistoryView 数据库路径（空=设备端默认 navihmi_history.db）
     // 窗口控件扩展 (P-5)
     int displayMode = 0;             // WindowWidget AlarmView 显示模式：0=当前报警 1=报警缓冲区（DisplayMode 权威）
+    // Frame 视频 (P-6 2026-09-02)
+    bool showVideo = false;          // Frame 视频模式（checkbox——true=视频；false/无源=普通 Frame）
+    QString videoSource;             // Frame 视频源（本地路径打包 / rtsp:// URL 不入包）
 };
 
 struct Screen {

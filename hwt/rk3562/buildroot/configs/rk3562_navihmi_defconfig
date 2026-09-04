@@ -76,3 +76,9 @@ BR2_PACKAGE_IPROUTE2=y
 BR2_TOOLCHAIN_EXTRA_LIBS="libgomp.so"
 # 外部工具链自带内核头文件, 不再编 linux-headers 包
 # BR2_PACKAGE_LINUX_HEADERS is not set
+
+# ---- ffmpeg (P-6 Frame 视频, 2026-09-04: qtmultimedia 6.4.3 ffmpeg 后端依赖) ----
+# libavformat/avcodec/swresample/swscale/avutil 入镜像; SWSCALE 为 QFFmpegMediaPlugin
+# 硬依赖 (FFmpeg::swscale)——须经 defconfig 合并启用 (手动改 .config 会被 syncconfig 抹除)
+BR2_PACKAGE_FFMPEG=y
+BR2_PACKAGE_FFMPEG_SWSCALE=y

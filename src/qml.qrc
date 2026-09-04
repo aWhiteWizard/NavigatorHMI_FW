@@ -16,6 +16,7 @@
     <file>qml/components/HmiCheckBox.qml</file>
     <file>qml/components/HmiTextList.qml</file>
     <file>qml/components/HmiFrame.qml</file>
+    <file>qml/components/HmiFrameVideo.qml</file>   <!-- P-6 Frame 视频模式（2026-09-04） -->
     <file>qml/components/HmiProgressBar.qml</file>
     <file>qml/components/HmiDateTime.qml</file>
     <file>qml/components/HmiWindow.qml</file>

@@ -73,6 +73,27 @@ QString resolveResPath(const QString& raw, const QString& resourceRoot)
     return root + QStringLiteral("res/") + p;
 }
 
+// P-6: Frame 视频源 → 设备端可加载路径（与 resolveResPath 同构，前缀 media/——PC DeploymentPackageBuilder
+// 视频收集入包 media/ 目录，FW 落盘 <工程目录>/media/<rel>，.navihmi 引用改写为 rel（无前缀））
+// 网络流 URL（rtsp/http/https）→ 原样（RTSP 不入包，设备端直连）；绝对路径 → 原样（用户自备设备端文件）；
+// 相对路径 → 拼 resourceRoot/media/ 前缀；resourceRoot 空（纯转换器模式）→ 原样。
+QString resolveVideoPath(const QString& raw, const QString& resourceRoot)
+{
+    QString p = raw.trimmed();
+    if (p.isEmpty() || resourceRoot.isEmpty())
+        return p;
+    if (p.startsWith(QLatin1String("rtsp://"), Qt::CaseInsensitive)
+        || p.startsWith(QLatin1String("http://"), Qt::CaseInsensitive)
+        || p.startsWith(QLatin1String("https://"), Qt::CaseInsensitive))
+        return p;
+    if (QFileInfo(p).isAbsolute())
+        return p;
+    QString root = resourceRoot;
+    if (!root.endsWith(QLatin1Char('/')))
+        root += QLatin1Char('/');
+    return root + QStringLiteral("media/") + p;
+}
+
 // 属性行（仅非空/非零值）
 void appendProp(QTextStream& out, const QString& name, const QString& val)
 {
@@ -262,6 +283,12 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
             out << "]\n";
         }
         appendProp(out, "historyDbPath", w.historyDbPath);
+    }
+    // P-6 Frame 视频属性（仅 W_FRAME 类型且视频模式输出——HmiFrame 默认普通模式；
+    // 本地视频源 resolveVideoPath 重定位（打包 rel → 设备端 <resourceRoot>/media/<rel>），RTSP/绝对路径原样）
+    if (w.type == WidgetType::Frame && w.showVideo) {
+        appendProp(out, "showVideo", true);
+        appendProp(out, "videoSource", resolveVideoPath(w.videoSource, resourceRoot));
     }
 
     // 事件占位：onClick 等 → 信号处理器（联动 ActionRunner 后续循环接入）

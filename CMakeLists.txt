@@ -45,6 +45,13 @@ endif()
 # 核心组件（Core/Gui/Widgets 必需；Sql 为 G-2 数据记录模块——板端 Qt 6.4.3 已验证 qsqlite 驱动；
 # SerialBus 为 H-8 数据采集 Modbus——板端已装 libQt6SerialBus）
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets Sql SerialBus)
+# P-6: QtMultimedia（官方仓库交叉编译, libQt6Multimedia 固化 fs-overlay + sysroot cmake 配置后可用——ffmpeg 后端）
+find_package(Qt${QT_VERSION_MAJOR}Multimedia QUIET)
+if(Qt${QT_VERSION_MAJOR}Multimedia_FOUND)
+    message(STATUS "QtMultimedia 可用（P-6 Frame 视频启用）")
+else()
+    message(WARNING "QtMultimedia 未找到——P-6 Frame 视频不可用（需先构建 qtmultimedia 并安装到 sysroot）")
+endif()
 # K-8a: QtHttpServer（官方仓库交叉编译, libQt6HttpServer 已固化 fs-overlay/usr/lib + sysroot cmake 配置）
 find_package(Qt${QT_VERSION_MAJOR}HttpServer QUIET)
 if(Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
@@ -140,6 +147,12 @@ if(SOURCES)
         if(Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
             target_link_libraries(${PROJECT_NAME} Qt${QT_VERSION_MAJOR}::HttpServer)   # K-8b 接收端
             target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_QT_HTTPSERVER=1)
+        endif()
+        if(Qt${QT_VERSION_MAJOR}Multimedia_FOUND)
+            # P-6 Frame 视频（审查 2026-09-04）：**不链接** Qt::Multimedia——主程序 C++ 零 QtMultimedia 符号引用，
+            # QML 侧 HmiFrameVideo.qml 自 import QtMultimedia 动态加载模块（Loader 隔离：模块缺失只降级视频 Frame，
+            # 不拖垮整机启动）；find_package QUIET + 上方 STATUS/WARNING 仅作构建期诊断。libQt6Multimedia.so 由
+            # build-qtmm-overlay.sh 固化进镜像（部署不变量，但非本二进制 DT_NEEDED——旧镜像缺模块不致 FW 黑屏）
         endif()
     else()
         target_link_libraries(${PROJECT_NAME}
