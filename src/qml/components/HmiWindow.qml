@@ -483,11 +483,26 @@ Rectangle {
         }
 
         // P-5 报警缓冲区模式（displayMode=1）：queryAlarmHistory 全部历史滚动 + 清除按钮（未确认活动不清除）
+        // Q-8（2026-09-04 用户 Check）：缓冲视图实时化——DataLogger alarmHistoryChanged（触发/确认/清除写行成功
+        // + 清表成功均 emit）→ 打开中的缓冲视图实时刷新，无需重进画面/重启工程；CLI alarm clear 同路径广播
         Item {
             id: alarmHistRoot   // P-5 复审 🟡：显式 id 供后代 handler 调用 refreshHistory（仓库 robotListRoot.refreshCards 先例）
             visible: root.windowType === 1 && root.displayMode === 1
             anchors.fill: parent
             clip: true
+
+            // Q-8：历史写行/清表 → 实时重查（每次报警事件后 200 条窗口刷新；触发即写 → 含当前触发）
+            // 审查 🟡-1（2026-09-05）：0ms Timer 去抖合并同 tick 突发（多规则同时触发/autoAck 触发即双写
+            // TRIGGER+ACK）→ 最终态一次全量重查，避免连续多次 model 替换闪烁；语义不变
+            Connections {
+                target: dataLogger
+                function onAlarmHistoryChanged() { histRefreshTimer.restart() }
+            }
+            Timer {
+                id: histRefreshTimer
+                interval: 0
+                onTriggered: alarmHistRoot.refreshHistory()
+            }
 
             // 表头（时间/级别/内容 + 清除按钮）
             Rectangle {
@@ -501,7 +516,7 @@ Rectangle {
                     anchors.left: parent.left
                     anchors.leftMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "报警历史（缓冲区）"
+                    text: "报警缓冲区"   // Q-8：文案对齐用户语义（2026-09-04：模式名=报警缓冲区，非「历史记录/报警历史」）
                     font.pixelSize: 10
                     color: "#666666"
                     font.bold: true
@@ -524,17 +539,17 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            // 审查 🟡：clearAlarmHistory 返回 bool——失败不置空 model（防假成功）；不发 hmiAck（
-                            // OnAck 语义=确认报警，清除是本地 DB 操作，复用会误触发已配置确认类动作且带残留 payload）
-                            if (dataLogger && dataLogger.clearAlarmHistory())
-                                alarmHistRoot.refreshHistory()
+                            // Q-8：clearAlarmHistory 成功内部 emit alarmHistoryChanged → Connections 刷新
+                            // （失败不 emit 不刷新——防假成功语义保留；不发 hmiAck：OnAck 语义=确认报警，
+                            // 清除是本地 DB 操作，复用会误触发已配置确认类动作且带残留 payload）
+                            if (dataLogger) dataLogger.clearAlarmHistory()
                         }
                     }
                 }
             }
 
-            // 历史列表刷新（审查 🟡-1 修正：子项 onVisibleChanged 不随父容器显隐触发——接受「进入即查 + 清除后重查」
-            // 语义，由 Component.onCompleted 与清除按钮调用；画面每次进入经 Loader 重建 → onCompleted 即刷新）
+            // 历史列表刷新（Q-8 实时化：DataLogger alarmHistoryChanged 信号驱动——触发/确认/清除写行成功即重查，
+            // 打开中的缓冲视图实时追加/清空；画面每次进入经 Loader 重建 → onCompleted 兜底初查一次）
             function refreshHistory() {
                 if (dataLogger) histList.model = dataLogger.queryAlarmHistory(200)
             }
@@ -589,7 +604,7 @@ Rectangle {
                 // 空态（审查 🔵 补）
                 Text {
                     anchors.centerIn: parent
-                    text: "暂无报警历史"
+                    text: "暂无报警记录"   // Q-8：空态文案对齐「报警缓冲区」语义（非「历史」字样）
                     font.pixelSize: 11
                     color: "#999999"
                     visible: histList.model === undefined || histList.model.length === 0

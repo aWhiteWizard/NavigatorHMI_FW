@@ -71,6 +71,7 @@ bool DataLogger::clearAlarmHistory()
         return false;
     }
     qInfo().noquote() << "DataLogger: alarm_history 已清空（clear-alarm-history）";
+    emit alarmHistoryChanged();   // Q-8：清除成功广播 → 打开中的缓冲视图实时清空（CLI/GUI 同路径）
     return true;
 }
 
@@ -161,6 +162,8 @@ void DataLogger::recordAlarmEvent(const QString& ruleName, const QString& tagNam
     q.addBindValue(event);
     if (!q.exec())
         qWarning().noquote() << "DataLogger: alarm_history 写入失败" << q.lastError().text();
+    else
+        emit alarmHistoryChanged();   // Q-8：写入成功广播 → 打开中的缓冲视图实时追加（含当前触发 TRIGGER 行）
 }
 
 void DataLogger::sample()
@@ -234,6 +237,7 @@ void DataLogger::cleanup()
     capByWindow(QStringLiteral("tag_history"));
     capByWindow(QStringLiteral("alarm_history"));
     qInfo().noquote() << "DataLogger: 保留策略清理完成（7 天 / 50 万条, id<=MAX 窗删）";
+    emit alarmHistoryChanged();   // Q-8 审查 🟡-2：清理删行后广播（打开中的缓冲视图同步最终态；无删行也重查一次——6h 低频无害）
 }
 
 QVariantList DataLogger::queryTagHistory(const QString& tagName, int limit)

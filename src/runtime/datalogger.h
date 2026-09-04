@@ -46,6 +46,13 @@ public:
     /// 数据库路径（调试/日志）
     Q_INVOKABLE QString dbPath() const;
 
+signals:
+    // ── Q-8（2026-09-04 用户 Check）：缓冲视图实时化信号 ──
+    /// alarm_history 变更（写入/清空成功）→ 打开中的报警缓冲区视图实时刷新（含当前触发：
+    /// TRIGGER 触发即写行；ACK/CLEAR 事件也写行——流水完整）。CLI alarm clear 走 clearAlarmHistory
+    /// 同路径 emit → 视图无需重进画面即清空（用户 Check：清除后视图不实时刷新）。
+    void alarmHistoryChanged();
+
 private:
     bool openDb();
     void sample();          // 定时采样变量 → tag_history 批量事务写
