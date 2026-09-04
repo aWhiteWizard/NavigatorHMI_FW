@@ -67,6 +67,7 @@ private:
     QHttpServerResponse handleDeviceInfo();
     QHttpServerResponse handleVersion();
     QHttpServerResponse handleProgress();   // D-B4：GET /api/progress——PC 轮询设备端进度（真同步）
+    QHttpServerResponse handleLog();        // Q-1（2026-09-04）：GET /api/log——设备运行日志尾部（/tmp/navihmi.log 32KB，诊断/视频排障用）
     /// M-3 ④（R1 修复）：transfer 改为 responder 异步——qthttpserver 6.4 处理器跑在服务器对象线程（=GUI 主线程），
     /// receiveAndInstall 解压/校验/落盘为秒级耗时，同步执行会冻结事件循环 → 进度条无法重绘、触摸/VNC 无响应；
     /// 后台线程执行安装，完成后经 finishTransfer 回主线程写响应（QTcpSocket 非线程安全）

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @FilePath: \NavigatorHMI_FW\src\converter\projectparser.cpp
  * @Description: .navihmi → HMIProject 运行时模型（protobuf 解析 + 字段映射）
  *
@@ -50,7 +50,7 @@ bool mapWidgetType(pb::WidgetType t, WidgetType& out)
     case pb::W_DATETIME: out = WidgetType::DateTime; return true;
     case pb::W_WINDOW: out = WidgetType::Window; return true;
     case pb::W_POLYGON: out = WidgetType::Polygon; return true;
-    case pb::W_TREND_CHART: out = WidgetType::TrendChart; return true;   // P-4
+    case pb::W_TREND_VIEW: out = WidgetType::TrendView; return true;   // P-4
     case pb::W_HISTORY_VIEW: out = WidgetType::HistoryView; return true;   // P-5（枚举一次到位）
     default:
         qWarning("projectparser: 未知控件类型 %d —— 跳过该控件（旧 FW 读新工程产物？）", static_cast<int>(t));

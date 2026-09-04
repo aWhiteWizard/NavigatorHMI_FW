@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @FilePath: \NavigatorHMI_FW\src\runtime\projectmodel.h
  * @Description: 运行时模型（从 .navihmi 契约解析后的内存模型）
  *               与 fw/proto/navihmi.proto 对应；QML/报警/渲染只依赖本模型，不直接碰 protobuf
@@ -27,7 +27,7 @@ enum class WidgetType {
     Switch = 6, Line = 7, Circle = 8, Ellipse = 9, IoField = 10,
     CheckBox = 11, TextList = 12, Frame = 13, ProgressBar = 14,
     DateTime = 15, Window = 16, Polygon = 17,
-    TrendChart = 18,   // P-4：趋势图（2026-09-02）
+    TrendView = 18,   // P-4：趋势图（2026-09-02）
     HistoryView = 19   // P-5：历史记录（2026-09-02，枚举一次到位）
 };
 enum class EventType {

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @FilePath: \NavigatorHMI_FW\src\converter\qmlgenerator.cpp
  * @Description: HMIProject 运行时模型 → 每画面 QML 文件
  */
@@ -39,7 +39,7 @@ bool widgetQmlType(WidgetType t, QString& out)
     case WidgetType::DateTime: out = "HmiDateTime"; return true;
     case WidgetType::Window: out = "HmiWindow"; return true;
     case WidgetType::Polygon: out = "HmiPolygon"; return true;
-    case WidgetType::TrendChart: out = "HmiTrendChart"; return true;   // P-4
+    case WidgetType::TrendView: out = "HmiTrendView"; return true;   // P-4
     case WidgetType::HistoryView: out = "HmiHistoryView"; return true;   // P-5（组件已实现 2026-09-02）
     default:
         qWarning("qmlgenerator: 未知控件类型 %d —— 跳过该控件 QML 生成", static_cast<int>(t));
@@ -261,8 +261,8 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
         }
         out << "]\n";
     }
-    // P-4 趋势图属性（仅 W_TREND_CHART 类型输出）
-    if (w.type == WidgetType::TrendChart) {
+    // P-4 趋势图属性（仅 W_TREND_VIEW 类型输出）
+    if (w.type == WidgetType::TrendView) {
         appendProp(out, "trendMode", w.trendMode);
         appendProp(out, "trendTagA", w.trendTagA);
         appendProp(out, "trendTagB", w.trendTagB);

@@ -1,4 +1,4 @@
-// P-4: HmiTrendChart——趋势图控件（2026-09-02, v1.1-design §5.3 C1/C2）
+﻿// P-4: HmiTrendView——趋势图控件（2026-09-02, v1.1-design §5.3 C1/C2）
 // 时间-数据模式（trendMode=0）：单变量实时曲线——Connections dataManager.valueChanged 增量入环形缓冲（非轮询——F17）；
 //   历史回放（点按「实时/历史」切换）：dataLogger.queryTagHistory(trendTagA, 500) 显示降采样历史。
 // 变量A-B 模式（trendMode=1）：变量B 随变量A 变化的 X-Y 散点（时间戳对齐——A 变化时取 B 当前值画点）。

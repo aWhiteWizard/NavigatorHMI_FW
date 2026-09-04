@@ -112,6 +112,11 @@ void HttpReceiver::setupRoutes()
     m_server.route(QStringLiteral("/api/progress"), QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest&) { return handleProgress(); });
 
+    // Q-1（2026-09-04）：GET /api/log——设备运行日志尾部（/tmp/navihmi.log 由 S99qt-test 重定向；
+    // 诊断 QML import/运行时错误用——PC 拉取免 SSH）。未鉴权——局域网调试口可接受（设备管理面本就开放 HTTP）
+    m_server.route(QStringLiteral("/api/log"), QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest&) { return handleLog(); });
+
     // POST /api/transfer——工程部署容器上传（单客户端串行）
     // M-3 ④（R1）：responder 异步形式——qthttpserver 6.4 处理器运行在服务器对象所在线程（=GUI 主线程），
     // receiveAndInstall 秒级耗时若同步执行会冻结事件循环（进度条无法重绘）；改后台线程执行 + 主线程收尾
@@ -183,6 +188,31 @@ QHttpServerResponse HttpReceiver::handleProgress()
         { QStringLiteral("active"), m_transferActive.loadRelaxed() },
     };
     return jsonResponse(obj, QHttpServerResponse::StatusCode::Ok);
+}
+
+QHttpServerResponse HttpReceiver::handleLog()
+{
+    // Q-1（2026-09-04）：读 /tmp/navihmi.log 尾部（最近 32KB——完整日志可能很大，诊断取尾部最新错误段）；
+    // 文件不存在/空 → 返回空文本（不报错——设备可能由非 S99 方式启动无重定向日志）
+    const QString logPath = QStringLiteral("/tmp/navihmi.log");
+    const qint64 kTailBytes = 32 * 1024;
+    QFile f(logPath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        return QHttpServerResponse(QStringLiteral(""), QHttpServerResponse::StatusCode::Ok);
+    }
+    QByteArray tail;
+    if (f.size() > kTailBytes) {
+        f.seek(f.size() - kTailBytes);
+        tail = f.read(kTailBytes);
+        const int nl = tail.indexOf('\n');
+        if (nl > 0) tail = tail.mid(nl + 1);   // 对齐行首（避免截半行）
+    } else {
+        tail = f.readAll();
+    }
+    f.close();
+    QHttpServerResponse resp(tail, QHttpServerResponse::StatusCode::Ok);
+    resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("text/plain; charset=utf-8"));
+    return resp;
 }
 
 /// D-B4：进度值 → 阶段描述（派生，不共享跨线程 QString；与 transferProgress 信号各 emit 点阶段一致）
