@@ -11,6 +11,7 @@
 #include <QHttpServer>
 #include <QString>
 #include <QAtomicInteger>
+#include <QTimer>   // T-1a：分块会话空闲 TTL（审查 🔴 1-2——PC 断连后自动清理，防永久拒收）
 #include <memory>   // M-3 ④：std::unique_ptr<QHttpServerResponder>（异步传输响应器）
 
 class QHttpServerRequest;
@@ -72,6 +73,18 @@ private:
     /// receiveAndInstall 解压/校验/落盘为秒级耗时，同步执行会冻结事件循环 → 进度条无法重绘、触摸/VNC 无响应；
     /// 后台线程执行安装，完成后经 finishTransfer 回主线程写响应（QTcpSocket 非线程安全）
     void handleTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder);
+    /// T-1a（2026-09-05 T 循环）：分块上传会话处理（请求头 X-Tf-Id/X-Tf-Index/X-Tf-Total/X-Tf-Size）——
+    /// qthttpserver 6.4 请求体整读无流式 API → PC 分 N 块循环 POST（每块 4MB 级）：
+    /// 首块（index=0）建会话（/mnt/user/userdata/.transfer/<id>.zip）+ cap=disk_free×2/3 预检；
+    /// 续块 append 落盘（单块内存小，大包不受内存限制）+ 块进度 m_lastProgress=(idx+1)/total×70；
+    /// 末块（index=total-1）转后台 receiveAndInstallFromZip 安装链（70→100 刻度）；失败/新会话清理。
+    /// 整包旧路径（无分块头）保持 handleTransfer 原流程（≤256MB 内存兜底校验）。
+    void handleChunkedTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder);
+    /// T-1a：分块会话异常清理（删临时 zip + 复位会话状态；主线程）
+    void abortChunkSession();
+    /// T-1a：分块会话空闲超时（审查 🔴 1-2——块间 TTL 30s：PC 中途断连/崩溃后自动清理 + 复位并发锁 + 进度 -1，
+    /// 设备不永久拒收；末块交棒后 stop）
+    void onChunkTimeout();
     /// 主线程收尾：写 HTTP 响应 + 释放并发锁 + 信号（成功→projectPackageReady；失败→progress(-1)）
     /// D1：isFirmware=true 时成功不发 projectPackageReady（OTA 走 firmwarePackageReady 安装重启）
     void finishTransfer(const QString& error, const QString& projectPath, bool isFirmware = false);
@@ -80,6 +93,9 @@ private:
     /// 校验 + 落盘；成功返回空错误串并输出 projectPath，失败返回原因（后台线程执行——只碰局部/线程安全成员）
     /// D1 审查 🔴：isFirmware 出参标识本次为 .fw OTA 传输——finishTransfer 据此跳过 projectPackageReady（工程重载）
     QString receiveAndInstall(const QByteArray& body, QString& projectPathOut, bool* isFirmware = nullptr);
+    /// T-1a：从已落盘 zip 执行安装链（分块路径末块入口 + 整包路径写临时后共用——414 行后段复用）；
+    /// 安装段进度刻度 70~100（解压 70→85、写入 85→99、完成 100）；仅工程容器；后台线程执行
+    QString receiveAndInstallFromZip(const QString& zipPath, QString& projectPathOut);
     /// D1：.fw 固件包处理（NHFW 魔数嗅探分支）——校验 header sha + 组件表 → 写 staging → 触发 firmwarePackageReady；
     /// 成功返回空错误串并输出 staging 路径，失败返回原因（后台线程执行）
     QString handleFirmwarePackage(const QByteArray& body, QString& stagingPathOut);
@@ -102,6 +118,14 @@ private:
     QAtomicInteger<int> m_lastProgress { -1 };   // D-B4：最近传输进度（-1=无/失败；原子跨线程读，后台线程 storeRelaxed）
     std::unique_ptr<QHttpServerResponder> m_responder;   // M-3 ④：活动传输的异步响应器（单客户端串行，唯一持有者）
     bool m_pendingFirmwareInstall = false;   // 批 D 收尾：.fw OTA 校验通过已触发安装，等待 installFinished 回传真实结果
+    // ── T-1a（2026-09-05 T 循环）：分块上传会话状态（m_transferActive 统一并发锁；主线程读写）──
+    QString m_chunkId;                   // 分块会话 id（X-Tf-Id；空=无活动分块会话）
+    QString m_chunkZipPath;              // 分块临时 zip（deployDir/.transfer/<id>.zip——/tmp 为 tmpfs 980M 放不下大包）
+    qint64 m_chunkTotalSize = 0;         // 总字节（首块 X-Tf-Size；cap 预检）
+    qint64 m_chunkReceivedSize = 0;      // 已收字节（cap 累计校验双保险）
+    int m_chunkNextIndex = 0;            // 期望下一块序号（顺序校验：块丢失/乱序拒绝）
+    int m_chunkTotal = 0;                // 总块数（X-Tf-Total——首块记录，续块头须一致；末块判定以本值而非请求头）
+    QTimer m_chunkTimer;                 // 分块会话空闲 TTL（单次 30s；每块到达 restart；末块交棒 stop）
 };
 
 } // namespace navihmi

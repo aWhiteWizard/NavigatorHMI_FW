@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QStorageInfo>   // T-1a（2026-09-05）：部署前磁盘空闲查询（cap=disk_free×2/3 动态上限）
 #include <QTemporaryDir>
 #include <QCryptographicHash>
 #include <QHostAddress>
@@ -38,8 +39,24 @@ namespace navihmi {
 
 namespace {
 
-constexpr int kMaxUploadBytes = 64 * 1024 * 1024;   // 上传上限 64MB（device-profile uploadSizeLimitMB 默认）
 constexpr int kTransferPort = 80;                    // HTTP 默认端口
+constexpr int kMaxLegacySinglePostBytes = 256 * 1024 * 1024;   // T-1a：整包（无分块头）单 POST 内存兜底 256MB（2G 内存设备安全线——审查 🟡 5：512MB 逼近 OOM + tmpfs 980M 解压上限；数百 MB 部署一律分块）
+
+/// T-1a：工程部署目标分区剩余字节（cap=disk_free×2/3 计算源——与落盘同分区：/mnt/user/userdata）
+qint64 deployDiskFreeBytes()
+{
+    const QString deployDir = StorageInfo::defaultProjectPath().section(QLatin1Char('/'), 0, -2);
+    const QStorageInfo si(deployDir);
+    if (!si.isValid() || !si.isReady()) return -1;
+    return si.bytesFree();
+}
+qint64 deployDiskTotalBytes()
+{
+    const QString deployDir = StorageInfo::defaultProjectPath().section(QLatin1Char('/'), 0, -2);
+    const QStorageInfo si(deployDir);
+    if (!si.isValid() || !si.isReady()) return -1;
+    return si.bytesTotal();
+}
 
 /// 读 manifest.json（容器条目数组）——返回条目 map: name → {type,target,size,sha256,version}
 bool readManifest(const QString& dir, QJsonArray& out)
@@ -81,6 +98,10 @@ HttpReceiver::HttpReceiver(RuntimeBus* bus, DeviceInfo* devInfo, QObject* parent
     , m_bus(bus)
     , m_deviceInfo(devInfo)
 {
+    // T-1a：分块会话空闲 TTL（审查 🔴 1-2）——块间超时自动清理，PC 断连后设备不永久拒收
+    m_chunkTimer.setSingleShot(true);
+    m_chunkTimer.setInterval(30 * 1000);
+    connect(&m_chunkTimer, &QTimer::timeout, this, &HttpReceiver::onChunkTimeout);
     setupRoutes();
 }
 
@@ -151,12 +172,17 @@ QHttpServerResponse HttpReceiver::handleDeviceInfo()
     // 2026-09-04 调试 OTA：firmware_ts = 当前生效固件 OTA 打包时刻（未 OTA 装过/旧固件 "0"）——
     // PC 端版本前置对调试包（恒 v1.1.0）改按打包时刻先后判断（后打的包可覆盖前一个）
     const QString fwTs = m_deviceInfo ? m_deviceInfo->otaTimestamp() : QStringLiteral("0");
+    // T-1a（2026-09-05）：部署目标分区磁盘（PC 上传前预检 cap=disk_free×2/3——动态上限，替代固定 64MB）
+    const qint64 diskFree = deployDiskFreeBytes();
+    const qint64 diskTotal = deployDiskTotalBytes();
     const QJsonObject obj{
         { QStringLiteral("model"), deviceModel() },
         { QStringLiteral("sizeInch"), deviceSizeInch() },
         { QStringLiteral("id"), ip },
         { QStringLiteral("version"), fw },      // 固件版本（术语口径：/api/device/info version=固件版本）
         { QStringLiteral("firmware_ts"), fwTs },   // 当前固件 OTA 打包时刻（调试同版覆盖判断用）
+        { QStringLiteral("disk_total"), diskTotal },   // 部署分区总字节（-1=查询失败）
+        { QStringLiteral("disk_free"), diskFree },     // 部署分区剩余字节（cap = ×2/3，用户拍板 2026-09-05）
     };
     QHttpServerResponse resp(QJsonDocument(obj).toJson(QJsonDocument::Compact), QHttpServerResponse::StatusCode::Ok);
     resp.setHeader(QByteArrayLiteral("Content-Type"), QByteArrayLiteral("application/json"));
@@ -216,11 +242,13 @@ QHttpServerResponse HttpReceiver::handleLog()
 }
 
 /// D-B4：进度值 → 阶段描述（派生，不共享跨线程 QString；与 transferProgress 信号各 emit 点阶段一致）
+/// T-1a（2026-09-05）：进度刻度统一——接收段 0~70（分块块进度/整包接收完成 70）、安装段 70~100
+///（解压 70→85、写入 85→99、完成 100）
 QString HttpReceiver::stageForProgress(int pct)
 {
     if (pct < 0) return QStringLiteral("传输失败");
-    if (pct < 5) return QStringLiteral("接收中…");
-    if (pct < 50) return QStringLiteral("解压安装包…");
+    if (pct < 70) return QStringLiteral("接收中…");
+    if (pct < 85) return QStringLiteral("解压安装包…");
     if (pct < 100) return QStringLiteral("写入资源…");
     return QStringLiteral("安装完成");
 }
@@ -240,15 +268,38 @@ void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServer
         return;
     }
 
+    // T-1a（2026-09-05 T 循环）：分块上传（X-Tf-Total 头）→ 分块会话路径——PC 新版大包按块循环 POST
+    //（每块 append 落盘，传输进度块级实时、大包不受内存限制、cap=磁盘空闲×2/3 动态上限）；
+    // 无分块头 = 整包旧路径/第三方 → 下方原流程（≤kMaxLegacySinglePostBytes 内存兜底）
+    if (!request.value(QByteArrayLiteral("X-Tf-Total")).isEmpty()
+        || !request.value(QByteArrayLiteral("x-tf-total")).isEmpty()) {
+        handleChunkedTransfer(request, std::move(responder));
+        return;
+    }
+
     const QByteArray body = request.body();
+    // 整包内存兜底（T-1a：旧整包路径上限 64MB→256MB 内存安全线——64MB 为分块前瓶颈；仍超提示用分块）
+    if (body.size() > kMaxLegacySinglePostBytes) {
+        m_transferActive.storeRelease(false);
+        const QJsonObject err{
+            { QStringLiteral("code"), QStringLiteral("TRANSFER_TOO_LARGE") },
+            { QStringLiteral("message"), QStringLiteral("上传超过整包内存上限（%1 MB）——请使用分块上传")
+                .arg(kMaxLegacySinglePostBytes / (1024 * 1024)) },
+            { QStringLiteral("stage"), QStringLiteral("Upload") },
+        };
+        responder.write(QJsonDocument(err).toJson(QJsonDocument::Compact),
+                        QByteArrayLiteral("application/json"),
+                        QHttpServerResponder::StatusCode::PayloadTooLarge);
+        return;
+    }
     // R 排查（2026-09-05）：工程被 96B「测试工程」覆盖来源成谜（用户未操作部署但设备收多次容器）——
     // 接收入口打来源 IP + 大小 + 魔数（NHFW=固件 / PK=工程容器），下次部署可精确定位谁在发
     qInfo().noquote() << "HttpReceiver 接收: from=" << request.remoteAddress().toString()
                       << " size=" << body.size()
                       << " magic=" << (body.size() >= 4 ? QByteArray(body.constData(), 4).toHex() : QByteArray("--"));
     // M-3 ④：接收开始 → QML 屏幕进度条（退导航→进度→满停→自动打开）
-    m_lastProgress.storeRelaxed(5);   // D-B4：同步记录供 GET /api/progress 轮询（接收完成 5%）
-    emit transferProgress(5, QStringLiteral("接收完成，开始安装"));
+    m_lastProgress.storeRelaxed(70);   // T-1a：整包接收完成 = 进入安装段刻度起点（0~70 接收段仅分块路径实时走）
+    emit transferProgress(70, QStringLiteral("接收完成，开始安装"));
     m_responder = std::make_unique<QHttpServerResponder>(std::move(responder));
 
     // M-3 ④（R1 修复）：receiveAndInstall 移出 GUI 线程——qthttpserver 6.4 处理器跑在服务器对象线程
@@ -262,6 +313,183 @@ void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServer
             finishTransfer(error, projectPath, isFirmware);
         }, Qt::QueuedConnection);
     }).detach();
+}
+
+/// T-1a（2026-09-05 T 循环）：分块上传会话——qthttpserver 6.4 请求体整读无流式 API → PC 分 N 块循环 POST。
+/// 请求头：X-Tf-Id（会话 uuid）、X-Tf-Index（0..N-1）、X-Tf-Total（N）、X-Tf-Size（总字节，首块必带）。
+/// 首块（index=0）建会话（deployDir/.transfer/<id>.zip，/tmp 为 tmpfs 980M 放不下大包）+ cap=disk_free×2/3 预检；
+/// 续块校验会话 id + 顺序 → append 落盘（单块内存 4MB 级——大包不受内存限制）+ 块进度实时写；
+/// 末块（index=total-1）保留 responder 转后台 receiveAndInstallFromZip 安装链（刻度 70→100）。
+/// 非末块同步写小块响应（落盘毫秒级不冻结 GUI）；异常/新会话 → abortChunkSession 清理。
+/// 并发：m_transferActive 由 handleTransfer 统一置位（单客户端串行），本函数只做会话状态机。
+void HttpReceiver::handleChunkedTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder)
+{
+    auto fail = [&](const QString& code, const QString& message, QHttpServerResponder::StatusCode st) {
+        // 审查 🔴 1-1：失败必须复位进度并发 -1 失败信号——否则 QML 进度遮罩常显吞触摸 + 轮询残留旧值
+        m_lastProgress.storeRelaxed(-1);
+        emit transferProgress(-1, message);
+        m_transferActive.storeRelease(false);
+        m_chunkTimer.stop();   // T-1a：会话清理连带停 TTL
+        abortChunkSession();
+        const QJsonObject err{
+            { QStringLiteral("code"), code },
+            { QStringLiteral("message"), message },
+            { QStringLiteral("stage"), QStringLiteral("Upload") },
+        };
+        responder.write(QJsonDocument(err).toJson(QJsonDocument::Compact),
+                        QByteArrayLiteral("application/json"), st);
+    };
+
+    const QString id = QString::fromLatin1(request.value(QByteArrayLiteral("X-Tf-Id")));
+    const int total = QString::fromLatin1(request.value(QByteArrayLiteral("X-Tf-Total"))).toInt();
+    const int index = QString::fromLatin1(request.value(QByteArrayLiteral("X-Tf-Index"))).toInt();
+    const qint64 totalSize = QString::fromLatin1(request.value(QByteArrayLiteral("X-Tf-Size"))).toLongLong();
+    const QByteArray body = request.body();
+    // 审查 🟡（2026-09-05 FW 复审）：X-Tf-Id 路径净化——仅 [A-Za-z0-9_-]（QUuid N 格式 32 hex）——
+    // 恶意 id（如 ../../x）拼入 .transfer/<id>.zip 可路径穿越写/删任意文件（root 进程，局域网未鉴权面）
+    const auto validIdChars = [](const QString& s) {
+        if (s.isEmpty() || s.size() > 64) return false;
+        for (const QChar c : s)
+            if (!c.isLetterOrNumber() && c != QLatin1Char('-') && c != QLatin1Char('_'))
+                return false;
+        return true;
+    };
+    if (!validIdChars(id) || total <= 0 || index < 0 || index >= total) {
+        fail(QStringLiteral("TRANSFER_INVALID"),
+             QStringLiteral("分块上传头非法（X-Tf-Id/Index/Total）"), QHttpServerResponder::StatusCode::BadRequest);
+        return;
+    }
+    // 审查 🟡 3-1：单块 body 上限（qthttpserver 整读进内存后才进 handler——恶意巨块撑爆内存/直写盘；
+    // 正常客户端 4MB 块远低于此）
+    if (body.size() > kMaxLegacySinglePostBytes) {
+        fail(QStringLiteral("TRANSFER_CHUNK_TOO_LARGE"),
+             QStringLiteral("单块超过内存上限（%1 MB）").arg(kMaxLegacySinglePostBytes / (1024 * 1024)),
+             QHttpServerResponder::StatusCode::PayloadTooLarge);
+        return;
+    }
+
+    // ── 首块：建会话 + cap 预检 ──
+    if (index == 0) {
+        abortChunkSession();   // 上一会话残留（异常未清）→ 清理重建
+        m_chunkId = id;
+        m_chunkTotal = total;
+        m_chunkTotalSize = totalSize;
+        m_chunkReceivedSize = body.size();
+        m_chunkNextIndex = 1;
+        // cap 预检（用户拍板 2026-09-05：上传量 ≤ 设备最大存储 2/3——部署分区空闲 ×2/3；
+        // disk_free 查询失败（cap<=0）时放行由累计写失败兜底）
+        const qint64 cap = deployDiskFreeBytes() / 3 * 2;
+        if (m_chunkTotalSize <= 0 || (cap > 0 && (m_chunkTotalSize > cap || body.size() > cap))) {
+            fail(QStringLiteral("TRANSFER_TOO_LARGE"),
+                 QStringLiteral("部署包超过设备剩余空间 2/3（需 %1 MB / 上限 %2 MB）")
+                     .arg(m_chunkTotalSize / (1024 * 1024)).arg(cap > 0 ? cap / (1024 * 1024) : 0),
+                 QHttpServerResponder::StatusCode::PayloadTooLarge);
+            return;
+        }
+        const QString deployDir = StorageInfo::defaultProjectPath().section(QLatin1Char('/'), 0, -2);
+        const QString dir = deployDir + QStringLiteral("/.transfer");
+        if (!QDir().mkpath(dir)) {
+            fail(QStringLiteral("TRANSFER_FAILED"), QStringLiteral("分块目录创建失败"),
+                 QHttpServerResponder::StatusCode::InternalServerError);
+            return;
+        }
+        m_chunkZipPath = dir + QLatin1Char('/') + id + QStringLiteral(".zip");
+        QFile f(m_chunkZipPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate) || f.write(body) != body.size()) {
+            fail(QStringLiteral("TRANSFER_FAILED"), QStringLiteral("分块首块写入失败"),
+                 QHttpServerResponder::StatusCode::InternalServerError);
+            return;
+        }
+        qInfo().noquote() << "HttpReceiver 分块会话开始: id=" << id
+                          << " total=" << total << " size=" << m_chunkTotalSize;
+    } else {
+        // ── 续块：会话/顺序/总量校验 + cap 累计 + append ──
+        if (id != m_chunkId || total != m_chunkTotal || index != m_chunkNextIndex || m_chunkZipPath.isEmpty()) {
+            fail(QStringLiteral("TRANSFER_CHUNK_MISMATCH"),
+                 QStringLiteral("分块会话不匹配或乱序（期望块 %1/%2）").arg(m_chunkNextIndex).arg(m_chunkTotal),
+                 QHttpServerResponder::StatusCode::Conflict);
+            return;
+        }
+        m_chunkReceivedSize += body.size();
+        const qint64 cap = deployDiskFreeBytes() / 3 * 2;
+        if (cap > 0 && m_chunkReceivedSize > cap) {   // 双保险（首块谎报大小场景）
+            fail(QStringLiteral("TRANSFER_TOO_LARGE"), QStringLiteral("接收量超过设备剩余空间 2/3"),
+                 QHttpServerResponder::StatusCode::PayloadTooLarge);
+            return;
+        }
+        QFile f(m_chunkZipPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Append) || f.write(body) != body.size()) {
+            fail(QStringLiteral("TRANSFER_FAILED"), QStringLiteral("分块写入失败"),
+                 QHttpServerResponder::StatusCode::InternalServerError);
+            return;
+        }
+        ++m_chunkNextIndex;
+    }
+    m_chunkTimer.start();   // T-1a：TTL 刷新（块间空闲 30s 超时自动清理——审查 🔴 1-2）
+
+    // ── 块进度（接收段 0~70 实时——已收块 = m_chunkNextIndex）──
+    const int pct = m_chunkNextIndex * 70 / m_chunkTotal;
+    m_lastProgress.storeRelaxed(pct);
+    emit transferProgress(pct, pct >= 70 ? QStringLiteral("接收完成，开始安装") : QStringLiteral("接收中…"));
+
+    if (index == m_chunkTotal - 1) {   // 审查 🟡 1-3：末块判定以会话总量（m_chunkTotal）而非请求头 total
+        // ── 末块：保留 responder → 后台安装链（70→100 刻度）──
+        m_responder = std::make_unique<QHttpServerResponder>(std::move(responder));
+        const QString zipPath = m_chunkZipPath;
+        // 审查 🟡 1-4：交棒清空 m_chunkZipPath（zipPath 已拷局部）——abort 误删保护自足（不再依赖并发锁巧合）
+        m_chunkZipPath.clear();
+        m_chunkId.clear();
+        m_chunkTotal = 0;
+        m_chunkTimer.stop();   // 交棒安装链——TTL 使命完成
+        std::thread([this, zipPath]() {
+            QString projectPath;
+            const QString error = receiveAndInstallFromZip(zipPath, projectPath);
+            if (!error.isEmpty() && !QFile::remove(zipPath))   // 审查 🟡 6：安装失败显式删分块 zip（成功路径 FromZip step6 已删）
+                qWarning().noquote() << "分块 zip 清理失败（安装错误路径）: " << zipPath;
+            QMetaObject::invokeMethod(this, [this, error, projectPath]() {
+                finishTransfer(error, projectPath);
+            }, Qt::QueuedConnection);
+        }).detach();
+    } else {
+        // 非末块：同步小块响应（落盘毫秒级不冻结事件循环）
+        const QJsonObject ok{
+            { QStringLiteral("code"), QStringLiteral("CHUNK_OK") },
+            { QStringLiteral("progress"), pct },
+            { QStringLiteral("stage"), QStringLiteral("Upload") },
+        };
+        responder.write(QJsonDocument(ok).toJson(QJsonDocument::Compact),
+                        QByteArrayLiteral("application/json"),
+                        QHttpServerResponder::StatusCode::Ok);
+    }
+}
+
+/// T-1a：分块会话清理（失败/新会话重建时；主线程）——删临时 zip + 复位会话状态。
+/// 注：m_transferActive 由调用方（fail lambda/handleTransfer）管理；交棒后 m_chunkZipPath/m_chunkId 已清空，
+/// abort 不会误删安装链使用中的 zip（自足保护——审查 🟡 1-4）。
+void HttpReceiver::abortChunkSession()
+{
+    m_chunkTimer.stop();
+    if (!m_chunkZipPath.isEmpty()) {
+        QFile::remove(m_chunkZipPath);
+        m_chunkZipPath.clear();
+    }
+    m_chunkId.clear();
+    m_chunkTotalSize = 0;
+    m_chunkReceivedSize = 0;
+    m_chunkNextIndex = 0;
+    m_chunkTotal = 0;
+}
+
+/// T-1a：分块会话空闲超时（审查 🔴 1-2）——块间 30s 无新块：PC 断连/崩溃后自动清理（删 zip + 复位
+/// 状态 + 释放并发锁 + 进度 -1），设备不永久拒收（新会话首块可正常开始）。
+void HttpReceiver::onChunkTimeout()
+{
+    if (m_chunkId.isEmpty()) return;   // 无活动分块会话（已交棒/已清）
+    qWarning().noquote() << "HttpReceiver 分块会话空闲超时，清理: id=" << m_chunkId;
+    m_lastProgress.storeRelaxed(-1);
+    emit transferProgress(-1, QStringLiteral("分块传输超时中断"));
+    m_transferActive.storeRelease(false);
+    abortChunkSession();
 }
 
 /// M-3 ④：主线程收尾——写 HTTP 响应 + 释放并发锁 + 信号（成功→projectPackageReady；失败→progress(-1)）
@@ -398,20 +626,21 @@ QHttpServerResponse HttpReceiver::jsonResponse(const QJsonObject& obj, QHttpServ
 
 QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& projectPathOut, bool* isFirmware)
 {
-    // 1. 尺寸/空包校验
+    // 1. 尺寸/空包校验（整包路径内存兜底——分块路径不经本函数，由 handleChunkedTransfer 直入 FromZip）
     if (body.isEmpty()) return QStringLiteral("空上传体");
-    if (body.size() > kMaxUploadBytes)
-        return QStringLiteral("上传超过大小上限（%1 MB）").arg(kMaxUploadBytes / (1024 * 1024));
+    if (body.size() > kMaxLegacySinglePostBytes)
+        return QStringLiteral("上传超过整包内存上限（%1 MB）——请使用分块上传").arg(kMaxLegacySinglePostBytes / (1024 * 1024));
 
     // 1b. D1：.fw 固件包嗅探（NHFW 魔数）——走 OTA 安装（校验 header sha → 组件表 → staging → 触发安装），
     //     不走工程部署 zip 路径；.navihmi/deploy.zip（PK 魔数）保持原路径
     //     复审 🔴：必须置位 isFirmware——finishTransfer 据此跳过 projectPackageReady（防 .fw 假工程重载）
+    //     T-1a：.fw 保持整包路径（≤256MB 内存兜底；rootfs 全量 17~26MB 级远低于），分块仅工程容器
     if (body.size() >= 4 && qstrncmp(body.constData(), "NHFW", 4) == 0) {
         if (isFirmware) *isFirmware = true;
         return handleFirmwarePackage(body, projectPathOut);
     }
 
-    // 2. body → 临时 zip
+    // 2. body → 临时 zip → 共用安装链（安装逻辑单一来源：receiveAndInstallFromZip）
     QTemporaryDir tmpDir;
     if (!tmpDir.isValid()) return QStringLiteral("临时目录创建失败");
     const QString zipPath = tmpDir.filePath(QStringLiteral("transfer.zip"));
@@ -420,6 +649,16 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
         if (!zf.open(QIODevice::WriteOnly)) return QStringLiteral("临时文件写入失败");
         if (zf.write(body) != body.size()) return QStringLiteral("临时文件写入不完整");
     }
+    return receiveAndInstallFromZip(zipPath, projectPathOut);
+}
+
+/// T-1a（2026-09-05）：从已落盘 zip 执行安装链——分块末块入口 + 整包路径共用（解压逻辑单一来源）。
+/// 安装段进度刻度 70~100（解压 70→85、写入 85→99、完成 100——接收段 0~70 由分块块进度/整包入口负责）。
+/// 仅工程容器（.fw 由 body 版 NHFW 嗅探分流，不经本函数）；后台线程执行（只碰局部/线程安全成员）。
+QString HttpReceiver::receiveAndInstallFromZip(const QString& zipPath, QString& projectPathOut)
+{
+    QTemporaryDir tmpDir;
+    if (!tmpDir.isValid()) return QStringLiteral("临时目录创建失败");
 
     // 3. 解压到临时目录——逐条提取（fileInfoList+fileData，对齐 main.cpp extractZipAll 成功路径）
     //    K-9 评论/4_bugs：QZipReader::extractAll 对 PC 打包 zip（.NET ZipArchive）不兼容（板子 unzip 可解但
@@ -455,9 +694,9 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
                     return QStringLiteral("容器解压失败（条目写入不完整: %1）").arg(rel);
                 f.close();
                 ++extracted;
-                // M-3 ④：解压进度（5% → 45%）
+                // M-3 ④：解压进度——T-1a 刻度统一（安装段 70 → 85；0~70 接收段归分块块进度/整包入口）
                 if (totalEntries > 0 && (extracted % 16 == 0 || extracted == totalEntries)) {
-                    const int pct = 5 + 40 * extracted / totalEntries;
+                    const int pct = 70 + 15 * extracted / totalEntries;
                     m_lastProgress.storeRelaxed(pct);   // D-B4：同步记录供轮询
                     emit transferProgress(pct, QStringLiteral("解压安装包…"));
                 }
@@ -577,15 +816,18 @@ QString HttpReceiver::receiveAndInstall(const QByteArray& body, QString& project
         if (!QFile::copy(srcFile, dstFile))
             return QStringLiteral("res 落盘失败: %1").arg(target);
         ++resDone;
-        // M-3 ④：落盘进度（50% → 95%）
+        // M-3 ④：落盘进度——T-1a 刻度统一（写入 85 → 99）
         if (resTotal > 0 && (resDone % 16 == 0 || resDone == resTotal)) {
-            const int pct = 50 + 45 * resDone / resTotal;
+            const int pct = 85 + 14 * resDone / resTotal;
             m_lastProgress.storeRelaxed(pct);   // D-B4：同步记录供轮询
             emit transferProgress(pct, QStringLiteral("写入资源…"));
         }
     }
 
-    // 6. 清理临时（QTemporaryDir 析构自动删）+ 返回
+    // 6. 清理临时（QTemporaryDir 析构自动删；分块源 zip（.transfer/<id>.zip）显式删——成功安装不留残留；
+    //    remove 罕见 I/O 错 → qWarning 可见（兜底职责 448 失败路径 / 本处成功路径）
+    if (!QFile::remove(zipPath))
+        qWarning().noquote() << "分块 zip 清理失败（安装成功路径，残留无害）: " << zipPath;
     projectPathOut = appPath;
     m_lastProgress.storeRelaxed(100);   // D-B4：安装完成
     emit transferProgress(100, QStringLiteral("安装完成"));   // M-3 ④：满进度 → QML 停 1~2s 后自动打开
