@@ -28,8 +28,17 @@ Item {
         color: "black"
     }
 
+    // VideoOutput 声明在 MediaPlayer **之前**：MediaPlayer.videoOutput 是对象绑定，首次求值时 videoOut
+    // 必须已创建（id 后向引用无变化通知——先 MediaPlayer 后 VideoOutput 会恒 null 无画面）
+    VideoOutput {
+        id: videoOut
+        anchors.fill: parent
+        fillMode: VideoOutput.PreserveAspectFit   // 不变形（黑边补齐）
+    }
+
     MediaPlayer {
         id: player
+        videoOutput: videoOut   // Qt 6 关联方式：MediaPlayer.videoOutput 挂 VideoOutput（6.4 VideoOutput **无 source 属性**——Q_PROPERTY 仅 fillMode/orientation/sourceRect/contentRect/videoSink；早期版本写 VideoOutput.source: player 致「Cannot assign to non-existent property source」→ 组件创建失败第二层根因。官方示例 declarative-camera/VideoPreview 均此写法）
         source: vroot.toFileUrl(vroot.videoSource)
         // 注意：Qt 6.4 QML MediaPlayer **无 autoPlay 属性**（qtmultimedia-6.4.3 qmediaplayer.h 仅 loops 等；
         // autoPlay 是 Qt 6.5+ 才给 MediaPlayer 引入，6.4 仅 spatialaudio 类型有）——早期版本写过
@@ -50,13 +59,6 @@ Item {
             stateText.visible = true
             console.warn("[HmiFrameVideo] source=" + vroot.videoSource + " err=" + errorString)
         }
-    }
-
-    VideoOutput {
-        id: videoOut
-        anchors.fill: parent
-        source: player
-        fillMode: VideoOutput.PreserveAspectFit   // 不变形（黑边补齐）
     }
 
     Text {
