@@ -119,6 +119,8 @@ struct Widget {
     // Frame 视频 (P-6 2026-09-02)
     bool showVideo = false;          // Frame 视频模式（checkbox——true=视频；false/无源=普通 Frame）
     QString videoSource;             // Frame 视频源（本地路径打包 / rtsp:// URL 不入包）
+    // R-4 (2026-09-05 用户 Check): Frame 播放控制变量（布尔驱动播放/暂停；空=未绑定）
+    QString playTag;                 // true=播放 false=暂停（点击控件翻转并写回）
 };
 
 struct Screen {

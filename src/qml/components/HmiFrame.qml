@@ -20,6 +20,7 @@ Rectangle {
     property double fontSize: 13
     property bool showVideo: false  // P-6: 视频模式（生成器仅视频 Frame 输出 true）——Loader 动态挂 HmiFrameVideo
     property string videoSource: ""  // P-6: 视频源（生成器 resolveVideoPath 重定位：本地绝对路径 / RTSP/网络 URL 原样）
+    property string playTag: ""  // R-4: 播放控制布尔变量（空=未绑定；生成器仅视频 Frame 输出）
     property string text: ""  // 并集字段容忍(生成器统一输出)
     property string content: ""  // 并集字段容忍(生成器统一输出)
     property string hAlign: "Left"  // 并集字段容忍(生成器统一输出)
@@ -86,6 +87,10 @@ Rectangle {
         active: root.showVideo && root.videoSource !== ""
         source: active ? "HmiFrameVideo.qml" : ""
         onLoaded: {
+            // 顺序关键（复审 🔴 2026-09-05）：playTag **先于** videoSource 赋值——videoSource 赋值同步触发
+            // HmiFrameVideo.onSourceChanged（QML 信号同步级联），该 handler 内按 playTag 纠正播放态；
+            // 若 playTag 后赋则触发时仍 ""（守卫跳过）→ 绑定 false 的画面打开仍自动播（时序缺陷未真正修复）
+            item.playTag = root.playTag   // R-4: 播放控制变量
             item.videoSource = root.videoSource
             visible = true
         }

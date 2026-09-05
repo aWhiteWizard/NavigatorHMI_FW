@@ -191,9 +191,10 @@ bool mapWidget(const pb::Widget& p, Widget& w)
         w.historyTagTitles.append(s(t));
     w.historyDbPath = s(p.history_db_path());
     w.displayMode = p.display_mode();
-    // P-6 Frame 视频字段（75-76）
+    // P-6 Frame 视频字段（75-76）+ R-4 播放控制（78）
     w.showVideo = p.show_video();
     w.videoSource = s(p.video_source());
+    w.playTag = s(p.play_tag());   // R-4: 播放控制变量（空=未绑定）
     // 事件（未知事件类型 → 跳过该事件；未知动作类型 → 跳过该动作——不静默回退默认）
     for (const auto& pe : p.events()) {
         WidgetEvent we;

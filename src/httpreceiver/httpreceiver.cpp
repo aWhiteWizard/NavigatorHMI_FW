@@ -241,6 +241,11 @@ void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServer
     }
 
     const QByteArray body = request.body();
+    // R 排查（2026-09-05）：工程被 96B「测试工程」覆盖来源成谜（用户未操作部署但设备收多次容器）——
+    // 接收入口打来源 IP + 大小 + 魔数（NHFW=固件 / PK=工程容器），下次部署可精确定位谁在发
+    qInfo().noquote() << "HttpReceiver 接收: from=" << request.remoteAddress().toString()
+                      << " size=" << body.size()
+                      << " magic=" << (body.size() >= 4 ? QByteArray(body.constData(), 4).toHex() : QByteArray("--"));
     // M-3 ④：接收开始 → QML 屏幕进度条（退导航→进度→满停→自动打开）
     m_lastProgress.storeRelaxed(5);   // D-B4：同步记录供 GET /api/progress 轮询（接收完成 5%）
     emit transferProgress(5, QStringLiteral("接收完成，开始安装"));

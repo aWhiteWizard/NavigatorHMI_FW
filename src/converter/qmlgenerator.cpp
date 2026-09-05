@@ -298,6 +298,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
     if (w.type == WidgetType::Frame && w.showVideo) {
         appendProp(out, "showVideo", true);
         appendProp(out, "videoSource", resolveVideoPath(w.videoSource, resourceRoot));
+        appendProp(out, "playTag", w.playTag);   // R-4: 播放控制变量（空=未绑定——HmiFrameVideo 点击直接控制）
     }
 
     // 事件占位：onClick 等 → 信号处理器（联动 ActionRunner 后续循环接入）
