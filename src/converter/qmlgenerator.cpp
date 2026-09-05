@@ -80,6 +80,11 @@ QString resolveResPath(const QString& raw, const QString& resourceRoot)
 QString resolveVideoPath(const QString& raw, const QString& resourceRoot)
 {
     QString p = raw.trimmed();
+    // Check ④（2026-09-05 用户）：视频链接带双引号（复制粘贴常见 `"rtsp://..."`）——剥首尾成对引号后再判
+    // 协议/路径（引号非 URL/路径合法字符，不剥则 rtsp:// 前缀判断失配、被误拼 media/ 前缀；PC Video 列表
+    // create/update 已清洗去引号，此处兜底单源 videoSource / 文本型列表项等其余路径）
+    if (p.size() >= 2 && (p.front() == QLatin1Char('"') || p.front() == QLatin1Char('\'')) && p.back() == p.front())
+        p = p.mid(1, p.size() - 2).trimmed();
     if (p.isEmpty() || resourceRoot.isEmpty())
         return p;
     if (p.startsWith(QLatin1String("rtsp://"), Qt::CaseInsensitive)
