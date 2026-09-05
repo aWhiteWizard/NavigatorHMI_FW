@@ -21,6 +21,9 @@ Rectangle {
     property bool showVideo: false  // P-6: 视频模式（生成器仅视频 Frame 输出 true）——Loader 动态挂 HmiFrameVideo
     property string videoSource: ""  // P-6: 视频源（生成器 resolveVideoPath 重定位：本地绝对路径 / RTSP/网络 URL 原样）
     property string playTag: ""  // R-4: 播放控制布尔变量（空=未绑定；生成器仅视频 Frame 输出）
+    property string videoListRef: ""  // S-5: 视频源列表名（生成器仅视频 Frame 且选了列表时输出）
+    property string videoIndexTag: ""  // S-5: 视频源选择变量（整型索引——变量值取列表对应项切源）
+    property string videoListItems: ""  // S-5: 视频源列表项（生成器按列表展开 | 分隔源地址串）
     property string text: ""  // 并集字段容忍(生成器统一输出)
     property string content: ""  // 并集字段容忍(生成器统一输出)
     property string hAlign: "Left"  // 并集字段容忍(生成器统一输出)
@@ -84,14 +87,23 @@ Rectangle {
         id: videoLayer
         anchors.fill: parent
         visible: false
-        active: root.showVideo && root.videoSource !== ""
+        // 复审 🔴（2026-09-05 FW 审）：gate 必须纳入列表模式——S-5 list-only 配置（videoListRef 非空 +
+        // videoSource 空）若仍只判 videoSource，Loader 恒不激活 → 列表模式无视频且无任何提示（生成器在
+        // videoSource 空时不输出该属性，qmlgenerator.cpp S-5 展开段）；单源与列表任一非空即挂载。
+        active: root.showVideo && (root.videoSource !== "" || root.videoListRef !== "")
         source: active ? "HmiFrameVideo.qml" : ""
         onLoaded: {
-            // 顺序关键（复审 🔴 2026-09-05）：playTag **先于** videoSource 赋值——videoSource 赋值同步触发
+            // 顺序关键（复审 🔴 2026-09-05）：playTag **先于**源同步——syncSources() 内设 player.source 同步触发
             // HmiFrameVideo.onSourceChanged（QML 信号同步级联），该 handler 内按 playTag 纠正播放态；
             // 若 playTag 后赋则触发时仍 ""（守卫跳过）→ 绑定 false 的画面打开仍自动播（时序缺陷未真正修复）
             item.playTag = root.playTag   // R-4: 播放控制变量
+            item.videoListRef = root.videoListRef   // S-5: 列表参数先就绪（切源逻辑在 HmiFrameVideo 内按列表态决定）
+            item.videoIndexTag = root.videoIndexTag
+            item.videoListItems = root.videoListItems
             item.videoSource = root.videoSource
+            // 复审 🔴（2026-09-05 FW 审）：五参齐备后显式同步源——HmiFrameVideo 已移除属性变化隐式级联
+            // 与 onCompleted 自启（中间态/启动误报根源），装载首帧源统一在此一次性驱动（组件内见 syncSources）
+            item.syncSources()
             visible = true
         }
         // 审查 🟡（2026-09-04）：模块缺失/import 失败不得静默（Loader 永不 onLoaded、无任何反馈）——

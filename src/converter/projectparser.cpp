@@ -107,6 +107,7 @@ bool mapActionType(pb::ActionType t, ActionType& out)
     case pb::ACT_ACKNOWLEDGE_ALARM: out = ActionType::AcknowledgeAlarm; return true;
     case pb::ACT_SET_SYSTEM_TIME: out = ActionType::SetSystemTime; return true;
     case pb::ACT_STOP_RUNTIME: out = ActionType::StopRuntime; return true;
+    case pb::ACT_TAG_STEP: out = ActionType::TagStep; return true;   // S-7 变量循环步进
     default:
         qWarning("projectparser: 未知动作类型 %d —— 跳过该动作", static_cast<int>(t));
         return false;
@@ -191,10 +192,12 @@ bool mapWidget(const pb::Widget& p, Widget& w)
         w.historyTagTitles.append(s(t));
     w.historyDbPath = s(p.history_db_path());
     w.displayMode = p.display_mode();
-    // P-6 Frame 视频字段（75-76）+ R-4 播放控制（78）
+    // P-6 Frame 视频字段（75-76）+ R-4 播放控制（78）+ S-5 视频源列表（79-80）
     w.showVideo = p.show_video();
     w.videoSource = s(p.video_source());
     w.playTag = s(p.play_tag());   // R-4: 播放控制变量（空=未绑定）
+    w.videoListRef = s(p.video_list_ref());   // S-5: 视频源列表名（空=未选）
+    w.videoIndexTag = s(p.video_index_tag());   // S-5: 视频源选择变量（空=未绑）
     // 事件（未知事件类型 → 跳过该事件；未知动作类型 → 跳过该动作——不静默回退默认）
     for (const auto& pe : p.events()) {
         WidgetEvent we;

@@ -9,6 +9,7 @@
 
 #include <QDebug>
 #include <QMetaObject>
+#include <cmath>   // S-7 TagStep fmod
 
 namespace navihmi {
 
@@ -245,6 +246,27 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
             double cur = m_dataManager->value(tagName).toDouble();
             double delta = p.value("value").toDouble();
             m_dataManager->setValue(tagName, cur + (action.type == ActionType::TagAdd ? delta : -delta));
+        }
+        break;
+    }
+    case ActionType::TagStep: {   // S-7（2026-09-05 用户拍板格子回绕）：result = min + ((cur-min+step) mod span)
+        // span = max-min+1（含端点）；负步长同样回绕（低于 min 余量从 max 续减）——6+1→0、5+3→1（用户语义）
+        const QString tagName = p.value("tag_name");
+        if (m_dataManager && !tagName.isEmpty()) {
+            double cur = m_dataManager->value(tagName).toDouble();
+            const double step = p.value("step").toDouble();
+            const double minV = p.value("min").toDouble();
+            const double maxV = p.value("max").toDouble();
+            if (maxV >= minV) {
+                const double span = maxV - minV + 1.0;
+                double off = cur - minV + step;
+                // 正数模（C++ % 负数负余数——需归正）
+                off = fmod(off, span);
+                if (off < 0) off += span;
+                m_dataManager->setValue(tagName, minV + off);
+            } else {
+                qWarning().noquote() << "RuntimeBus: TagStep min>max 参数错误" << p;
+            }
         }
         break;
     }

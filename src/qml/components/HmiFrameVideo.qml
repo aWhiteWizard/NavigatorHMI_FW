@@ -6,6 +6,9 @@
 // RTSP/http(s) 网络流 → 原样 URL 直连（RTSP 不入部署包，设备端直连流地址）。
 // R-1/R-3/R-4 (2026-09-05 用户 Check)：循环播放（EndOfMedia 重播——Qt6.4 ffmpeg 后端不实现 loops 的兜底）+
 // 点击切换播放/暂停（暂停显示半透明圆+暂停符号）+ 播放控制布尔变量（true=播放 false=暂停，点击翻转写回）。
+// S-5 (2026-09-05 用户拍板)：视频源列表（videoListRef + videoListItems | 分隔 + videoIndexTag 整型索引变量）——
+//   运行时按索引变量值取列表对应项切源播放；列表模式优先于单源 videoSource。
+// S-6 (2026-09-05)：播放失败诊断——打印当前源路径 + 提示「该路径不可播放」（非静默）。
 import QtQuick 2.15
 import QtMultimedia
 
@@ -14,6 +17,9 @@ Item {
 
     property string videoSource: ""
     property string playTag: ""   // R-4: 播放控制布尔变量（空=未绑定——仅点击直接控制；非空=变量驱动 true=播放 false=暂停）
+    property string videoListRef: ""   // S-5: 视频源列表名（空=未选列表走单源 videoSource）
+    property string videoIndexTag: ""  // S-5: 视频源选择变量（整型非负——变量值=列表项索引）
+    property string videoListItems: "" // S-5: 视频源列表项（生成器按列表展开 | 分隔源地址串，含空占位项）
 
     // 本地绝对路径 → file:// URL；空/已带 file:///qrc:/rtsp://http(s):// 前缀原样返回（与 HmiImage.toFileUrl 先例对齐）
     function toFileUrl(p) {
@@ -24,6 +30,9 @@ Item {
         if (p.charAt(0) === "/") return "file://" + p
         return p
     }
+
+    // S-5: 列表项数组（videoListItems split——保留空占位项使索引与 PC 列表项对齐）
+    property var sourceItems: videoListItems.length > 0 ? videoListItems.split("|") : []
 
     // R-4: 布尔值 → 播放/暂停（"1"/"true" → 播；"0"/""/"false" → 暂停；playTag 空=未绑定不响应）
     function applyPlayTagValue(v) {
@@ -43,6 +52,56 @@ Item {
             dataManager.setValue(vroot.playTag, player.playbackState === MediaPlayer.PlayingState)   // 审查 🔵：写 JS bool（非 "1"/"0" 字符串——防 Bool 变量 bool/string 类型抖动，对齐 HmiSwitch/HmiCheckBox 先例）
     }
 
+    // S-5: 当前目标源（列表模式取 items[idx]，idx 越界/空项 → ""（走提示路径）；单源 → videoSource）
+    function currentTargetSource() {
+        if (vroot.videoListRef !== "" && vroot.sourceItems.length > 0) {
+            var idx = 0
+            if (vroot.videoIndexTag !== "" && dataManager) {
+                var raw = dataManager.value(vroot.videoIndexTag)
+                var n = Number(raw)
+                idx = (!isNaN(n) && n >= 0) ? Math.floor(n) : 0
+            }
+            if (idx >= 0 && idx < vroot.sourceItems.length)
+                return vroot.sourceItems[idx]
+            return ""   // 越界 → 无源（S-6 提示）
+        }
+        return vroot.videoSource
+    }
+    // S-5: 应用当前目标源（不同 → 重设 source（onSourceChanged 触发播放）；相同 → 未播则补播）
+    // 复审 🔴（2026-09-05 FW 审）：成功路径必须清屏——错误文本（S-6/空源提示）一旦显示永不消除，
+    // 正常播放中会常显红色错误覆盖层；此处有效源即清屏（后续切源成功同样清除，错误只留在真正无效/失败时）。
+    function applySource() {
+        var target = vroot.currentTargetSource()
+        if (target === undefined || target === null || target === "") {
+            stateText.text = "视频源不可用（当前索引无有效源）"
+            stateText.visible = true
+            console.warn("[HmiFrameVideo] 无有效视频源 listRef=" + vroot.videoListRef + " videoSource=" + vroot.videoSource)
+            return
+        }
+        var url = vroot.toFileUrl(target)
+        if (player.source.toString() !== url) {   // 复审 🟡：player.source 读回为 QUrl 对象——严格 !== 不做类型转换，
+                                                  // 同源重入会恒不等 → 幂等分支失效每次都重设 source 重载；toString 化显式比较
+            player.source = url
+        } else if (player.playbackState !== MediaPlayer.PlayingState
+                   && player.mediaStatus !== MediaPlayer.EndOfMedia) {
+            player.play()
+        }
+        stateText.visible = false   // 有效源 → 清除错误覆盖层（含切源成功后的旧 S-6/空源提示）
+    }
+    // 复审 🔴（2026-09-05 FW 审）：装载同步显式化——原 onVideoSourceChanged/onVideoListItemsChanged/
+    // onVideoListRefChanged 隐式级联 + Component.onCompleted 无条件 applySource()：onCompleted 早于
+    // HmiFrame.onLoaded 赋属性（此时全默认 ""）必误报一次；onLoaded 逐参赋值途中（listRef 已赋、
+    // videoListItems 未赋）的中间态同样误报。现由 HmiFrame.onLoaded 末尾显式调本函数一次（五参齐备后），
+    // 无中间态级联；运行时切源仍由下方 Connections(videoIndexTag) → applyIndexValue 驱动。
+    function syncSources() {
+        vroot.applySource()
+    }
+    // S-5: 索引变量值变化 → 重取列表项切源（列表模式）
+    function applyIndexValue() {
+        if (vroot.videoListRef !== "" && vroot.sourceItems.length > 0)
+            vroot.applySource()
+    }
+
     // 黑色衬底（视频 letterbox 区域/未就绪时为黑，画面完整）
     Rectangle {
         anchors.fill: parent
@@ -60,11 +119,11 @@ Item {
     MediaPlayer {
         id: player
         videoOutput: videoOut   // Qt 6 关联方式：MediaPlayer.videoOutput 挂 VideoOutput（6.4 VideoOutput **无 source 属性**——Q_PROPERTY 仅 fillMode/orientation/sourceRect/contentRect/videoSink；早期版本写 VideoOutput.source: player 致「Cannot assign to non-existent property source」→ 组件创建失败第二层根因。官方示例 declarative-camera/VideoPreview 均此写法）
-        source: vroot.toFileUrl(vroot.videoSource)
-        // 注意：Qt 6.4 QML MediaPlayer **无 autoPlay 属性**（qtmultimedia-6.4.3 qmediaplayer.h 仅 loops 等；
+        // 注意：source 不在此绑定——S-5 起由 vroot.applySource() 统一决定（列表/单源），绑定会与运行时切源冲突
+        // Qt 6.4 QML MediaPlayer **无 autoPlay 属性**（qtmultimedia-6.4.3 qmediaplayer.h 仅 loops 等；
         // autoPlay 是 Qt 6.5+ 才给 MediaPlayer 引入，6.4 仅 spatialaudio 类型有）——早期版本写过
         // `autoPlay: vroot.videoSource !== ""` 致「Cannot assign to non-existent property autoPlay」
-        // → 组件创建失败 → HmiFrame 误报「QtMultimedia 未部署」。播放由下方 onSourceChanged 显式 play() 驱动。
+        // → 组件创建失败 → HmiFrame 误报「QtMultimedia 未部署」。播放由 onSourceChanged 显式 play() 驱动。
         loops: MediaPlayer.Infinite
         // R-1（2026-09-05）：Qt6.4 ffmpeg 后端**不实现 loops**（qffmpegmediaplayer.cpp 无 setLoops 覆盖，
         // endOfStream 直接 Stopped）→ 显式 EndOfMedia 重播兜底（play() 内部 EndOfMedia+Stopped 态自动 seek 0）
@@ -73,36 +132,36 @@ Item {
                 play()
         }
         // 审查 🟡（2026-09-04，复审驳回后修正）：显式 play() 幂等兜底——不依赖「source/autoPlay 同一变更内
-        // 绑定求值顺序」（source 先于 autoPlay 求值时 Qt 可能不自动播放）。处理器挂 MediaPlayer 自身
-        // onSourceChanged（source 绑定重算后确定性触发）；**不可**挂 onVideoSourceChanged——
-        // MediaPlayer 无 videoSource 属性：QML 按未知属性赋值告警且永不触发（首轮复审死代码根因）
+        // 绑定求值顺序」。处理器挂 MediaPlayer 自身 onSourceChanged（source 重算后确定性触发）
         onSourceChanged: {
-            if (vroot.videoSource !== "" && playbackState !== MediaPlayer.PlayingState)
+            if (playbackState !== MediaPlayer.PlayingState && player.source !== "")
                 play()
             // 审查 🟡（2026-09-05）：onCompleted 早于 Loader.onLoaded 赋 playTag → 初始同步失效——
             // source 就绪（onLoaded 赋值后触发本 handler）按变量当前值纠正（绑定 false 的画面打开即暂停）
             if (vroot.playTag !== "" && dataManager)
                 vroot.applyPlayTagValue(dataManager.value(vroot.playTag))
         }
+        // S-6（2026-09-05）：播放失败诊断——打印当前源路径 + 明确「该路径不可播放」提示（非静默）
         onErrorOccurred: function (error, errorString) {
-            stateText.text = "视频错误: " + errorString
+            var src = vroot.currentTargetSource()
+            stateText.text = "该路径不可播放: " + (src === "" ? "(空/越界)" : src)
             stateText.visible = true
-            console.warn("[HmiFrameVideo] source=" + vroot.videoSource + " err=" + errorString)
+            console.warn("[HmiFrameVideo] 该路径不可播放 source=" + src
+                         + " err=" + errorString + " errCode=" + error)
         }
     }
 
-    // R-4: 播放控制变量监听（值变驱动播放/暂停）
+    // R-4/S-5: 变量监听（播放控制布尔 + 视频源选择索引）
     Connections {
         target: dataManager
         function onValueChanged(tagName, value) {
             if (tagName === vroot.playTag) vroot.applyPlayTagValue(value)
+            if (tagName === vroot.videoIndexTag) vroot.applyIndexValue()   // S-5：索引变 → 切源
         }
     }
-    // R-4: 组件装载后按变量当前值同步一次（未绑定/变量无值 → 维持播放默认）
-    Component.onCompleted: {
-        if (vroot.playTag !== "" && dataManager)
-            vroot.applyPlayTagValue(dataManager.value(vroot.playTag))
-    }
+    // 装载同步统一由 HmiFrame.onLoaded 末尾 item.syncSources() 显式驱动（见上方 syncSources 注释——
+    // 属性变化隐式级联与 Component.onCompleted 的启动/中间态误报已随复审 🔴 移除）；运行时钟频由
+    // 上方 Connections（playTag 播放控制 + videoIndexTag 切源）驱动。
 
     // R-3: 点击控件切换播放/暂停（覆盖全控件区）
     MouseArea {

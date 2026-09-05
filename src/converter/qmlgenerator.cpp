@@ -299,6 +299,19 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
         appendProp(out, "showVideo", true);
         appendProp(out, "videoSource", resolveVideoPath(w.videoSource, resourceRoot));
         appendProp(out, "playTag", w.playTag);   // R-4: 播放控制变量（空=未绑定——HmiFrameVideo 点击直接控制）
+        // S-5: 视频源列表（videoListRef 非空 → 展开 Video 列表项为 | 分隔源地址串——本地项 resolveVideoPath 重定位、RTSP 原样；
+        //    项含 | 字符会被拆错——同 Image listItems 先例（上方 187-188 行注释）局限，Video 列表项（源地址）需规避含 | 的地址）
+        appendProp(out, "videoListRef", w.videoListRef);
+        appendProp(out, "videoIndexTag", w.videoIndexTag);
+        if (!w.videoListRef.isEmpty()) {
+            const ListDef* vlist = proj.ListByName(w.videoListRef);
+            if (vlist) {
+                QStringList srcs;
+                for (const auto& item : vlist->items)
+                    srcs << resolveVideoPath(item, resourceRoot);
+                appendProp(out, "videoListItems", srcs.join(QLatin1Char('|')));
+            }
+        }
     }
 
     // 事件占位：onClick 等 → 信号处理器（联动 ActionRunner 后续循环接入）

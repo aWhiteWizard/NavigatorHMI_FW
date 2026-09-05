@@ -20,7 +20,7 @@ enum class NavPosition { Top = 0, Bottom = 1 };
 enum class TagDataType { Bool = 0, Int16 = 1, Uint16 = 2, Int32 = 3, Float = 4, String = 5, DateTime = 6, Gps = 7 };
 enum class AlarmType { High = 0, Low = 1, RateChange = 2, Deviation = 3 };
 enum class Severity { Emergency = 0, Important = 1, Warning = 2, Info = 3 };
-enum class ListType { Text = 0, Image = 1 };
+enum class ListType { Text = 0, Image = 1, Video = 2 };  // S-5: Video 列表（项 = 视频源地址串；值 = navihmi.proto ListType）
 enum class ProtocolType { ModbusRtu = 0, ModbusTcp = 1, Mqtt = 2 };
 enum class WidgetType {
     Button = 0, Text = 1, Label = 2, Rectangle = 3, Image = 4, NumericDisplay = 5,
@@ -44,7 +44,8 @@ enum class ActionType {
     ScreenPrev = 6, ScreenNext = 7, TagAdd = 8, TagSubtract = 9,
     TagToggle = 10, SetBit = 11, ResetBit = 12,
     SetDatetime = 13, GetDatetime = 14, AcknowledgeAlarm = 15, SetSystemTime = 16,
-    StopRuntime = 17   // 运行时停止（退出当前工程回导航首页；M-3）
+    StopRuntime = 17,   // 运行时停止（退出当前工程回导航首页；M-3）
+    TagStep = 18   // S-7 变量循环步进（格子回绕 min/max/step；6+1→0、5+3→1）
 };
 enum class AlarmTriggerMode { Threshold = 0, OnRising = 1, OnFalling = 2, OnChange = 3 };
 enum class AlarmCategory { System = 0, User = 1, Error = 2 };
@@ -121,6 +122,9 @@ struct Widget {
     QString videoSource;             // Frame 视频源（本地路径打包 / rtsp:// URL 不入包）
     // R-4 (2026-09-05 用户 Check): Frame 播放控制变量（布尔驱动播放/暂停；空=未绑定）
     QString playTag;                 // true=播放 false=暂停（点击控件翻转并写回）
+    // S-4/S-5 (2026-09-05 用户拍板): Frame 视频源列表（Video 型列表）+ 视频源选择整型变量
+    QString videoListRef;            // 视频源列表名（空=未选走单源 videoSource）
+    QString videoIndexTag;           // 视频源选择变量（整型非负——变量值=列表项索引切源；空=播首项/单源）
 };
 
 struct Screen {
