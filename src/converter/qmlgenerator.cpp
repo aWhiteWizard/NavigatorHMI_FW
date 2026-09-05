@@ -63,6 +63,10 @@ QString qmlEsc(const QString& s)
 QString resolveResPath(const QString& raw, const QString& resourceRoot)
 {
     QString p = raw.trimmed();
+    // T-4b（2026-09-05 T 循环）：剥首尾成对引号（对齐 resolveVideoPath 0e2d732 先例——图片源带引号复制
+    // 粘贴场景；引号非路径合法字符，不剥则 QFileInfo(p).isAbsolute() 误判/拼 res/ 前缀错乱）
+    if (p.size() >= 2 && (p.front() == QLatin1Char('"') || p.front() == QLatin1Char('\'')) && p.back() == p.front())
+        p = p.mid(1, p.size() - 2).trimmed();
     if (p.isEmpty() || resourceRoot.isEmpty())
         return p;
     if (QFileInfo(p).isAbsolute())
