@@ -21,7 +21,7 @@ S=$OUT/host/aarch64-buildroot-linux-gnu/sysroot/usr
 [ "${TREE#/workspace/build/}" != "$TREE" ] || { echo "树目录须在 /workspace/build/ 下（防误删）: $TREE"; exit 1; }
 
 rm -rf "$TREE"
-mkdir -p "$TREE/usr/lib/pulseaudio" "$TREE/usr/qml/QtMultimedia" "$TREE/usr/plugins/multimedia/ffmpeg"
+mkdir -p "$TREE/usr/lib/pulseaudio" "$TREE/usr/qml/QtMultimedia" "$TREE/usr/plugins/multimedia"
 
 # QtMultimedia（SONAME 实文件）
 cp $T/lib/libQt6Multimedia.so.6.4.3 "$TREE/usr/lib/libQt6Multimedia.so.6"
@@ -45,7 +45,10 @@ cp $T/lib/libz.so.1.3.1                     "$TREE/usr/lib/libz.so.1"
 cp $T/lib/libdrm.so.2.124.0                 "$TREE/usr/lib/libdrm.so.2"
 # QML 插件目录 + ffmpeg 后端插件
 cp $T/qml/QtMultimedia/*                    "$TREE/usr/qml/QtMultimedia/"
-cp $T/plugins/multimedia/ffmpeg/libffmpegmediaplugin.so "$TREE/usr/plugins/multimedia/ffmpeg/"
+# 2026-09-05 设备实测（QT_DEBUG_PLUGINS）：后端插件必须放 multimedia/**直接目录**——Qt factoryloader
+# 扫 plugins/multimedia 时只认直接子文件 .so，不递归 multimedia/ffmpeg/ 子目录（官方 cmake 布局 ffmpeg/
+# 子目录在 buildroot Qt 上不生效 → 「could not load multimedia backend」+ abort 崩溃黑屏）。直接 multimedia/
+cp $T/plugins/multimedia/ffmpeg/libffmpegmediaplugin.so "$TREE/usr/plugins/multimedia/"
 
 echo "=== 树内容（$TREE）==="
 find "$TREE" -type f | sort

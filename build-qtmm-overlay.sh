@@ -30,11 +30,13 @@ else
     exit 1
 fi
 
-echo "=== 3. 固化 ffmpeg 后端插件（overlay/usr/plugins/multimedia/ffmpeg）==="
+echo "=== 3. 固化 ffmpeg 后端插件（overlay/usr/plugins/multimedia——直接目录）==="
 PLUGIN=$(find ${BUILD_DIR} -name 'libffmpegmediaplugin.so' | head -1)
 if [ -n "${PLUGIN}" ]; then
-    mkdir -p ${OVERLAY}/usr/plugins/multimedia/ffmpeg
-    cp -av ${PLUGIN} ${OVERLAY}/usr/plugins/multimedia/ffmpeg/
+    # 2026-09-05 设备实测（同 build-ota-tree.sh）：Qt factoryloader 扫 plugins/multimedia 只认直接子文件，
+    # 不递归 multimedia/ffmpeg/ 子目录 → 子目录布局 backend 空 + abort 黑屏（镜像刷机路径同根因闭环）
+    mkdir -p ${OVERLAY}/usr/plugins/multimedia
+    cp -av ${PLUGIN} ${OVERLAY}/usr/plugins/multimedia/
 else
     echo "!! libffmpegmediaplugin.so 未找到（QT_FEATURE_ffmpeg 未生效？）——固化不完整，中止"
     exit 1
