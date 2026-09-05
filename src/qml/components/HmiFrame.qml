@@ -91,10 +91,14 @@ Rectangle {
         }
         // 审查 🟡（2026-09-04）：模块缺失/import 失败不得静默（Loader 永不 onLoaded、无任何反馈）——
         // Error 状态显式提示 + 日志（对齐「不静默失败」纪律）
+        // 2026-09-05 根因实录：曾误报「QtMultimedia 未部署？」——实际是 HmiFrameVideo.qml 给 Qt 6.4
+        // MediaPlayer 赋了不存在的 autoPlay 属性（QML 报错行已由 Qt 打印到 stderr/日志）。提示不再猜测原因，
+        // 指引看设备日志定位（Loader 失败=组件创建错误，具体行号在日志）。
         onStatusChanged: {
             if (status === Loader.Error) {
                 videoErrorText.visible = true
-                console.warn("[HmiFrame] 视频组件加载失败（QtMultimedia 未部署？）source=" + root.videoSource)
+                console.warn("[HmiFrame] 视频组件加载失败 source=" + root.videoSource
+                             + "（详见设备日志 QML 报错行——Loader 失败=组件创建错误，非必然模块缺失）")
             }
         }
     }

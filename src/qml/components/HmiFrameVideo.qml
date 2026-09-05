@@ -31,7 +31,10 @@ Item {
     MediaPlayer {
         id: player
         source: vroot.toFileUrl(vroot.videoSource)
-        autoPlay: vroot.videoSource !== ""
+        // 注意：Qt 6.4 QML MediaPlayer **无 autoPlay 属性**（qtmultimedia-6.4.3 qmediaplayer.h 仅 loops 等；
+        // autoPlay 是 Qt 6.5+ 才给 MediaPlayer 引入，6.4 仅 spatialaudio 类型有）——早期版本写过
+        // `autoPlay: vroot.videoSource !== ""` 致「Cannot assign to non-existent property autoPlay」
+        // → 组件创建失败 → HmiFrame 误报「QtMultimedia 未部署」。播放由下方 onSourceChanged 显式 play() 驱动。
         // Frame 视频作画面展示：循环播放（播完不黑屏；用户 Check 确认是否需单次播放）
         loops: MediaPlayer.Infinite
         // 审查 🟡（2026-09-04，复审驳回后修正）：显式 play() 幂等兜底——不依赖「source/autoPlay 同一变更内
