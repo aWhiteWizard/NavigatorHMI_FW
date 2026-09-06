@@ -167,7 +167,7 @@ QString HttpReceiver::deviceSizeInch() const
 
 QHttpServerResponse HttpReceiver::handleDeviceInfo()
 {
-    const QString ip = m_deviceInfo ? m_deviceInfo->ipAddress() : QString();
+    const QString ip = m_deviceInfo ? m_deviceInfo->ipAddressBlocking() : QString();   // W-C：HTTP 同步路径
     const QString fw = m_deviceInfo ? m_deviceInfo->appVersion() : QString();
     // 2026-09-04 调试 OTA：firmware_ts = 当前生效固件 OTA 打包时刻（未 OTA 装过/旧固件 "0"）——
     // PC 端版本前置对调试包（恒 v1.1.0）改按打包时刻先后判断（后打的包可覆盖前一个）

@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <QFileSystemWatcher>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -19,9 +20,9 @@ class StorageInfo : public QObject
 public:
     explicit StorageInfo(QObject* parent = nullptr);
 
-    /// SD 卡状态文本（"已插入 (16GB)" / "未插入"）
+    /// SD 卡状态文本（"已插入 (16GB, 可用 X)" / "未插入"）——W-C 附 statvfs 可用空间
     Q_INVOKABLE QString sdStatusText() const;
-    /// USB 状态文本（同 SD）
+    /// USB 状态文本（同 SD）——W-C 附 statvfs 可用空间
     Q_INVOKABLE QString usbStatusText() const;
     /// 列出目录下 .navihmi 工程文件 → [{name, sizeText, path}]
     Q_INVOKABLE QVariantList listProjects(const QString& dir) const;
@@ -33,6 +34,11 @@ public:
 signals:
     /// 默认工程文件已被替换（main.cpp 连接 → 重新加载工程注入 screenFiles）
     void projectReplaced();
+    /// W-C（F4）：/sys/block 目录变化（SD/USB 块设备插拔）→ QML 存储页即时刷新状态
+    void storageChanged();
+
+private:
+    QFileSystemWatcher m_blockWatcher;   // W-C（F4）：监控 /sys/block（目录项增删 = SD/USB 插拔）
 };
 
 } // namespace navihmi

@@ -6,7 +6,10 @@
 #pragma once
 
 #include <QObject>
+#include <QProcess>
+#include <QRegularExpression>
 #include <QString>
+#include <QTimer>
 
 namespace navihmi {
 
@@ -33,6 +36,9 @@ public:
     QString kernelVersion() const;
     QString appVersion() const;           // 编译期版本（CMake project VERSION）
     QString bootloaderVersion() const;    // 占位（当前无读取来源）
+    /// 同步阻塞解析 eth0 IP（ip 命令 waitForFinished ≤1.5s + ifconfig 兜底）——SSH CLI / HTTP 端点用
+    /// （低频命令路径，阻塞可接受；QML 用异步 ipAddress() 防 GUI 卡顿）。结果缓存 m_ip（QML 后续读一致）。
+    QString ipAddressBlocking() const;
     /// 当前生效固件的 OTA 打包时刻（/etc/navigatorhmi/ota-installed-ts，Unix 秒字符串；
     /// 未 OTA 装过/旧固件无标记 → "0"）——2026-09-04 调试 OTA：版本恒 v1.1.0，PC 端按打包时刻先后判断是否可覆盖
     QString otaTimestamp() const;
@@ -46,8 +52,14 @@ signals:
 private:
     void ensureLoaded() const;            // 惰性加载 MAC/IP/内核（缓存）
     static QString readFile(const char* path);   // 读文件首行（trim）
-    static QString resolveIp();           // ip/ifconfig 解析 eth0 IPv4
+    // W-C（F4）：resolveIp 异步化——QML 首次绑定 ipAddress 不再同步阻塞（原 waitForFinished 1.5s 卡 GUI）；
+    // ip 命令异步 + 1500ms 超时杀进程；ip 失败/超时回落 ifconfig（同样异步，链式）
+    void startIpResolve();
     mutable bool m_loaded = false;
+    mutable bool m_ipStarted = false;
+    mutable bool m_ipFallback = false;    // ip 命令已失败/超时（走 ifconfig 回落）
+    mutable QProcess* m_ipProc = nullptr; // parent(this) 自动回收（QObject 树）
+    mutable QTimer* m_ipTimer = nullptr;
     mutable QString m_ip;
     mutable QString m_mac;
     mutable QString m_kernel;

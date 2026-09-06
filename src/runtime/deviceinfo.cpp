@@ -56,34 +56,52 @@ QString DeviceInfo::readFile(const char* path)
     return line;
 }
 
-QString DeviceInfo::resolveIp()
+void DeviceInfo::startIpResolve()
 {
-#if defined(Q_OS_WIN)
-    return QStringLiteral("192.168.1.146");   // 仿真占位
-#else
-    // 优先 ip 命令（iproute2 / busybox ip 均可）
-    QProcess ip;
-    ip.start(QStringLiteral("ip"), { QStringLiteral("-4"), QStringLiteral("addr"),
-                                     QStringLiteral("show"), QStringLiteral("eth0") });
-    if (ip.waitForFinished(kCmdWaitTimeoutMs)) {   // 命令等待超时（2026-08-26 魔法数字整改命名）
-        const QString out = QString::fromUtf8(ip.readAllStandardOutput());
-        const QRegularExpression re(QStringLiteral("inet\\s+([0-9.]+)/"));
-        const auto m = re.match(out);
-        if (m.hasMatch())
-            return m.captured(1);
-    }
-    // 兜底 ifconfig eth0
-    QProcess ic;
-    ic.start(QStringLiteral("ifconfig"), { QStringLiteral("eth0") });
-    if (ic.waitForFinished(kCmdWaitTimeoutMs)) {
-        const QString out = QString::fromUtf8(ic.readAllStandardOutput());
-        const QRegularExpression re(QStringLiteral("inet\\s+addr:([0-9.]+)"));
-        const auto m = re.match(out);
-        if (m.hasMatch())
-            return m.captured(1);
-    }
-    return QStringLiteral("0.0.0.0");
-#endif
+    // W-C（F4）异步化：QProcess 异步 + 1500ms 超时（杀进程防挂起）；不阻塞 QML 线程
+    if (m_ipProc)   // 在途（含回落）不重复启动
+        return;
+    const bool fallback = m_ipFallback;
+    m_ipProc = new QProcess(this);
+    m_ipTimer = new QTimer(this);
+    m_ipTimer->setSingleShot(true);
+    connect(m_ipTimer, &QTimer::timeout, this, [this]() {
+        if (m_ipProc && m_ipProc->state() != QProcess::NotRunning) {
+            m_ipProc->kill();       // finished 信号随后触发解析/回落（无输出 → 回落 ifconfig）
+        }
+    });
+    connect(m_ipProc, &QProcess::finished, this, [this](int, QProcess::ExitStatus) {
+        if (m_ipTimer) {
+            m_ipTimer->stop();
+            m_ipTimer = nullptr;
+        }
+        QProcess* proc = m_ipProc;
+        m_ipProc = nullptr;
+        if (!proc)
+            return;
+        const bool wasFallback = m_ipFallback;
+        const QString out = QString::fromUtf8(proc->readAllStandardOutput());
+        const QRegularExpression rx = wasFallback
+            ? QRegularExpression(QStringLiteral("inet\\s+addr:([0-9.]+)"))
+            : QRegularExpression(QStringLiteral("inet\\s+([0-9.]+)/"));
+        const auto m = rx.match(out);
+        if (m.hasMatch()) {
+            m_ip = m.captured(1);
+            emit infoChanged();
+            return;
+        }
+        // ip 失败/无匹配 → 回落 ifconfig（仅一次）；仍失败保持空（QML 显示占位）
+        if (!wasFallback) {
+            m_ipFallback = true;
+            startIpResolve();
+        }
+    });
+    m_ipTimer->start(kCmdWaitTimeoutMs);
+    const QString prog = fallback ? QStringLiteral("ifconfig") : QStringLiteral("ip");
+    const QStringList args = fallback ? QStringList{ QStringLiteral("eth0") }
+                                      : QStringList{ QStringLiteral("-4"), QStringLiteral("addr"),
+                                                     QStringLiteral("show"), QStringLiteral("eth0") };
+    m_ipProc->start(prog, args);
 }
 
 void DeviceInfo::ensureLoaded() const
@@ -94,6 +112,7 @@ void DeviceInfo::ensureLoaded() const
 #if defined(Q_OS_WIN)
     m_mac = QStringLiteral("00:11:22:33:44:55");   // 仿真占位
     m_kernel = QStringLiteral("6.1.141");
+    m_ip = QStringLiteral("192.168.1.146");
 #else
     m_mac = readFile("/sys/class/net/eth0/address");
     const QString ver = readFile("/proc/version");   // "Linux version 6.1.141 (gcc...) ..."
@@ -101,12 +120,56 @@ void DeviceInfo::ensureLoaded() const
     const auto m = re.match(ver);
     m_kernel = m.hasMatch() ? m.captured(1) : ver;
 #endif
-    m_ip = resolveIp();
+}
+
+QString DeviceInfo::ipAddressBlocking() const
+{
+    // W-C（F4）：同步路径（SSH CLI / HTTP）——原 waitForFinished 逻辑保留；结果缓存 m_ip 供 QML 后续读一致。
+    // 审查 🟡-2：m_ip 已缓存（QML 异步解析完成/先前 CLI 解析过）→ 直接返回，零进程零冻结主线程
+    // （blocking 调用方 QLocalServer/qthttpserver 处理器均在 GUI 主线程——每次重跑 ip 命令会冻结重绘）
+    if (!m_ip.isEmpty())
+        return m_ip;
+#if defined(Q_OS_WIN)
+    return QStringLiteral("192.168.1.146");
+#else
+    // 优先 ip 命令（iproute2 / busybox ip 均可）
+    QProcess ip;
+    ip.start(QStringLiteral("ip"), { QStringLiteral("-4"), QStringLiteral("addr"),
+                                     QStringLiteral("show"), QStringLiteral("eth0") });
+    if (ip.waitForFinished(kCmdWaitTimeoutMs)) {
+        const QString out = QString::fromUtf8(ip.readAllStandardOutput());
+        const QRegularExpression re(QStringLiteral("inet\\s+([0-9.]+)/"));
+        const auto m = re.match(out);
+        if (m.hasMatch()) {
+            m_ip = m.captured(1);
+            return m_ip;
+        }
+    }
+    // 兜底 ifconfig eth0
+    QProcess ic;
+    ic.start(QStringLiteral("ifconfig"), { QStringLiteral("eth0") });
+    if (ic.waitForFinished(kCmdWaitTimeoutMs)) {
+        const QString out = QString::fromUtf8(ic.readAllStandardOutput());
+        const QRegularExpression re(QStringLiteral("inet\\s+addr:([0-9.]+)"));
+        const auto m = re.match(out);
+        if (m.hasMatch()) {
+            m_ip = m.captured(1);
+            return m_ip;
+        }
+    }
+    return m_ip.isEmpty() ? QStringLiteral("0.0.0.0") : m_ip;
+#endif
 }
 
 QString DeviceInfo::ipAddress() const
 {
     ensureLoaded();
+    // W-C（F4）：首次访问触发异步解析（不阻塞 QML）；infoChanged 回填后 QML 绑定自动刷新。
+    // 若 CLI/HTTP 已同步解析（ipAddressBlocking 缓存 m_ip）则直接返回
+    if (m_ip.isEmpty() && !m_ipStarted) {
+        m_ipStarted = true;
+        const_cast<DeviceInfo*>(this)->startIpResolve();
+    }
     return m_ip;
 }
 

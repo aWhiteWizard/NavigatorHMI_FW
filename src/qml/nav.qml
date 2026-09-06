@@ -479,9 +479,19 @@ Item {
         property bool showReplaceDialog: false // 完成弹窗
 
         readonly property var sourceDirs: [
-            { name: "SD 卡", dir: "/mnt/sdcard", status: storageInfo ? storageInfo.sdStatusText() : "—" },
-            { name: "USB", dir: "/mnt/udisk", status: storageInfo ? storageInfo.usbStatusText() : "—" }
+            { name: "SD 卡", dir: "/mnt/sdcard" },
+            { name: "USB", dir: "/mnt/udisk" }
         ]
+        // W-C（F4）：插拔即时刷新——storageChanged 信号 → statusTick++ → 卡片状态文本绑定重算
+        property int statusTick: 0
+        function storageStatusText(index) {
+            if (!storageInfo) return "—"
+            return index === 0 ? storageInfo.sdStatusText() : storageInfo.usbStatusText()
+        }
+        Connections {
+            target: storageInfo !== undefined && storageInfo !== null ? storageInfo : null
+            function onStorageChanged() { storagePageRoot.statusTick++ }
+        }
 
         ListModel { id: fileListModel }
 
@@ -544,7 +554,9 @@ Item {
                             spacing: 2
                             Text { text: modelData.name; font.pixelSize: 13; font.bold: true
                                    color: storagePageRoot.isDark ? "#EEE" : "#333" }
-                            Text { text: modelData.status; font.pixelSize: 11; color: "#999" }
+                            // W-C：status 动态（storageChanged 信号刷新；statusTick 进表达式使绑定依赖生效）
+                            Text { text: storagePageRoot.statusTick >= 0 ? storagePageRoot.storageStatusText(index) : ""
+                                   font.pixelSize: 11; color: "#999" }
                         }
                         MouseArea {
                             anchors.fill: parent
@@ -767,7 +779,9 @@ Item {
                     Text { text: "网络接口设置（本机 IP / 子网掩码 / 网关）"
                            color: networkPageRoot.isDark ? "#EEE" : "#333"; font.pixelSize: 13; font.bold: true }
                     NetRow { id: netIpRow; label: "IP  "
-                             segments: deviceInfo ? deviceInfo.ipAddress.split(".") : ["192","168","1","146"]
+                             // W-C 审查 🟡-6：异步解析完成前 ipAddress 为空 → split 得 1 段残缺——降级 0.0.0.0 占位
+                             // （infoChanged 后 QML 绑定自动重算为真实 IP 段）
+                             segments: (deviceInfo && deviceInfo.ipAddress !== "") ? deviceInfo.ipAddress.split(".") : ["0","0","0","0"]
                              onChanged: networkPageRoot.netDirty = true }
                     NetRow { id: netMaskRow; label: "掩码"
                              segments: ["255","255","255","0"]

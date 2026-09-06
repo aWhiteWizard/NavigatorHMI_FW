@@ -230,7 +230,7 @@ QString CommandService::cmdSystem(const QStringList& args)
     if (sub == QLatin1String("info")) {
         if (!m_di) return QStringLiteral("ERROR: 设备信息未初始化");
         return QStringLiteral("IP: %1\n内核: %2\n版本: %3\n运行: %4")
-                   .arg(m_di->ipAddress(), m_di->kernelVersion(), m_di->appVersion(), m_di->uptimeText());
+                   .arg(m_di->ipAddressBlocking(), m_di->kernelVersion(), m_di->appVersion(), m_di->uptimeText());   // W-C：CLI 同步路径
     }
     if (sub == QLatin1String("reboot")) {
         if (!isAdmin(m_clientUid)) return QStringLiteral("ERROR: 权限不足（重启需 root）");
@@ -282,7 +282,7 @@ QString CommandService::cmdDevice(const QStringList& args)
     if (args.isEmpty()) return QStringLiteral("用法: device info");
     if (args[0].toLower() != QLatin1String("info")) return QStringLiteral("用法: device info");
     if (!m_di) return QStringLiteral("ERROR: 设备信息未初始化");
-    const QString ip = m_di->ipAddress();
+    const QString ip = m_di->ipAddressBlocking();   // W-C：CLI 同步路径（阻塞 ≤1.5s 可接受）
     const QString fw = m_di->appVersion();
     const bool json = args.size() > 1 && args[1] == QLatin1String("-j");   // K-9：-j JSON 输出（PC 解析用）
     if (json)

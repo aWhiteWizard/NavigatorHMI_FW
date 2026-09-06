@@ -7,6 +7,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
+#ifdef Q_OS_UNIX
+#include <sys/statvfs.h>
+#endif
 
 namespace navihmi {
 
@@ -25,6 +28,24 @@ QString blockSizeText(const QString& dev)
     return QStringLiteral("%1MB").arg(QString::number(gb * 1024.0, 'f', 0));
 }
 
+// W-C（F4）：statvfs 挂载点可用空间文本（"12.5GB"/"340MB"）；未挂载/失败返回空（调用方决定降级文案）
+QString mountAvailText(const QString& mountPath)
+{
+#ifdef Q_OS_UNIX
+    struct statvfs st;
+    if (::statvfs(mountPath.toUtf8().constData(), &st) != 0)
+        return QString();
+    const double availBytes = double(st.f_bavail) * double(st.f_frsize);
+    const double gb = availBytes / (1024.0 * 1024.0 * 1024.0);
+    if (gb >= 1.0)
+        return QStringLiteral("%1GB").arg(QString::number(gb, 'f', 1));
+    // MB = GB × 1024（<1GiB 用 MB 显示；1GiB=1024MiB，MiB 数 = GiB 数 × 1024）
+    return QStringLiteral("%1MB").arg(QString::number(gb * 1024.0, 'f', 0));
+#else
+    return QString();
+#endif
+}
+
 bool hasBlockDev(const QString& name)
 {
     return QFile::exists(QStringLiteral("/sys/block/%1").arg(name));
@@ -34,6 +55,12 @@ bool hasBlockDev(const QString& name)
 StorageInfo::StorageInfo(QObject* parent)
     : QObject(parent)
 {
+#ifndef Q_OS_WIN
+    // W-C（F4）：热插拔事件驱动（替代轮询）——/sys/block 目录项增删 = SD/USB 块设备插拔
+    m_blockWatcher.addPath(QStringLiteral("/sys/block"));
+    connect(&m_blockWatcher, &QFileSystemWatcher::directoryChanged, this,
+            [this](const QString&) { emit storageChanged(); });
+#endif
 }
 
 QString StorageInfo::defaultProjectPath()
@@ -46,9 +73,14 @@ QString StorageInfo::sdStatusText() const
 #if defined(Q_OS_WIN)
     return QStringLiteral("未插入");   // 仿真占位（真实无卡）
 #else
-    // SD 卡: mmcblk1 块设备存在 = 已插入
-    if (hasBlockDev(QStringLiteral("mmcblk1")))
-        return QStringLiteral("已插入 (%1)").arg(blockSizeText(QStringLiteral("mmcblk1")));
+    // SD 卡: mmcblk1 块设备存在 = 已插入；W-C（F4）：附 statvfs 可用空间（挂载点已挂载才显示）
+    if (hasBlockDev(QStringLiteral("mmcblk1"))) {
+        const QString cap = blockSizeText(QStringLiteral("mmcblk1"));
+        const QString avail = mountAvailText(QStringLiteral("/mnt/sdcard"));
+        return avail.isEmpty()
+            ? QStringLiteral("已插入 (%1)").arg(cap)
+            : QStringLiteral("已插入 (%1, 可用 %2)").arg(cap, avail);
+    }
     return QStringLiteral("未插入");
 #endif
 }
@@ -58,11 +90,16 @@ QString StorageInfo::usbStatusText() const
 #if defined(Q_OS_WIN)
     return QStringLiteral("未插入");
 #else
-    // USB: 任意 sd* 块设备存在 = 已插入
+    // USB: 任意 sd* 块设备存在 = 已插入；W-C（F4）：附 statvfs 可用空间
     QDir sysBlock(QStringLiteral("/sys/block"));
     const QStringList names = sysBlock.entryList({ QStringLiteral("sd*") });
-    if (!names.isEmpty())
-        return QStringLiteral("已插入 (%1)").arg(blockSizeText(names.first()));
+    if (!names.isEmpty()) {
+        const QString cap = blockSizeText(names.first());
+        const QString avail = mountAvailText(QStringLiteral("/mnt/udisk"));
+        return avail.isEmpty()
+            ? QStringLiteral("已插入 (%1)").arg(cap)
+            : QStringLiteral("已插入 (%1, 可用 %2)").arg(cap, avail);
+    }
     return QStringLiteral("未插入");
 #endif
 }
