@@ -46,7 +46,7 @@ public:
     QString resultText() const { return m_resultText; }
     bool restartNeeded() const { return m_restartNeeded; }
 
-    /// 进入校准模式（QML 调用, 传入工程设备尺寸决定 5 点位置）
+    /// 进入校准模式（QML 调用, 传入物理屏分辨率决定 5 点位置——F-2：校准是设备级功能, 与工程 deviceWidth 解耦）
     Q_INVOKABLE void startCalibration(int devW, int devH);
     /// QML MouseArea 点击采集（Qt 层坐标; 本地触摸 / VNC 注入统一到达）
     Q_INVOKABLE void captureAt(int qx, int qy);

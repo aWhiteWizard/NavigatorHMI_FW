@@ -5,7 +5,8 @@ import QtQuick.VirtualKeyboard.Settings
 import "components"
 
 // ═══════════════════════════════════════════════════════════
-// NavigatorHMI FW 主壳（自适应: 工程 device_width/height 驱动, 7寸 1024×600 / 4寸 720×720）
+// NavigatorHMI FW 主壳（scene = 物理屏分辨率 physicalWidth/Height（型号查表）；工程 deviceWidth/Height
+// 为画面内容设计尺寸，左上布局不缩放——F-2 校准/触摸/overlay 统一物理域）
 // 结构: Loader 加载当前画面 + 全局叠加层 + 运行时事件总线
 // 导航: 无工程 → 导航界面; 有工程 → 先导航界面, 3 秒后自动进入 startScreen（用户操作则取消, 自己点开始工程）
 // ═══════════════════════════════════════════════════════════
@@ -17,11 +18,17 @@ Window {
     title: qsTr("NavigatorHMI")
     color: "#0F5278"   // B6-14 主题色系深色（原 #203864）
 
-    // ── 设备尺寸（C++ 按工程注入, 7寸 1024×600 / 4寸 720×720 等比缩放）──
+    // ── 物理屏尺寸（C++ 按型号注入 physicalWidth/Height = deviceResolutionFor——与 VNC N+24 同源物理解耦；
+    // F-2（2026-09-06 用户报告校准 5 点只覆盖工程尺寸区）：主壳 scene = 物理屏分辨率，校准/overlay/触摸
+    // 坐标统一物理域；deviceWidth/Height 保留工程值（画面内容尺寸），不再驱动窗口 —— 工程 800×480 跑 7 寸
+    // 1024×600 屏时画面显示在左上（与既往一致），校准点/全屏 overlay 覆盖整个物理屏 ──
+    property int physicalWidth: 1024
+    property int physicalHeight: 600
+    onPhysicalWidthChanged: { width = physicalWidth }
+    onPhysicalHeightChanged: { height = physicalHeight }
+    // ── 工程画面设计尺寸（C++ 按工程注入；画面 QML/导航页内容按此布局，不再改变窗口尺寸）──
     property int deviceWidth: 1024
     property int deviceHeight: 600
-    onDeviceWidthChanged: { width = deviceWidth }
-    onDeviceHeightChanged: { height = deviceHeight }
 
     // ── 运行时事件总线（C++ setContextProperty 注入；QML 只发事件，ActionRunner 执行动作）──
     // 注意: 不能声明同名 property, 否则遮蔽 context property 导致 runtimeBus 为 null
@@ -99,12 +106,13 @@ Window {
                 mainShell.userInteracted = true
                 // E 循环: 校准集成进 FW——overlay 在 FW 主窗口内渲染, VNC 全程不断;
                 // 进入校准模式后由 CalibrationOverlay 采集 5 点(Qt 层坐标, 本地/VNC 统一)
-                if (touchCalibrator) touchCalibrator.startCalibration(mainShell.deviceWidth, mainShell.deviceHeight)
+                // F-2: 5 点按物理屏（非工程尺寸）——校准是设备级功能, 与工程 deviceWidth 解耦
+                if (touchCalibrator) touchCalibrator.startCalibration(mainShell.physicalWidth, mainShell.physicalHeight)
             }
             navLoader.item.deviceInfoHandler = function() { console.log("设备信息: 待实现") }
             navLoader.item.systemManageHandler = function() { console.log("系统管理: 待实现") }
-            navLoader.item.deviceWidth = mainShell.deviceWidth
-            navLoader.item.deviceHeight = mainShell.deviceHeight
+            navLoader.item.deviceWidth = mainShell.physicalWidth
+            navLoader.item.deviceHeight = mainShell.physicalHeight
             // B6-8: 用户操作导航 → 取消 3 秒自动开工程（userAction 是信号, 用 connect 而非赋值）
             navLoader.item.userAction.connect(function() { mainShell.userInteracted = true })
         }
@@ -119,8 +127,8 @@ Window {
         // G-0: ObjectManager 当前画面同步（空 screenName 寻址的默认上下文）
         if (objectManager) objectManager.setCurrentScreen(screenFiles[index].name)
         screenLoader.source = "file://" + screenFiles[index].file
-        // VNC 脏矩形：切页 → 全屏报告（西门子 dirty-rect 模式；QML 生产端报告变化区域）
-        if (vncMirror) vncMirror.markDirty(0, 0, deviceWidth, deviceHeight)
+        // VNC 脏矩形：切页 → 全屏报告（西门子 dirty-rect 模式；QML 生产端报告变化区域——物理屏全幅）
+        if (vncMirror) vncMirror.markDirty(0, 0, physicalWidth, physicalHeight)
     }
 
     // ── K-9: 设备闪烁覆盖层（POST /api/blink → setBlink；亮灭交替约 1s，多设备定位）──
@@ -166,7 +174,7 @@ Window {
         // G-0: ObjectManager 画面上下文清空（控件注销由各控件 onDestruction 完成）
         if (objectManager) objectManager.setCurrentScreen("")
         // VNC 脏矩形：回导航 → 全屏报告
-        if (vncMirror) vncMirror.markDirty(0, 0, deviceWidth, deviceHeight)
+        if (vncMirror) vncMirror.markDirty(0, 0, physicalWidth, physicalHeight)
     }
 
     // ── 开始工程 → 进入 startScreen ──
@@ -419,7 +427,7 @@ Window {
         Connections {
             target: touchCalibrator
             function onStateChanged() {
-                if (vncMirror) vncMirror.markDirty(0, 0, mainShell.deviceWidth, mainShell.deviceHeight)
+                if (vncMirror) vncMirror.markDirty(0, 0, mainShell.physicalWidth, mainShell.physicalHeight)
             }
         }
 
@@ -483,7 +491,7 @@ Window {
                 anchors.fill: parent
                 onClicked: {
                     if (touchCalibrator) touchCalibrator.cancelCalibration()
-                    if (vncMirror) vncMirror.markDirty(0, 0, mainShell.deviceWidth, mainShell.deviceHeight)
+                    if (vncMirror) vncMirror.markDirty(0, 0, mainShell.physicalWidth, mainShell.physicalHeight)
                 }
             }
         }
@@ -590,7 +598,7 @@ Window {
                             anchors.fill: parent
                             onClicked: {
                                 if (touchCalibrator) touchCalibrator.cancelCalibration()
-                                if (vncMirror) vncMirror.markDirty(0, 0, mainShell.deviceWidth, mainShell.deviceHeight)
+                                if (vncMirror) vncMirror.markDirty(0, 0, mainShell.physicalWidth, mainShell.physicalHeight)
                             }
                         }
                     }

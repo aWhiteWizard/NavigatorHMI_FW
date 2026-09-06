@@ -227,12 +227,29 @@ void TouchCalibrator::computeAndWrite()
         qWarning().noquote() << "触摸校准: fsync 失败" << strerror(errno);
 #endif
     out.close();
+    // F-3（2026-09-06 用户报告 rename 偶败）：rename 失败记录 errno（strerror）便于定位；
+    // 兜底一次：目标已存在且为只读/占用时先 remove 再 rename（同 /etc 目录同 fs 首选原子 rename，
+    // remove+rename 仅兜底非常规场景——目标被占用/瞬时状态）。仍失败则清理 tmp 并明确报错。
     if (!QFile::rename(tmpPath, QStringLiteral("/etc/pointercal"))) {
-        QFile::remove(tmpPath);
-        m_resultText = QStringLiteral("写入校准文件失败（rename 失败）");
-        qWarning().noquote() << "触摸校准: " << m_resultText;
-        emit stateChanged();
-        return;
+#ifdef Q_OS_UNIX
+        const int err = errno;
+        qWarning().noquote() << "触摸校准: rename 失败(errno=" << err << strerror(err)
+                             << ")——尝试 remove 目标后重试一次";
+#else
+        qWarning().noquote() << "触摸校准: rename 失败——尝试 remove 目标后重试一次";
+#endif
+        bool retried = false;
+        if (QFile::exists(QStringLiteral("/etc/pointercal")))
+            retried = QFile::remove(QStringLiteral("/etc/pointercal"));
+        if (retried && QFile::rename(tmpPath, QStringLiteral("/etc/pointercal"))) {
+            qInfo().noquote() << "触摸校准: remove 后重试 rename 成功";
+        } else {
+            QFile::remove(tmpPath);
+            m_resultText = QStringLiteral("写入校准文件失败（rename 失败）");
+            qWarning().noquote() << "触摸校准: " << m_resultText;
+            emit stateChanged();
+            return;
+        }
     }
     m_restartNeeded = true;
     m_resultText = QStringLiteral("校准完成：已写入 /etc/pointercal（误差 %1px），重启 FW 生效")

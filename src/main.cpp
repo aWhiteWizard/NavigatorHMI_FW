@@ -419,7 +419,8 @@ static bool loadAndInject(QObject* rootObj,
     rootObj->setProperty("screenFiles", filesList);
     rootObj->setProperty("startScreen", startScreen);
     rootObj->setProperty("hasProject", !proj.screens.isEmpty());
-    // 设备尺寸（主壳自适应：7 寸 1024×600 / 4 寸 720×720 等比缩放）
+    // 工程画面设计尺寸（注入 mainShell.deviceWidth/Height——画面 QML/内容布局基准；F-2 起不再驱动窗口，
+    // 窗口尺寸 = physicalWidth/Height（物理屏，rootObj 就绪后注入））
     int devW = proj.deviceWidth > 0 ? proj.deviceWidth : kDefaultDevW;
     int devH = proj.deviceHeight > 0 ? proj.deviceHeight : kDefaultDevH;
     rootObj->setProperty("deviceWidth", devW);
@@ -699,6 +700,16 @@ int main(int argc, char *argv[])
                       << engine.rootObjects().size();   // 诊断(B6-8)
     logPhase("QML 画面引擎就绪");
     QObject* rootObj = engine.rootObjects().first();
+
+    // F-2（2026-09-06 用户报告校准 5 点只覆盖工程尺寸区）：主壳 scene = 物理屏分辨率——与 VNC N+24 同源
+    // （deviceResolutionFor 型号查表），无条件注入（无工程导航态/校准入口也需要物理域）；校准/overlay/
+    // 触摸坐标统一物理屏，与工程 deviceWidth/Height 解耦（工程画面仍按 deviceWidth 布局，左上显示同既往）
+    {
+        const QPair<int, int> phys = navihmi::deviceResolutionFor();
+        rootObj->setProperty("physicalWidth", phys.first);
+        rootObj->setProperty("physicalHeight", phys.second);
+        qInfo().noquote() << "主壳物理屏尺寸: " << phys.first << "x" << phys.second;
+    }
 
     // VNC 镜像（eglfs 物理屏照常，额外远程通道，端口默认 5900 见 fw-config.json；按工程 enable_vnc 启停）
     navihmi::VncMirror vncMirror(qobject_cast<QQuickWindow*>(rootObj));
