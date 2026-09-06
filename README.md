@@ -85,6 +85,25 @@ navigatorhmi-fw --project /mnt/user/userdata/demo.navihmi   # ZIP 工程包（�
 # 验证: 世界地图瓦片显示 / 画面切换 / 触摸校准长按 / 虚拟键盘 / VNC 远程
 ```
 
+## 配置（fw-config.json，V-2 F18 2026-09-06 配置分层）
+
+系统配置集中 `/etc/navigatorhmi/fw-config.json`（JSON 对象，点分路径寻址），统一经 `src/runtime/fwconfig.h`
+（fwConfigGetInt/GetString/Set——Set 原子写 tmp+::rename，写失败不动内存）读写；键路径常量集中定义（防漂移）。
+环境变量（NAVIHMI_VNC_PORT 等）优先于配置文件。**凭据/敏感值禁止进日志**——URL 密码/键值脱敏走
+`src/runtime/logsanitize.h`（redactUrlCredential/redactSensitiveValues；V+1 MQTT 凭据接入点）。
+
+```json
+{ "vnc": { "port": 5900 } }
+```
+
+V+1 配置消费者（MQTT broker/凭据等）接入本层读写。
+
+## 驱动插件（src/drivers/，V-1 2026-09-06 驱动插件化）
+
+采集驱动可插拔框架——`driver_iface.h`（IDriver 接口）/ `driver_registry`（工厂注册表 + 宏裁剪）/
+`modbus_tcp_driver`（Modbus TCP，从 Acquisition 1:1 迁入）；`src/runtime/acquisition.*` = 采集 Manager
+（tag 解析分组/周期调度/deadband/DataManager 写入——跨协议统一）。新协议（MQTT V+1 等）实现 IDriver 挂注册表。
+
 ## 测试
 
 - **测试工程生成**：`tools/gen-test-project.ps1`（PC 端 navihmi.exe CLI + 输出到 D:\workspace\test_project）——世界地图 + 画面A/B + 19 控件 + 事件/动作全覆盖
