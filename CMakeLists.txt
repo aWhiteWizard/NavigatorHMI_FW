@@ -167,6 +167,7 @@ if(SOURCES)
     target_compile_definitions(${PROJECT_NAME} PRIVATE
         FW_PLATFORM_BACKEND="${FW_PLATFORM_BACKEND}"
         FW_QT_MAJOR=${QT_VERSION_MAJOR}
+        NAVIHMI_HAVE_MODBUS_DRIVER=1   # V-1 驱动插件化：Modbus TCP 驱动注册（裁剪关掉则不注册）
     )
     message(STATUS "已添加可执行目标: ${PROJECT_NAME}")
     message(STATUS "源文件数量: ${SOURCES} + proto: ${PROTO_SRCS}")

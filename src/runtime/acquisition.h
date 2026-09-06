@@ -1,31 +1,26 @@
 /*
  * @FilePath: \NavigatorHMI_FW\src\runtime\acquisition.h
- * @Description: 数据采集引擎（H-8）——Modbus RTU/TCP 轮询读 + 写通道
- *               Tag.source 约定: modbus://{从站}/{寄存器}（01_architecture/DESIGN-WINDOWS）
- *               首版: Modbus TCP 轮询读 + 写通道; RTU/MQTT 二期（板端 Qt SerialBus 已装, MQTT 缺库）
- *               连接参数: Tag.deviceName → DeviceConfig.connectionInfo JSON（host/port/serial）
+ * @Description: 数据采集管理（V-1 2026-09-06 驱动插件化重构——Manager 化）
+ *               Tag.source 约定: modbus://{从站}/{寄存器}（未来 mqtt:// 等）
+ *               Manager 职责: tag 解析分组 → 注册表建 Driver → 周期调度 poll →
+ *                             deadband 判断 → DataManager 写入（跨协议统一）
+ *               Driver 职责: 连接 + 协议读写 + 解码（drivers/ 目录，可插拔）
+ *               对外 API 不变（setProject/setDataManager/handleValueWritten）——main.cpp 零改动
+ *               工程重载 = 驱动 stop+delete 重建（断连重连——原实现保持连接；差异顺带修复
+ *               「换 host 工程仍连旧设备」潜在缺陷，2026-09-06 复审记录）
  */
 #pragma once
 
 #include <QObject>
-#include <QList>
 #include <QHash>
 #include <QString>
 #include <QVariant>
 #include <QTimer>
 #include "runtime/projectmodel.h"
 
-class QModbusTcpClient;
-
 namespace navihmi {
 class DataManager;
-
-/// Modbus 请求超时（ms）——影响读/写成败判定（2026-08-26 魔法数字整改命名）。
-constexpr int kModbusTimeoutMs = 500;
-/// Modbus 从站地址上限（协议标准 1-247）。
-constexpr int kModbusSlaveMax = 247;
-/// Modbus 默认端口（IANA 标准）。
-constexpr char kModbusDefaultPort[] = "502";
+class IDriver;
 
 class Acquisition : public QObject
 {
@@ -36,40 +31,20 @@ public:
 
     void setProject(const Project& proj);
     void setDataManager(DataManager* dm);
-    /// H-8 写通道：DataManager 写 modbus 来源变量 → 同步写设备（main.cpp 联动）
+    /// 写通道：DataManager 写采集来源变量 → 同步写设备（main.cpp 联动，接口不变）
     void handleValueWritten(const QString& tagName, const QVariant& value);
 
 private:
-    // 采集任务项（按 Tag.source 解析）——须先于成员函数声明（签名引用嵌套类型）
-    struct ModbusTag {
-        QString tagName;
-        int slave = 1;
-        quint16 reg = 0;
-        int dataType = 0;        // TagDataType
-        int scanMs = 0;
-        double deadband = 0;
-        QHash<QString, QString> conn;   // host/port/serial/baud
-        qint64 lastReadMs = 0;
-        QVariant lastVal;
-    };
-
-    void tick();          // 100ms 调度: 到期变量轮询读
-    void ensureConnected();
-    void readTag(const ModbusTag* tag);
-    void writeTag(const QString& tagName, const QVariant& value);   // 写通道（DataManager 联动）
-    QVariant decodeValue(const ModbusTag& tag, quint16 raw) const;
+    void tick();                    // 100ms 调度: driver.poll（到期读）
+    void onDriverValueRead(const QString& tagName, const QVariant& value, double deadband);   // deadband + 写 DataManager
+    /// 设备连接参数展开（deviceName → DeviceConfig.connectionInfo JSON 键值；空 = 无设备）
     QHash<QString, QString> connInfoForDevice(const QString& deviceName) const;
 
     Project m_project;
     DataManager* m_dataManager = nullptr;
-    QList<ModbusTag> m_tags;
     QTimer* m_timer = nullptr;
-    QModbusTcpClient* m_client = nullptr;
-    bool m_connecting = false;
-    QString m_connectedDevice;   // 当前连接设备（连接参数变更时重连）
-    QHash<QString, QString> m_conn;   // 当前连接参数
-    qint64 m_lastConnectFailMs = 0;      // J-3: 最近一次连接失败时间戳（重连退避 5s）
-    qint64 m_lastConnectWarnMs = 0;      // J-3: 最近一次连接失败告警时间戳（日志降频）
+    IDriver* m_driver = nullptr;          // 当前驱动（V-1 单协议实例；多协议并存 V+1 列表化 + 按 tag 分发）
+    QHash<QString, QVariant> m_lastVal;   // deadband 判断（跨协议统一语义——原 Acquisition per-tag lastVal 上移）
 };
 
 } // namespace navihmi
