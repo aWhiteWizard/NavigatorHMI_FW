@@ -605,6 +605,12 @@ int main(int argc, char *argv[])
     qputenv("NAVIHMI_PROJECT", projectPath.toUtf8());
 
     // ═══════ QML 引擎 ═══════
+    // V-4 F11（2026-09-06）：主壳 Init 阶段日志——守护拉起/启动卡住时 /tmp/navihmi.log 定位到阶段
+    int initPhase = 0;
+    auto logPhase = [&initPhase](const char* name) {
+        qInfo().noquote() << "[FW] Init 阶段" << (++initPhase) << ":" << name;
+    };
+    logPhase("平台与参数就绪");
 #if defined(HAVE_QT_QML)
     qInfo().noquote() << "navigatorhmi-fw: 启动 projectPath=" << projectPath;   // 诊断(B6-8)
     // 审查 M1(2026-08-23 G-0): 全部 setContextProperty 服务对象必须在 engine 之前构造——
@@ -683,6 +689,7 @@ int main(int argc, char *argv[])
     commandService.setDeviceInfo(&deviceInfo);
     commandService.setDataLogger(&dataLogger);
 
+    logPhase("服务对象构造与 context 注入");
     engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败";
@@ -690,6 +697,7 @@ int main(int argc, char *argv[])
     }
     qInfo().noquote() << "navigatorhmi-fw: engine.load 完成 rootObjects="
                       << engine.rootObjects().size();   // 诊断(B6-8)
+    logPhase("QML 画面引擎就绪");
     QObject* rootObj = engine.rootObjects().first();
 
     // VNC 镜像（eglfs 物理屏照常，额外远程通道，端口默认 5900 见 fw-config.json；按工程 enable_vnc 启停）
@@ -717,6 +725,7 @@ int main(int argc, char *argv[])
     // R3: --project 是 ZIP 工程包时整包解压 → 内部 app.navihmi + tiles/ 瓦片
     QString tileBasePath;
     const QString resolvedProject = resolveProjectPackage(projectPath, tileBasePath);
+    logPhase("工程解析");   // V-4a 复审 🟡：语义=解析完成（loadAndInject 注入成功后阶段 5「工程就绪」覆盖）
     // D1：OTA 安装器（httreceiver .fw staging → install → 重启；app 替换 + rootfs 文件级，见 otaupdater）
     // O-D D-3b：启动失败回滚接线——启动前置检查：bootFailCount>=N（上次 rootfs 文件级更新后连续启动失败）
     // → 从 userdata ota-backup 恢复旧文件（回滚后再试启动，规避「更新坏文件导致起不来」变砖）
@@ -819,9 +828,16 @@ int main(int argc, char *argv[])
         loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
     });
 
+    logPhase("工程就绪(运行态)");   // V-4 F11：loadAndInject 成功（失败路径上方已 return/记录）
     qInfo().noquote() << "navigatorhmi-fw: 进入事件循环";   // 诊断(B6-8)
     const int execRc = app.exec();
     qInfo().noquote() << "navigatorhmi-fw: app.exec() 返回 rc=" << execRc;   // 诊断(B6-8)
+    // V-4 F11（2026-09-06）：Shutdown 显式化——事件循环退出后按序停止运行态服务
+    // （防守护拉起新实例时的端口/单实例竞态 + 退出原因可日志定位；对象析构仍兜底）
+    qInfo().noquote() << "navigatorhmi-fw: Shutdown——停止运行服务";
+    acquisition.stop();      // 停采集调度 + Modbus 断连（V-4 新增 public stop）
+    vncMirror.stop();        // VNC 停（端口释放）
+    qInfo().noquote() << "navigatorhmi-fw: Shutdown 完成 rc=" << execRc;
     return execRc;
 #else
     qWarning().noquote() << "当前构建无 Qt Qml/Quick（转换器模式可用 --convert）；QML 界面需 buildroot 补装 Qt6 QML 模块";

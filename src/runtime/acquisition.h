@@ -31,6 +31,9 @@ public:
 
     void setProject(const Project& proj);
     void setDataManager(DataManager* dm);
+    /// 停止采集（V-4 F11 2026-09-06 主壳 Shutdown 显式调用：停调度 timer + 驱动断连；
+    /// 析构仍兜底清理——stop 后可不再复用本实例）
+    void stop();
     /// 写通道：DataManager 写采集来源变量 → 同步写设备（main.cpp 联动，接口不变）
     void handleValueWritten(const QString& tagName, const QVariant& value);
 

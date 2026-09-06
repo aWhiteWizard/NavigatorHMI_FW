@@ -31,6 +31,15 @@ Acquisition::~Acquisition()
     m_driver = nullptr;
 }
 
+void Acquisition::stop()
+{
+    // V-4 F11：主壳 Shutdown 显式停止（停调度 timer + 驱动断连；不 delete——析构兜底）
+    if (m_timer)
+        m_timer->stop();
+    if (m_driver)
+        m_driver->stop();
+}
+
 void Acquisition::setProject(const Project& proj)
 {
     m_project = proj;
