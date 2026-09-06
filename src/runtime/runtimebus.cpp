@@ -231,6 +231,49 @@ bool RuntimeBus::guardActionStorm()
     return false;
 }
 
+/// 动作必填参数契约（EventMeta F9 V-3b 2026-09-06）：动作执行必需参数——缺失/空值告警
+/// （防静默配置错误：原 TagWrite 无 tag_name/空 value、ScreenSwitch 空 target 等静默跳过，
+///  工程配置错排查困难）；契约表集中登记——新增动作同步补表）
+static const QHash<ActionType, QStringList>& actionRequiredParams()
+{
+    // 契约要点：SetProperty 仅 key 必填——value 可为空串（合法清空字符串/颜色属性，避免误报；
+    //             widget 名有 widget_name/widget 双键兼容，缺失走日志兜底非静默）；
+    //             TagWrite 空 value 被执行侧 if 吞=无效动作 → value 必填告警正确；
+    //             TagAdd/Sub 缺 value 时 +0 写同值被 DataManager 防抖吞=静默无效 → value 必填
+    //             （🟡1/🟡2 复审采纳 2026-09-06）
+    static const QHash<ActionType, QStringList> s_required = {
+        { ActionType::TagWrite, { QStringLiteral("tag_name"), QStringLiteral("value") } },
+        { ActionType::ScreenSwitch, { QStringLiteral("target_screen") } },
+        { ActionType::RunCommand, { QStringLiteral("command") } },
+        { ActionType::SetProperty, { QStringLiteral("key") } },
+        { ActionType::TagAdd, { QStringLiteral("tag_name"), QStringLiteral("value") } },
+        { ActionType::TagSubtract, { QStringLiteral("tag_name"), QStringLiteral("value") } },
+        { ActionType::TagStep, { QStringLiteral("tag_name"), QStringLiteral("step"),
+                                 QStringLiteral("min"), QStringLiteral("max") } },
+        { ActionType::TagToggle, { QStringLiteral("tag_name") } },
+        { ActionType::SetBit, { QStringLiteral("tag_name") } },
+        { ActionType::ResetBit, { QStringLiteral("tag_name") } },
+    };
+    return s_required;
+}
+
+/// 必填参数缺失校验（executeAction 分派前——缺失告警一次；正常动作不缺不打扰）
+static void checkActionRequiredParams(ActionType type, const QHash<QString, QString>& p)
+{
+    const auto it = actionRequiredParams().constFind(type);
+    if (it == actionRequiredParams().constEnd())
+        return;
+    QStringList missing;
+    for (const QString& k : it.value()) {
+        const auto v = p.constFind(k);
+        if (v == p.constEnd() || v->trimmed().isEmpty())
+            missing << k;
+    }
+    if (!missing.isEmpty())
+        qWarning().noquote() << "RuntimeBus:" << actionTypeName(type)
+                             << "缺必填参数:" << missing.join(QLatin1Char(','));
+}
+
 void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, const QString& sourceScreen)
 {
     if (guardActionStorm())
@@ -239,6 +282,7 @@ void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, 
     if (qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0)
         qInfo().noquote() << "[TRACE]   action=" << actionTypeName(action.type);
     const auto& p = action.parameters;
+    checkActionRequiredParams(action.type, p);   // F9 V-3b：必填参数缺失告警（防静默配置错误）
     switch (action.type) {
     case ActionType::ScreenSwitch: {
         const QString target = p.value("target_screen");
