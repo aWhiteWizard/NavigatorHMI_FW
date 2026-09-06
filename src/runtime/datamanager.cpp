@@ -53,7 +53,9 @@ void DataManager::setValue(const QString& tagName, const QVariant& value)
     if (!m_values.contains(tagName))
         return;
     if (m_values.value(tagName) == value)
-        return;   // 值未变不发信号（防抖）
+        return;   // 值未变不发信号（防抖——F9 V-3 环路双保险①：源头同值不触发；
+                  // QML onValueChanged 同值不触发 → OnValueChange 事件链自环天然断在源头；
+                  // 增值类动作自激（每次值变）由 RuntimeBus 风暴熔断（保险②）兜底）
     m_values.insert(tagName, value);
     emit valueChanged(tagName, value);
 }

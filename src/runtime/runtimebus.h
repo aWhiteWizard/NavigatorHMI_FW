@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QElapsedTimer>
 #include <functional>
 #include "runtime/projectmodel.h"
 
@@ -56,11 +57,22 @@ public slots:
 
 private:
     void executeAction(const EventAction& action, const Widget* widget, const QString& sourceScreen);
+    /// 动作风暴熔断（F9 V-3 2026-09-06 环路双保险②）：1s 窗口计数超阈值 → 熔断 1s 丢弃动作
+    /// （防 OnValueChange + 增值类动作（TagAdd/Toggle 等）配置回环风暴——源头同值防抖在 DataManager
+    ///  层已存在为保险①）；返回 true = 熔断期（executeAction 丢弃本次动作）；单调时钟（QElapsedTimer）
+    ///  不随 SetSystemTime 改墙钟漂移；告警最小间隔 5s（cpp-coding §5 降频）；setProject 重置（工程重载
+    ///  不被旧风暴抑制；resetScreens 不清——熔断 1s 自愈 + 回导航后无事件流，惰性自愈可接受）
+    bool guardActionStorm();
     Project m_project;
     DataManager* m_dataManager = nullptr;
     ObjectManager* m_objectManager = nullptr;
     int m_currentScreen = -1;    // 当前画面索引（⑪候选A: 控件事件匹配范围）
     int m_previousScreen = -1;   // 上一画面索引（兼容 OnScreenUnload 卸载瞬间）
+    QElapsedTimer m_stormWindow;      // 计数窗口（1s 滑动）
+    QElapsedTimer m_fuseTimer;        // 熔断计时（1s 后自愈）
+    bool m_fuseActive = false;        // 熔断中
+    int m_actionCount = 0;            // 窗口内动作执行计数
+    qint64 m_lastStormWarnMs = 0;     // 最近告警墙钟（5s 节流）
 };
 
 } // namespace navihmi

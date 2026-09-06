@@ -9,6 +9,7 @@
 
 #include <QDebug>
 #include <QMetaObject>
+#include <QDateTime>   // F9 V-3 熔断时间窗
 #include <cmath>   // S-7 TagStep fmod
 
 namespace navihmi {
@@ -24,6 +25,11 @@ void RuntimeBus::setProject(const Project& proj)
     // 工程重载（替换默认工程文件后 reload）: 画面索引失效, 重置匹配状态
     m_currentScreen = -1;
     m_previousScreen = -1;
+    // F9 V-3: 熔断状态重置（旧工程风暴不应抑制新工程动作）
+    m_fuseActive = false;
+    m_stormWindow.invalidate();
+    m_fuseTimer.invalidate();
+    m_actionCount = 0;
 }
 
 void RuntimeBus::setDataManager(DataManager* dm)
@@ -160,9 +166,78 @@ void RuntimeBus::emitEvent(const QString& objectName, int eventType, const QStri
                           << " previous=" << (m_previousScreen >= 0 ? m_project.screens[m_previousScreen].name : "-") << ")";
 }
 
+/// 动作类型名称（EventMeta F9 V-3 2026-09-06：动作名集中登记——trace/自检/新增动作漏登记排查用；
+/// 与 projectmodel.h ActionType 枚举一一对应（19 值 0..18），switch 全覆盖（无 default——编译器 -Wswitch 提示漏项））
+static const char* actionTypeName(ActionType t)   // 文件内静态辅助（cpp-coding §2 自由函数 static）
+{
+    switch (t) {
+    case ActionType::TagWrite: return "TagWrite";
+    case ActionType::ScreenSwitch: return "ScreenSwitch";
+    case ActionType::SetProperty: return "SetProperty";
+    case ActionType::RunCommand: return "RunCommand";
+    case ActionType::ShowPopup: return "ShowPopup";
+    case ActionType::SendNotification: return "SendNotification";
+    case ActionType::ScreenPrev: return "ScreenPrev";
+    case ActionType::ScreenNext: return "ScreenNext";
+    case ActionType::TagAdd: return "TagAdd";
+    case ActionType::TagSubtract: return "TagSubtract";
+    case ActionType::TagToggle: return "TagToggle";
+    case ActionType::SetBit: return "SetBit";
+    case ActionType::ResetBit: return "ResetBit";
+    case ActionType::SetDatetime: return "SetDatetime";
+    case ActionType::GetDatetime: return "GetDatetime";
+    case ActionType::AcknowledgeAlarm: return "AcknowledgeAlarm";
+    case ActionType::SetSystemTime: return "SetSystemTime";
+    case ActionType::StopRuntime: return "StopRuntime";
+    case ActionType::TagStep: return "TagStep";
+    }
+    return "Unknown";
+}
+
+/// 动作风暴阈值（次/秒）——正常画面事件操作远低于此；超限判环熔断（F9 V-3 2026-09-06）
+inline constexpr int kActionStormThresholdPerSec = 200;
+
+/// 动作风暴熔断（F9 V-3 环路双保险②）——返回 true = 熔断期（调用方丢弃动作）。
+/// 单调时钟（QElapsedTimer）防 SetSystemTime 改墙钟漂移；告警最小间隔 5s（cpp-coding §5 降频）；
+/// 单窗口 200/s 即熔断（同步递归型回环在 <1s 爆发——单窗口截断；一次性合法突发 >200/s 罕见，
+/// 熔断 1s 自愈，装载类单发动作不受影响——边界注释 2026-09-06）。
+bool RuntimeBus::guardActionStorm()
+{
+    if (m_fuseActive) {
+        if (m_fuseTimer.elapsed() >= 1000) {
+            m_fuseActive = false;          // 1s 自愈：清窗从 0 计数
+            m_stormWindow.restart();
+        }
+        return true;   // 熔断期：丢弃动作（静默——触发告警已打过，不刷屏）
+    }
+    if (!m_stormWindow.isValid() || m_stormWindow.elapsed() >= 1000) {
+        m_stormWindow.restart();
+        m_actionCount = 0;
+    }
+    if (++m_actionCount > kActionStormThresholdPerSec) {
+        m_fuseActive = true;
+        m_fuseTimer.restart();
+        m_actionCount = 0;
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (nowMs - m_lastStormWarnMs >= 5000) {   // 告警 5s 节流（持续风暴不刷屏）
+            m_lastStormWarnMs = nowMs;
+            qWarning().noquote() << "RuntimeBus: 事件动作执行风暴(>"
+                                 << kActionStormThresholdPerSec
+                                 << "次/秒)疑似环路——已熔断1s；检查 OnValueChange/写值类动作回环配置"
+                                 << "(如 OnValueChange 绑定 TagAdd/TagToggle 自身变量的增值自激)";
+        }
+        return true;
+    }
+    return false;
+}
+
 void RuntimeBus::executeAction(const EventAction& action, const Widget* widget, const QString& sourceScreen)
 {
+    if (guardActionStorm())
+        return;   // 熔断期：动作被丢弃（reviewer 🔴 2026-09-06：熔断必须在此落地——guard 只做判定）
     Q_UNUSED(widget)
+    if (qEnvironmentVariableIntValue("NAVIHMI_TRACE") != 0)
+        qInfo().noquote() << "[TRACE]   action=" << actionTypeName(action.type);
     const auto& p = action.parameters;
     switch (action.type) {
     case ActionType::ScreenSwitch: {
