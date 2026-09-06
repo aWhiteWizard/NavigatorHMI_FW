@@ -255,7 +255,37 @@ QString HttpReceiver::stageForProgress(int pct)
 
 void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServerResponder&& responder)
 {
-    // 并发上限 1（单客户端串行；多余请求拒绝并报错——服务约束）
+    // 🔴 修复（2026-09-06 用户 218MB 分块部署实测）：分块请求**豁免并发锁续块误拒**——原入口无条件
+    // `testAndSetAcquire` 并发上限 1：分块会话首块置锁后，**同会话续块 POST 再进本入口被忙检查 409
+    // TRANSFER_BUSY**（PC 诊断日志：chunk 0/61 CHUNK_OK → chunk 1/61 409 BUSY）→ PC 第 2 块即失败。
+    // 修复：分块请求——锁空 → 首块占锁；锁占 → 仅同会话续块（X-Tf-Id == m_chunkId）放行，否则 busy。
+    // 整包路径忙检查保持原样（整包与分块会话互斥）。
+    const bool chunkedReq = !request.value(QByteArrayLiteral("X-Tf-Total")).isEmpty()
+        || !request.value(QByteArrayLiteral("x-tf-total")).isEmpty();
+    if (chunkedReq) {
+        const QString reqId = QString::fromLatin1(request.value(QByteArrayLiteral("X-Tf-Id")));
+        if (m_transferActive.loadRelaxed()) {
+            if (reqId.isEmpty() || m_chunkId.isEmpty() || reqId != m_chunkId) {
+                // 锁被整包/另一分块会话占用，且非本会话续块 → busy
+                const QJsonObject err{
+                    { QStringLiteral("code"), QStringLiteral("TRANSFER_BUSY") },
+                    { QStringLiteral("message"), QStringLiteral("已有传输任务进行中") },
+                    { QStringLiteral("stage"), QStringLiteral("Upload") },
+                };
+                responder.write(QJsonDocument(err).toJson(QJsonDocument::Compact),
+                                QByteArrayLiteral("application/json"),
+                                QHttpServerResponder::StatusCode::Conflict);
+                return;
+            }
+            // 同会话续块 → 放行（锁保持；handleChunkedTransfer 校验 index/顺序/cap）
+        } else {
+            m_transferActive.storeRelease(true);   // 分块首块：占锁
+        }
+        handleChunkedTransfer(request, std::move(responder));
+        return;
+    }
+
+    // 整包路径：并发上限 1（单客户端串行；多余请求拒绝并报错——服务约束）
     if (!m_transferActive.testAndSetAcquire(false, true)) {
         const QJsonObject err{
             { QStringLiteral("code"), QStringLiteral("TRANSFER_BUSY") },
@@ -268,14 +298,7 @@ void HttpReceiver::handleTransfer(const QHttpServerRequest& request, QHttpServer
         return;
     }
 
-    // T-1a（2026-09-05 T 循环）：分块上传（X-Tf-Total 头）→ 分块会话路径——PC 新版大包按块循环 POST
-    //（每块 append 落盘，传输进度块级实时、大包不受内存限制、cap=磁盘空闲×2/3 动态上限）；
-    // 无分块头 = 整包旧路径/第三方 → 下方原流程（≤kMaxLegacySinglePostBytes 内存兜底）
-    if (!request.value(QByteArrayLiteral("X-Tf-Total")).isEmpty()
-        || !request.value(QByteArrayLiteral("x-tf-total")).isEmpty()) {
-        handleChunkedTransfer(request, std::move(responder));
-        return;
-    }
+    // T-1a（2026-09-05）：无分块头 = 整包旧路径/第三方 → 下方原流程（≤kMaxLegacySinglePostBytes 内存兜底）
 
     const QByteArray body = request.body();
     // 整包内存兜底（T-1a：旧整包路径上限 64MB→256MB 内存安全线——64MB 为分块前瓶颈；仍超提示用分块）
