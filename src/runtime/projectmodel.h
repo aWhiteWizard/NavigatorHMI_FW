@@ -260,8 +260,8 @@ struct Project {
     const Tag* TagByName(const QString& name) const;
     /// 按名称查报警规则（找不到返回 nullptr）
     const AlarmRule* AlarmByName(const QString& name) const;
-    /// 按名称查列表（找不到返回 nullptr）
-    const ListDef* ListByName(const QString& name) const;
+    /// 按「类型 + 名称」查列表（U-2 2026-09-06 三类型命名空间独立——跨类型同名用 type 区分；找不到返回 nullptr）
+    const ListDef* ListByName(const QString& name, ListType type = ListType::Text) const;
     /// 启动画面（无则取第一个 Custom 画面）
     const Screen* StartScreenModel() const;
 };

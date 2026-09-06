@@ -175,7 +175,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
     // D+: TextList 且未显式设 content 时, 按 listRef 从工程列表展开为逗号分隔项（供 HmiTextList 渲染）
     QString content = w.content;
     if (w.type == WidgetType::TextList && content.isEmpty() && !w.listRef.isEmpty()) {
-        const ListDef* ld = proj.ListByName(w.listRef);
+        const ListDef* ld = proj.ListByName(w.listRef, ListType::Text);   // U-2：TextList 消费 Text 型列表（同名跨类型不串）
         if (ld) content = ld->items.join(QLatin1Char(','));
     }
     appendProp(out, "content", content);
@@ -201,7 +201,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
         else
             appendProp(out, "imagePath", w.imagePath);
         if (!w.listRef.isEmpty()) {
-            const ListDef* imgList = proj.ListByName(w.listRef);
+            const ListDef* imgList = proj.ListByName(w.listRef, ListType::Image);   // U-2：Image 消费 Image 型列表
             if (imgList) {
                 QStringList absItems;
                 for (const auto& item : imgList->items)
@@ -313,7 +313,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
         appendProp(out, "videoListRef", w.videoListRef);
         appendProp(out, "videoIndexTag", w.videoIndexTag);
         if (!w.videoListRef.isEmpty()) {
-            const ListDef* vlist = proj.ListByName(w.videoListRef);
+            const ListDef* vlist = proj.ListByName(w.videoListRef, ListType::Video);   // U-2：Frame 视频消费 Video 型列表（同名跨类型不串）
             if (vlist) {
                 QStringList srcs;
                 for (const auto& item : vlist->items)

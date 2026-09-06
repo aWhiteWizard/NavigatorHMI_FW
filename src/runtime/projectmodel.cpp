@@ -27,10 +27,11 @@ const AlarmRule* Project::AlarmByName(const QString& name) const
     return nullptr;
 }
 
-const ListDef* Project::ListByName(const QString& name) const
+const ListDef* Project::ListByName(const QString& name, ListType type) const
 {
+    // U-2（2026-09-06）：按类型过滤——Text/Image/Video 列表可跨类型同名，消费方（TextList/Image/视频）带类型查
     for (const ListDef& l : lists)
-        if (l.name == name) return &l;
+        if (l.type == type && l.name == name) return &l;
     return nullptr;
 }
 

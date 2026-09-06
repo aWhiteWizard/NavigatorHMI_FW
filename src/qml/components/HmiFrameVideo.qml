@@ -73,6 +73,12 @@ Item {
     function applySource() {
         var target = vroot.currentTargetSource()
         if (target === undefined || target === null || target === "") {
+            // U-5（2026-09-06 用户拍板「切了坏画面，应该立即停播，并且显示文字」）：空源/越界/坏项 → **停播清画面**
+            //（原 S-5「不清旧源继续播」语义反转——避免旧视频继续播误导当前源状态）
+            // 审查 🟡①（2026-09-06 FW 审）：同时清 source——防 stop 后旧源 URL 残留被点击/playTag 复活复播
+            //（红字与旧视频并存的矛盾态）；source 清空触发 onSourceChanged 但守卫（source !== ""）不补播
+            player.stop()
+            player.source = ""
             stateText.text = "视频源不可用（当前索引无有效源）"
             stateText.visible = true
             console.warn("[HmiFrameVideo] 无有效视频源 listRef=" + vroot.videoListRef + " videoSource=" + vroot.videoSource)
@@ -142,7 +148,9 @@ Item {
                 vroot.applyPlayTagValue(dataManager.value(vroot.playTag))
         }
         // S-6（2026-09-05）：播放失败诊断——打印当前源路径 + 明确「该路径不可播放」提示（非静默）
+        // U-5（2026-09-06）：失败即停播（player.stop 清 error 态/残留画面——用户拍板切坏源立即停播）
         onErrorOccurred: function (error, errorString) {
+            player.stop()
             var src = vroot.currentTargetSource()
             stateText.text = "该路径不可播放: " + (src === "" ? "(空/越界)" : src)
             stateText.visible = true
