@@ -51,6 +51,10 @@ enum class AlarmTriggerMode { Threshold = 0, OnRising = 1, OnFalling = 2, OnChan
 enum class AlarmCategory { System = 0, User = 1, Error = 2 };
 enum class WindowType { UserView = 0, AlarmView = 1, RobotList = 2 };
 
+/// 事件优先级（V-3c 2026-09-06，与 proto WidgetEvent.priority 对齐；Normal=0 零值默认——
+/// Low 因默认零值无法低于 Normal，仅名义保留，实际三档 Normal/High/Emergency）
+enum class EventPriority { Normal = 0, High = 1, Emergency = 2, Low = 3 };
+
 // ── 模型 ──
 
 struct EventAction {
@@ -62,6 +66,7 @@ struct WidgetEvent {
     EventType type = EventType::OnClick;
     QString condition;
     QList<EventAction> actions;
+    int priority = 0;   // 事件优先级（V-3c：EventPriority 数值，0=Normal 默认）
 };
 
 /// 控件（扁平结构，同 navihmi.proto Widget）

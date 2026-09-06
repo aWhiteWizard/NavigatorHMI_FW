@@ -204,6 +204,7 @@ bool mapWidget(const pb::Widget& p, Widget& w)
         if (!mapEventType(pe.type(), we.type))
             continue;
         we.condition = s(pe.condition());
+        we.priority = pe.priority();   // V-3c：事件优先级（proto 缺省 0=Normal）
         for (const auto& pa : pe.actions()) {
             EventAction ea;
             if (!mapActionType(pa.type(), ea.type))
@@ -347,6 +348,7 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
             if (!mapEventType(pe.type(), we.type))
                 continue;   // P-2b：未知事件类型 → 跳过该事件
             we.condition = s(pe.condition());
+            we.priority = pe.priority();   // V-3c：事件优先级
             for (const auto& pa : pe.actions()) {
                 EventAction ea;
                 if (!mapActionType(pa.type(), ea.type))

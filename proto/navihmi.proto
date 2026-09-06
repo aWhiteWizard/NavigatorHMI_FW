@@ -307,6 +307,9 @@ message WidgetEvent {
   EventType type = 1;
   string condition = 2;      // 可选触发条件表达式（如 "value > 80"），空 = 无条件触发
   repeated EventAction actions = 3;
+  int32 priority = 4;        // 事件优先级（V-3c 2026-09-06）：0=Normal(默认,零值纪律)/1=High/2=Emergency；
+                             // Low 档因 Normal 默认零值无法低于其表达（v1.1-design 四档与零值纪律内在矛盾——
+                             // 实现取三档语义，Low 名义保留于枚举待 V+1 队列排序时定权重）
 }
 
 message EventAction {
