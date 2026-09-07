@@ -1,0 +1,480 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2022 Rockchip Electronics Co., Ltd.
+ *
+ */
+
+/dts-v1/;
+
+#include "dt-bindings/usb/pd.h"
+#include "rk3562.dtsi"
+#include "topeet-rk3562-linux.dtsi"
+#include "rk3562-rk809.dtsi"
+#include "topeet-rk3562-evb.dtsi"
+#include "topeet-camera-config.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/sensor-dev.h>
+
+
+
+/ {
+	model = "Topeet iTOP-RK3562 Board";
+	compatible = "topeet,itop-rk3562", "topeet,rk3562-evb", "rockchip,rk3562";
+
+	dc_12v: dc-12v {
+		compatible = "regulator-fixed";
+		regulator-name = "dc_12v";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+	};
+	//声卡
+	rk809_sound: rk809-sound {
+		status = "okay";
+		compatible = "rockchip,multicodecs-card";
+		rockchip,card-name = "rockchip-rk809";
+		hp-det-gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;
+		rockchip,format = "i2s";
+		rockchip,mclk-fs = <256>;
+		rockchip,cpu = <&sai0>;
+		rockchip,codec = <&rk809_codec>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&hp_det>;
+	};
+
+
+
+	vcc3v3_pcie20: vcc3v3-pcie20 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pcie20";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		//gpios = <&gpio0 RK_PB7 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <5000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	vcc5v0_sys: vcc5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&dc_12v>;
+	};
+
+	vcc3v3_sys: vcc3v3-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	//usb host供电
+	vcc5v0_usb_host: vcc5v0-usb-host {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_usb_host";
+		regulator-boot-on;
+		regulator-always-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+		//vin-supply = <&dcdc_boost>;
+		//pinctrl-names = "default";
+		//pinctrl-0 = <&usb_host_pwren>;
+	};
+
+	vbat_3v8: vbat-3v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vbat_3v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3800000>;
+		regulator-max-microvolt = <3800000>;
+	};
+/*
+	vcc_sd: vcc-sd {
+		compatible = "regulator-gpio";
+		enable-active-low;
+		regulator-boot-on;
+		gpios = <&gpio0 RK_PA5 GPIO_ACTIVE_LOW>;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc_sd_h>;
+		regulator-name = "vcc_sd";
+		states = <0 0x0
+			  3300000 0x1>;
+	};
+*/
+	vcc_sys: vcc-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3800000>;
+		regulator-max-microvolt = <3800000>;
+	};
+/*
+	vdd_gpu: vdd-gpu {
+		compatible = "pwm-regulator";
+		pwms = <&pwm7 0 5000 1>;
+		regulator-name = "vdd_gpu";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1100000>;
+		regulator-init-microvolt = <900000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc_sys>;
+		status = "okay";
+	};
+*/
+	vdd_npu: vdd-npu {
+		compatible = "pwm-regulator";
+		pwms = <&pwm6 0 5000 1>;
+		regulator-name = "vdd_npu";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1100000>;
+		regulator-init-microvolt = <900000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc_sys>;
+		status = "okay";
+	};
+
+
+};
+//网口
+/******************************START***********************************/
+&gmac0 {
+	/* Use rgmii-rxid mode to disable rx delay inside Soc */
+	phy-mode = "rgmii-rxid";
+	clock_in_out = "output";
+
+	snps,reset-gpio = <&gpio0 RK_PC6 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	/* Reset time is 20ms, 100ms for rtl8211f */
+	snps,reset-delays-us = <0 20000 100000>;
+
+	tx_delay = <0x38>;
+	/* rx_delay = <0x3f>; */
+
+	pinctrl-names = "default";
+    pinctrl-0 = <&rgmiim1_miim
+                 &rgmiim1_tx_bus2
+                 &rgmiim1_rx_bus2
+                 &rgmiim1_rgmii_clk
+                 &rgmiim1_rgmii_bus
+                 &ethm1_pins
+                 &rgmiim1_clk>;
+
+	phy-handle = <&rgmii_phy>;
+	status = "okay";
+};
+&mdio0 {
+
+	rgmii_phy: phy@0 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0x0>;
+		clocks = <&cru CLK_GMAC_ETH_OUT2IO>;
+		assigned-clocks = <&cru CLK_GMAC_ETH_OUT2IO>;
+		assigned-clock-rates = <25000000>;
+	};
+};
+/******************************END***********************************/
+
+
+
+
+//RTC时钟模块
+/******************************START***********************************/
+&i2c3 {
+        status = "okay";
+        pinctrl-names = "default";
+        pinctrl-0 = <&i2c3m0_xfer>;
+        hym8563: hym8563@51 {
+                compatible = "haoyu,hym8563";
+                reg = <0x51>;
+                #clock-cells = <0>;
+                clock-frequency = <32768>;
+                clock-output-names = "hym8563";
+                pinctrl-names = "default";
+                pinctrl-0 = <&hym8563_int>;
+                interrupt-parent = <&gpio0>;
+                interrupts = <RK_PA5 IRQ_TYPE_LEVEL_LOW>;
+                wakeup-source;
+                status = "okay";
+        };
+};
+/******************************END***********************************/
+
+
+
+//pmic使用，不能删除
+&i2c0 {
+	status = "okay";
+};
+
+
+
+//pwm3 pwn6 未使用，其中pwm3默认配置为ir功能
+/******************************START***********************************/
+&pwm3 {
+	status = "disabled";
+
+	compatible = "rockchip,remotectl-pwm";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm3m0_pins>;
+	assigned-clocks = <&cru CLK_PMU1_PWM0>;
+	assigned-clock-rates = <24000000>;
+	remote_pwm_id = <3>;
+	handle_cpu_id = <1>;
+	remote_support_psci = <1>;
+
+	ir_key1 {
+		rockchip,usercode = <0x4040>;
+		rockchip,key_table =
+			<0xf2	KEY_REPLY>,
+			<0xba	KEY_BACK>,
+			<0xf4	KEY_UP>,
+			<0xf1	KEY_DOWN>,
+			<0xef	KEY_LEFT>,
+			<0xee	KEY_RIGHT>,
+			<0xbd	KEY_HOME>,
+			<0xea	KEY_VOLUMEUP>,
+			<0xe3	KEY_VOLUMEDOWN>,
+			<0xe2	KEY_SEARCH>,
+			<0xb2	KEY_POWER>,
+			<0xbc	KEY_MUTE>,
+			<0xec	KEY_MENU>,
+			<0xbf	0x190>,
+			<0xe0	0x191>,
+			<0xe1	0x192>,
+			<0xe9	183>,
+			<0xe6	248>,
+			<0xe8	185>,
+			<0xe7	186>,
+			<0xf0	388>,
+			<0xbe	0x175>;
+	};
+
+	ir_key2 {
+		rockchip,usercode = <0xff00>;
+		rockchip,key_table =
+			<0xf9	KEY_HOME>,
+			<0xbf	KEY_BACK>,
+			<0xfb	KEY_MENU>,
+			<0xaa	KEY_REPLY>,
+			<0xb9	KEY_UP>,
+			<0xe9	KEY_DOWN>,
+			<0xb8	KEY_LEFT>,
+			<0xea	KEY_RIGHT>,
+			<0xeb	KEY_VOLUMEDOWN>,
+			<0xef	KEY_VOLUMEUP>,
+			<0xf7	KEY_MUTE>,
+			<0xe7	KEY_POWER>,
+			<0xfc	KEY_POWER>,
+			<0xa9	KEY_VOLUMEDOWN>,
+			<0xa8	KEY_VOLUMEDOWN>,
+			<0xe0	KEY_VOLUMEDOWN>,
+			<0xa5	KEY_VOLUMEDOWN>,
+			<0xab	183>,
+			<0xb7	388>,
+			<0xe8	388>,
+			<0xf8	184>,
+			<0xaf	185>,
+			<0xed	KEY_VOLUMEDOWN>,
+			<0xee	186>,
+			<0xb3	KEY_VOLUMEDOWN>,
+			<0xf1	KEY_VOLUMEDOWN>,
+			<0xf2	KEY_VOLUMEDOWN>,
+			<0xf3	KEY_SEARCH>,
+			<0xb4	KEY_VOLUMEDOWN>,
+			<0xbe	KEY_SEARCH>;
+	};
+
+	ir_key3 {
+		rockchip,usercode = <0x1dcc>;
+		rockchip,key_table =
+			<0xee	KEY_REPLY>,
+			<0xf0	KEY_BACK>,
+			<0xf8	KEY_UP>,
+			<0xbb	KEY_DOWN>,
+			<0xef	KEY_LEFT>,
+			<0xed	KEY_RIGHT>,
+			<0xfc	KEY_HOME>,
+			<0xf1	KEY_VOLUMEUP>,
+			<0xfd	KEY_VOLUMEDOWN>,
+			<0xb7	KEY_SEARCH>,
+			<0xff	KEY_POWER>,
+			<0xf3	KEY_MUTE>,
+			<0xbf	KEY_MENU>,
+			<0xf9	0x191>,
+			<0xf5	0x192>,
+			<0xb3	388>,
+			<0xbe	KEY_1>,
+			<0xba	KEY_2>,
+			<0xb2	KEY_3>,
+			<0xbd	KEY_4>,
+			<0xf9	KEY_5>,
+			<0xb1	KEY_6>,
+			<0xfc	KEY_7>,
+			<0xf8	KEY_8>,
+			<0xb0	KEY_9>,
+			<0xb6	KEY_0>,
+			<0xb5	KEY_BACKSPACE>;
+	};
+};
+
+
+/**************************pwm3 pwm6 END******************************/
+
+//NPU使用
+&pwm6 {
+	status = "okay";
+};
+
+
+//pcie2x1 复位引脚
+&pcie2x1 {
+	//reset-gpios = <&gpio3 RK_PB0 GPIO_ACTIVE_HIGH>;
+	vpcie3v3-supply = <&vcc3v3_pcie20>;
+	status = "okay";
+};
+
+
+//pinctrl配置
+&pinctrl {
+	//hym8563中断引脚
+	hym8563 {
+        hym8563_int: hym8563-int {
+            rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };
+	//headphone插拔检测引脚
+	headphone {
+		hp_det: hp-det {
+			rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+/*
+	lcd {
+		lcd_rst_gpio: lcd-rst-gpio {
+			rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+	usb {
+		usb_host_pwren: usb-host-pwren {
+			rockchip,pins = <4 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		usbc0_int: usbc0-int {
+			rockchip,pins = <1 RK_PC7 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+*/
+};
+
+
+//sdmmc0配置和使能 —— 底板 TF 卡槽(J10)接 sdmmc0(ff880000)，SD 卡模式
+//原理图: topeet_rk3562_main_v1_1.pdf 第11页 10.SD（MicroSD 卡直接挂 SDMMC0 总线）
+//供电: VCC3V3_SD = RK809 SWITCH_REG2(vcc3v3_sd, always-on)；信号电平 vccio_sd = RK809 LDO_REG5
+//原配置(no-sd/no-mmc/cap-sdio-irq/non-removable)为 EXIO 扩展口 SDIO 预留，导致板上 TF 卡无法识别
+/******************************START***********************************/
+&sdmmc0 {
+	bus-width = <4>;
+	disable-wp;
+	cap-sd-highspeed;
+	cap-mmc-highspeed;
+	sd-uhs-sdr104;
+	keep-power-in-suspend;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0_bus4 &sdmmc0_clk &sdmmc0_cmd &sdmmc0_det>;
+	vmmc-supply = <&vcc3v3_sd>;
+	vqmmc-supply = <&vccio_sd>;
+	status = "okay";
+};
+/***************************sdmmc0 END*********************************/
+
+
+
+//I2S接口 rk809_codec 使用
+/******************************START***********************************/
+&sai0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2s0m0_lrck
+		     &i2s0m0_sclk
+		     &i2s0m0_sdi0
+		     &i2s0m0_sdo0>;
+};
+/***************************I2S接口 END*********************************/
+
+
+
+
+
+
+//USB2.0控制器和phy使能
+/******************************START***********************************/
+&combphy_pu {
+	status = "okay";
+};
+
+&u2phy {
+	status = "okay";
+};
+
+&u2phy_host {
+	status = "okay";
+	phy-supply = <&vcc5v0_usb_host>;  //供电
+};
+
+&u2phy_otg {
+	status = "okay";
+};
+
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+/********************USB2.0控制器和phy使能 END**************************/
+
+
+//usb3.0 otg使能
+/******************************START***********************************/
+//使能父节点
+&usbdrd30 {
+	status = "okay";
+};
+
+//使能子节点
+&usbdrd_dwc3 {
+	status = "okay";
+
+	dr_mode = "otg";				//注意如配置usb-role-switch则必须配置dr_mode且属性值必须为otg，
+	maximum-speed = "high-speed";	//配置dwc3控制器最⾼⽀持high speed
+	phys = <&u2phy_otg>;  			//配置phys属性只引⽤ usb 2.0 phy节点
+	phy-names = "usb2-phy";
+	extcon = <&u2phy>;              //如果不设置extcon不能进行模式切换，只能是host或者device
+	snps,dis_u2_susphy_quirk;       //配置dwc3控制器不⽀持⾃动suspend usb2 phy
+	snps,usb2-lpm-disable;          //配置dwc3 host mode不⽀持LPM功能
+	//usb-role-switch;              //⽤于使能DWC3驱动注册USB Role Switch回调函数
+};
+
+/**********************usb3.0 otg使能 END********************************/
