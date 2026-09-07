@@ -40,6 +40,74 @@ Item {
             width: parent.width
             spacing: 2
 
+            // ── 顶部时间区（2026-09-07 用户需求：实时设备系统时间，置于「首页」上方；尺寸与菜单项一致 + 分割线）──
+            Rectangle {
+                id: navClock
+                width: parent.width
+                height: 48
+                color: "transparent"
+
+                // 底部分割线（与下方菜单项分隔；导航栏主题深蓝底上白色半透明线）
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: navRoot.isDark ? "#40FFFFFF" : "#66FFFFFF"
+                }
+
+                // 初值直接取当前时间（避免首 250ms 空窗——reviewer 🔵-1）
+                property string dateText: Qt.formatDate(new Date(), "yyyy-MM-dd")
+                property string timeText: Qt.formatTime(new Date(), "hh:mm:ss")
+                // 实时时钟：250ms 刷新设备系统时间（new Date 取设备本地时间；等值赋值不触发重绘）
+                Timer {
+                    interval: 250
+                    repeat: true
+                    running: true
+                    onTriggered: {
+                        var d = new Date();
+                        navClock.dateText = Qt.formatDate(d, "yyyy-MM-dd");
+                        navClock.timeText = Qt.formatTime(d, "hh:mm:ss");
+                    }
+                }
+
+                // 展开态：日期（小）+ 时间（大）两行，整体垂直居中
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    visible: navRoot.navExpanded
+                    spacing: 1
+                    Text {
+                        text: navClock.dateText
+                        color: "white"
+                        font.pixelSize: 12
+                        opacity: 0.85
+                    }
+                    Text {
+                        text: navClock.timeText
+                        color: "white"
+                        font.pixelSize: 18
+                        font.bold: true
+                    }
+                }
+                // 收起态（60 宽）：仅时间（居中——宽度约束 + 对齐不依赖字体度量，reviewer 🔵-3）
+                Text {
+                    anchors.centerIn: parent
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                    text: navClock.timeText
+                    color: "white"
+                    font.pixelSize: 12
+                    visible: !navRoot.navExpanded
+                }
+            }
+
             NavItem { label: "首页"; page: "home"; expanded: navRoot.navExpanded }
             NavItem { label: "设备信息"; page: "info"; expanded: navRoot.navExpanded }
             NavItem { label: "存储管理"; page: "storage"; expanded: navRoot.navExpanded }
