@@ -56,11 +56,43 @@ StorageInfo::StorageInfo(QObject* parent)
     : QObject(parent)
 {
 #ifndef Q_OS_WIN
-    // W-C（F4）：热插拔事件驱动（替代轮询）——/sys/block 目录项增删 = SD/USB 块设备插拔
+    // W-C（F4）：热插拔事件驱动——/sys/block 目录项增删 = SD/USB 块设备插拔
+    // 2026-09-07 用户实测：inotify directoryChanged 对 /sys/block（kernfs/sysfs）不派发（reviewer 🟡-3 预警成真）
+    // → watcher 保留（部分内核即时通道）+ 2s 低频快照比对轮询兜底（可靠）
     m_blockWatcher.addPath(QStringLiteral("/sys/block"));
     connect(&m_blockWatcher, &QFileSystemWatcher::directoryChanged, this,
-            [this](const QString&) { emit storageChanged(); });
+            [this](const QString&) {
+                m_lastSnapshot = blockDeviceSnapshot();   // watcher 命中即刷新快照基线
+                emit storageChanged();
+            });
+    m_lastSnapshot = blockDeviceSnapshot();   // 初始基线（不触发）
+    m_pollTimer.setInterval(2000);
+    connect(&m_pollTimer, &QTimer::timeout, this, &StorageInfo::pollBlockDevices);
+    m_pollTimer.start();
 #endif
+}
+
+QSet<QString> StorageInfo::blockDeviceSnapshot() const
+{
+    QSet<QString> set;
+    QDir sysBlock(QStringLiteral("/sys/block"));
+    if (sysBlock.exists()) {
+        const QStringList names = sysBlock.entryList({ QStringLiteral("mmcblk1"), QStringLiteral("sd*") },
+                                                     QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString& n : names)
+            set.insert(n);
+    }
+    return set;
+}
+
+void StorageInfo::pollBlockDevices()
+{
+    // 2s 快照比对兜底（watcher 不派发时保证插拔仍被发现）
+    const QSet<QString> now = blockDeviceSnapshot();
+    if (now != m_lastSnapshot) {
+        m_lastSnapshot = now;
+        emit storageChanged();
+    }
 }
 
 QString StorageInfo::defaultProjectPath()

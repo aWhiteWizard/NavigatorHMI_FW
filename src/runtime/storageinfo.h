@@ -9,7 +9,9 @@
 
 #include <QFileSystemWatcher>
 #include <QObject>
+#include <QSet>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 
 namespace navihmi {
@@ -34,11 +36,18 @@ public:
 signals:
     /// 默认工程文件已被替换（main.cpp 连接 → 重新加载工程注入 screenFiles）
     void projectReplaced();
-    /// W-C（F4）：/sys/block 目录变化（SD/USB 块设备插拔）→ QML 存储页即时刷新状态
+    /// W-C（F4）：SD/USB 块设备插拔变化 → QML 存储页即时刷新状态
     void storageChanged();
 
 private:
-    QFileSystemWatcher m_blockWatcher;   // W-C（F4）：监控 /sys/block（目录项增删 = SD/USB 插拔）
+    /// W-C 修复（2026-09-07 用户实测：/sys/block inotify directoryChanged 不派发——kernfs/sysfs 目录
+    /// 监控不可靠）→ 2s 低频快照比对轮询兜底（保留 watcher 作为部分内核即时通道，轮询保证兜底）
+    void pollBlockDevices();
+    QSet<QString> blockDeviceSnapshot() const;
+
+    QFileSystemWatcher m_blockWatcher;
+    QTimer m_pollTimer;              // 2s 轮询
+    QSet<QString> m_lastSnapshot;    // 上次轮询 /sys/block 块设备集合（mmcblk1/sd*）
 };
 
 } // namespace navihmi
