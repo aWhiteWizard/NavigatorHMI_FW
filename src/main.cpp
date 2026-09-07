@@ -40,7 +40,7 @@
 #include "runtime/acquisition.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
-#include "runtime/vncmirror.h"
+#include "runtime/vncmanager.h"
 #include "runtime/fwconfig.h"   // K-9 评论3：VNC 端口配置单点
 #include "ota/otaupdater.h"     // D1：.fw OTA 安装器（app 替换→重启；rootfs/kernel 分区路径）
 #include "runtime/touchcalibrator.h"
@@ -53,7 +53,7 @@
 #endif
 
 namespace {
-// 默认设备尺寸（7 寸 1024×600；与 touchcalibrator/vncmirror 兜底一致，2026-08-26 魔法数字整改命名）
+// 默认设备尺寸（7 寸 1024×600；与 touchcalibrator/VncManager 兜底一致，2026-08-26 魔法数字整改命名）
 // K-9 评论1：值已收敛到 devicemeta.h kDefaultDeviceWidth/Height 单点（此处保留别名引用，防匿名命名空间内原调用点改动面扩大）
 constexpr int kDefaultDevW = navihmi::kDefaultDeviceWidth;
 constexpr int kDefaultDevH = navihmi::kDefaultDeviceHeight;
@@ -266,7 +266,7 @@ static int runGenQml(const QString& path, const QString& outDir)
 static bool loadAndInject(QObject* rootObj,
                           navihmi::RuntimeBus& runtimeBus, navihmi::DataManager& dataManager,
                           const QString& projectPath,
-                          navihmi::VncMirror* vncMirror = nullptr,
+                          navihmi::VncManager* vncManager = nullptr,
                           const QString& tileBasePath = QString(),
                           navihmi::UserSystem* userSystem = nullptr,
                           navihmi::AlarmEngine* alarmEngine = nullptr,
@@ -435,11 +435,11 @@ static bool loadAndInject(QObject* rootObj,
     // N+24 修复（2026-08-30 用户裁决）：VNC 尺寸 = 连接的设备（物理屏分辨率，型号查表）——
     // 不再用工程 deviceWidth/Height（工程 800×480 时 VNC 按 800×480 读帧/宣告，与 7 寸屏 1024×600 不符）；
     // 与工程解耦后重载任意尺寸工程 VNC 尺寸恒定，无需更新
-    if (vncMirror) {
+    if (vncManager) {
         const QPair<int, int> devRes = navihmi::deviceResolutionFor();
-        vncMirror->setDeviceSize(devRes.first, devRes.second);
+        vncManager->setDeviceSize(devRes.first, devRes.second);
     }
-    if (vncMirror && !s_initialVncApplied) {
+    if (vncManager && !s_initialVncApplied) {
         s_initialVncApplied = true;
         int force = 1;
         bool okForce = false;
@@ -448,9 +448,9 @@ static bool loadAndInject(QObject* rootObj,
         bool want = (force == 2) || (proj.enableVnc && force != 0);
         if (want) {
             // K-9 评论3：端口收敛到 fwconfig（/etc/navigatorhmi/fw-config.json + NAVIHMI_VNC_PORT 覆盖），不再写死 5900
-            vncMirror->start(quint16(navihmi::vncPort()));
+            vncManager->start(quint16(navihmi::vncPort()));
         } else {
-            vncMirror->stop();
+            vncManager->stop();
         }
     }
 
@@ -712,14 +712,14 @@ int main(int argc, char *argv[])
     }
 
     // VNC 镜像（eglfs 物理屏照常，额外远程通道，端口默认 5900 见 fw-config.json；按工程 enable_vnc 启停）
-    navihmi::VncMirror vncMirror(qobject_cast<QQuickWindow*>(rootObj));
-    // QML 生产端脏矩形报告（西门子 dirty-rect 模式：画面变化点调 vncMirror.markDirty）
-    engine.rootContext()->setContextProperty("vncMirror", &vncMirror);
+    navihmi::VncManager vncManager(qobject_cast<QQuickWindow*>(rootObj));
+    // QML 生产端脏矩形报告（西门子 dirty-rect 模式：画面变化点调 vncManager.markDirty）
+    engine.rootContext()->setContextProperty("vncMirror", &vncManager);
     // K-9: VNC 运行时启停注入——SSH CLI 命令（无条件，不依赖 HTTP）；proto enable_vnc=21 启动默认值，运行时指令覆盖
-    commandService.setVncMirror(&vncMirror);
+    commandService.setVncManager(&vncManager);
 #if defined(HAVE_QT_HTTPSERVER)
     // K-9: HTTP 端点注入 + 设备闪烁请求 → QML 覆盖层（亮灭交替 ~1s；main.qml setBlink）
-    httpReceiver.setVncMirror(&vncMirror);
+    httpReceiver.setVncManager(&vncManager);
     QObject::connect(&httpReceiver, &navihmi::HttpReceiver::blinkRequested, rootObj,
                      [rootObj](bool enable) {
         QMetaObject::invokeMethod(rootObj, "setBlink", Q_ARG(QVariant, QVariant(enable)));
@@ -747,7 +747,7 @@ int main(int argc, char *argv[])
         if (!restoreErr.isEmpty())
             qCritical().noquote() << "OTA 回滚失败: " << restoreErr;
     }
-    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition)) {
+    if (!loadAndInject(rootObj, runtimeBus, dataManager, resolvedProject, &vncManager, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition)) {
         // O-D D-3b：启动失败路径——记录失败计数（供下次启动前置回滚判定）；连续失败达上限不硬停（守护会拉起，
         // 前置检查已触发回滚）。loadAndInject 失败多为工程数据问题（非固件文件），计数避免无限循环（markBootOk 成功清零）
         otaUpdater.recordBootFail();
@@ -767,7 +767,7 @@ int main(int argc, char *argv[])
     if (!httpReceiver.start())
         qWarning().noquote() << "HTTP 接收端不可用（FW 继续正常运行，无法接收工程部署）";
     QObject::connect(&httpReceiver, &navihmi::HttpReceiver::projectPackageReady, rootObj,
-                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger, &acquisition](const QString& projectPath) {
+                     [rootObj, &runtimeBus, &dataManager, &vncManager, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger, &acquisition](const QString& projectPath) {
         QString tileBasePath;
         const QString resolved = resolveProjectPackage(projectPath, tileBasePath);
         // 同步校准重启路径（对齐 storageInfo.projectReplaced 链——校准后自重启拉起新工程）
@@ -776,7 +776,7 @@ int main(int argc, char *argv[])
         // 工程重载前清理 ObjectManager 画面上下文与注册表（防旧工程控件残留寻址幽灵）
         objectManager.setCurrentScreen(QString());
         objectManager.clearScreens();
-        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
+        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncManager, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
     });
 
     // D1：.fw 固件包校验通过（httreceiver staging 就绪）→ OTA 安装器（otaUpdater 已在启动成功点前定义）
@@ -824,7 +824,7 @@ int main(int argc, char *argv[])
     };
     // 存储管理替换默认工程后 → 重新加载注入（B6-8: 替换即时生效, 开始工程打开新工程）
     QObject::connect(&storageInfo, &navihmi::StorageInfo::projectReplaced, rootObj,
-                     [rootObj, &runtimeBus, &dataManager, &vncMirror, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger, &acquisition]() {
+                     [rootObj, &runtimeBus, &dataManager, &vncManager, &touchCalibrator, &objectManager, &userSystem, &alarmEngine, &dataLogger, &acquisition]() {
         QString tileBasePath;
         const QString defaultPath = navihmi::StorageInfo::defaultProjectPath();
         const QString resolved = resolveProjectPackage(defaultPath, tileBasePath);
@@ -836,7 +836,7 @@ int main(int argc, char *argv[])
         // 防旧工程画面控件残留注册, 新工程 set_property 按旧画面名寻址到幽灵控件
         objectManager.setCurrentScreen(QString());
         objectManager.clearScreens();
-        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncMirror, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
+        loadAndInject(rootObj, runtimeBus, dataManager, resolved, &vncManager, tileBasePath, &userSystem, &alarmEngine, &dataLogger, &acquisition);
     });
 
     logPhase("工程就绪(运行态)");   // V-4 F11：loadAndInject 成功（失败路径上方已 return/记录）
@@ -847,7 +847,7 @@ int main(int argc, char *argv[])
     // （防守护拉起新实例时的端口/单实例竞态 + 退出原因可日志定位；对象析构仍兜底）
     qInfo().noquote() << "navigatorhmi-fw: Shutdown——停止运行服务";
     acquisition.stop();      // 停采集调度 + Modbus 断连（V-4 新增 public stop）
-    vncMirror.stop();        // VNC 停（端口释放）
+    vncManager.stop();        // VNC 停（端口释放）
     qInfo().noquote() << "navigatorhmi-fw: Shutdown 完成 rc=" << execRc;
     return execRc;
 #else

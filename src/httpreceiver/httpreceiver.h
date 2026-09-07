@@ -21,7 +21,7 @@ namespace navihmi {
 
 class RuntimeBus;
 class DeviceInfo;
-class VncMirror;
+class VncManager;
 
 class HttpReceiver : public QObject
 {
@@ -36,8 +36,8 @@ public:
     /// 是否正在传输（并发上限 1 判定）
     bool isTransferActive() const { return m_transferActive.loadRelaxed(); }
 
-    /// K-9：注入 VNC 镜像（VncMirror 构造晚于 HttpReceiver——engine.load 后调用）
-    void setVncMirror(VncMirror* vm);
+    /// K-9：注入 VNC 镜像（VncManager 构造晚于 HttpReceiver——engine.load 后调用）
+    void setVncManager(VncManager* vm);
 
     /// D-B4：最近一次传输进度（0~100；-1=无/失败；原子存储供 GET /api/progress 跨线程读取）
     int lastProgress() const { return m_lastProgress.loadRelaxed(); }
@@ -112,7 +112,7 @@ private:
 
     RuntimeBus* m_bus = nullptr;
     DeviceInfo* m_deviceInfo = nullptr;
-    VncMirror* m_vncMirror = nullptr;   // K-9
+    VncManager* m_vncManager = nullptr;   // K-9
     QHttpServer m_server;
     QAtomicInteger<bool> m_transferActive { false };
     QAtomicInteger<int> m_lastProgress { -1 };   // D-B4：最近传输进度（-1=无/失败；原子跨线程读，后台线程 storeRelaxed）

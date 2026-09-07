@@ -22,7 +22,7 @@ class RuntimeBus;
 class AlarmEngine;
 class DeviceInfo;
 class DataLogger;
-class VncMirror;
+class VncManager;
 
 class CommandService : public QObject
 {
@@ -35,7 +35,7 @@ public:
     void setAlarmEngine(AlarmEngine* ae);
     void setDeviceInfo(DeviceInfo* di);
     void setDataLogger(DataLogger* dl);
-    void setVncMirror(VncMirror* vm);   // K-9：vnc 启停命令（A 批设备面板对等）
+    void setVncManager(VncManager* vm);   // K-9：vnc 启停命令（A 批设备面板对等）
 
     /// 执行一行命令，返回输出文本（错误以 "ERROR: " 前缀）
     /// clientUid：客户端进程 UID（SSH CLI 场景 = SSH 登录用户 UID；Linux SO_PEERCRED 由 CliServer 读取）
@@ -64,7 +64,7 @@ private:
     AlarmEngine* m_ae = nullptr;
     DeviceInfo* m_di = nullptr;
     DataLogger* m_dl = nullptr;
-    VncMirror* m_vm = nullptr;
+    VncManager* m_vm = nullptr;
     int m_clientUid = -1;   // 当前连接客户端 UID（-1=未知，按非管理员处理）
 };
 

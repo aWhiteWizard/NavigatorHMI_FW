@@ -10,7 +10,7 @@
 #include "runtime/alarmengine.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/datalogger.h"
-#include "runtime/vncmirror.h"   // K-9：vnc 启停命令
+#include "runtime/vncmanager.h"   // K-9：vnc 启停命令
 #include "runtime/devicemeta.h"  // K-9：设备身份推导单点
 #include "runtime/fwconfig.h"    // K-9 评论3：VNC 端口配置单点
 
@@ -37,7 +37,7 @@ void CommandService::setRuntimeBus(RuntimeBus* bus) { m_bus = bus; }
 void CommandService::setAlarmEngine(AlarmEngine* ae) { m_ae = ae; }
 void CommandService::setDeviceInfo(DeviceInfo* di) { m_di = di; }
 void CommandService::setDataLogger(DataLogger* dl) { m_dl = dl; }
-void CommandService::setVncMirror(VncMirror* vm) { m_vm = vm; }   // K-9
+void CommandService::setVncManager(VncManager* vm) { m_vm = vm; }   // K-9
 
 bool CommandService::isAdmin(int clientUid)
 {

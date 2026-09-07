@@ -28,7 +28,7 @@
 #include "runtime/runtimebus.h"
 #include "runtime/deviceinfo.h"
 #include "runtime/storageinfo.h"
-#include "runtime/vncmirror.h"     // K-9：/api/vnc 端点
+#include "runtime/vncmanager.h"     // K-9：/api/vnc 端点
 #include "runtime/devicemeta.h"    // K-9：设备身份推导单点
 #include "runtime/fwconfig.h"      // K-9 评论3：VNC 端口配置单点
 
@@ -107,7 +107,7 @@ HttpReceiver::HttpReceiver(RuntimeBus* bus, DeviceInfo* devInfo, QObject* parent
 
 HttpReceiver::~HttpReceiver() = default;
 
-void HttpReceiver::setVncMirror(VncMirror* vm) { m_vncMirror = vm; }   // K-9
+void HttpReceiver::setVncManager(VncManager* vm) { m_vncManager = vm; }   // K-9
 
 bool HttpReceiver::start()
 {
@@ -605,20 +605,20 @@ QHttpServerResponse HttpReceiver::handleVnc(const QHttpServerRequest& request)
     const QJsonDocument doc = QJsonDocument::fromJson(request.body());
     if (doc.isObject())
         enable = doc.object().value(QStringLiteral("enable")).toBool(false);
-    if (!m_vncMirror)
+    if (!m_vncManager)
         return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("VNC_UNAVAILABLE") },
                                          { QStringLiteral("message"), QStringLiteral("VNC 镜像未初始化") } },
                             QHttpServerResponse::StatusCode::ServiceUnavailable);
     if (enable) {
         // K-9 评论3：端口走 fwconfig（配置/环境变量），不再写死 5900
         const int port = navihmi::vncPort();
-        if (!m_vncMirror->start(quint16(port)))
+        if (!m_vncManager->start(quint16(port)))
             return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("VNC_FAILED") },
                                              { QStringLiteral("message"), QStringLiteral("VNC 启动失败（端口占用？）") } },
                                 QHttpServerResponse::StatusCode::Conflict);
         qInfo().noquote() << "VNC 运行时启动（" << port << "）";
     } else {
-        m_vncMirror->stop();
+        m_vncManager->stop();
         qInfo().noquote() << "VNC 运行时停止";
     }
     return jsonResponse(QJsonObject{ { QStringLiteral("code"), QStringLiteral("OK") },
