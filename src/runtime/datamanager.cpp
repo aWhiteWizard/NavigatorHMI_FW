@@ -15,8 +15,10 @@ void DataManager::setProject(const Project& proj)
 {
     m_values.clear();
     m_sources.clear();
+    m_types.clear();
     for (const auto& tag : proj.tags) {
         m_sources.insert(tag.name, tag.source);   // J-1: 变量数据源映射（内部/外部判定）
+        m_types.insert(tag.name, int(tag.dataType));   // W-E: 存类型（tagType() 查询）
         // 初始值用 baseValue（设计态基准值），按类型解析
         QVariant v;
         switch (tag.dataType) {
@@ -41,6 +43,24 @@ void DataManager::setProject(const Project& proj)
         }
         m_values.insert(tag.name, v);
     }
+}
+
+QString DataManager::tagType(const QString& tagName) const
+{
+    const auto it = m_types.constFind(tagName);
+    if (it == m_types.constEnd())
+        return QString();
+    switch (TagDataType(it.value())) {
+    case TagDataType::Bool:   return QStringLiteral("BOOL");
+    case TagDataType::Int16:  return QStringLiteral("INT16");
+    case TagDataType::Uint16: return QStringLiteral("UINT16");
+    case TagDataType::Int32:  return QStringLiteral("INT32");
+    case TagDataType::Float:  return QStringLiteral("FLOAT");
+    case TagDataType::String: return QStringLiteral("STRING");
+    case TagDataType::DateTime: return QStringLiteral("DATETIME");
+    case TagDataType::Gps:    return QStringLiteral("GPS");
+    }
+    return QString();
 }
 
 QVariant DataManager::value(const QString& tagName) const

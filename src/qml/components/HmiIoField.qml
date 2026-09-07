@@ -1,5 +1,6 @@
 // B-4: HmiIoField——输入框控件组件（绑变量, 信号 hmiInput）
 import QtQuick 2.15
+import "qrc:/qml/components"   // W-E：DateTimePicker 类型解析
 
 Rectangle {
     id: root
@@ -22,6 +23,9 @@ Rectangle {
     // F 循环(2026-08-23 用户): GPS 坐标 iofield——显示态转度分秒+方位(如 30°15'30"N),
     // 编辑态回小数可输入, 提交双格式解析; 生成器对 Gps tag 输出 true
     property bool isGps: false
+    // W-E（2026-09-07 用户）：DATETIME 变量 → 点击弹日历/时间选择器（替代键盘输入日期）——
+    // 运行时查 dataManager.tagType（tag 表注入后 onCompleted 判定，老工程免重编译）
+    property bool isDateTimeInput: false
     // GPS 编辑中(聚焦)显示小数, 非编辑显示度分秒——避免用户输入时被格式转换打断
     property bool gpsEditing: false
     // 用户 2026-08-22: 点击空白不改用户已输入内容——编辑中标记, 变量回写不覆盖用户输入(提交后恢复跟随)
@@ -357,6 +361,9 @@ Rectangle {
                 if (root.isBoolean) root.isOn = root.boolFromValue(v)
                 else root.content = String(v)
             }
+            // W-E：DATETIME 型绑定 → 点击弹日历选择器（运行时查 tagType，老工程免重编译）
+            if (dataManager.tagType(root.boundTag) === "DATETIME")
+                root.isDateTimeInput = true
         }
     }
     Connections {
@@ -375,5 +382,35 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // ── W-E：DATETIME 绑定 → 点击弹日历/时间选择器（替代键盘输日期——2026-09-07 用户规格）──
+    MouseArea {
+        anchors.fill: parent
+        z: 2   // 盖 input 吞点击（DATETIME 不用文本键盘）
+        visible: root.isDateTimeInput && !root.isReadOnly
+        onClicked: {
+            root.hmiClicked()
+            dateFieldPicker.openPicker(root.content)
+        }
+    }
+    DateTimePicker {
+        id: dateFieldPicker
+        onConfirmed: function(text) {
+            if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
+                root.content = text
+                dataManager.setValue(root.boundTag, text)   // 写回 DATETIME tag
+                input.text = text
+                root.hmiInput()
+                root.editing = false
+                if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
+            }
+        }
+    }
+    // 审查 F1：防孤儿恢复放宿主侧（对齐 HmiDateTime/先例——picker reparent 窗口层后不随宿主销毁；
+    // 切画面/重载时恢复其回自身随毁，防隐形累积/打开中残影）
+    Component.onDestruction: {
+        if (dateFieldPicker.parent === dateFieldPicker.contentRoot && dateFieldPicker.homeParent)
+            dateFieldPicker.parent = dateFieldPicker.homeParent
     }
 }

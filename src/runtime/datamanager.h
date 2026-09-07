@@ -33,6 +33,9 @@ public:
     Q_INVOKABLE QStringList tagNames() const;
     /// 变量数据源（J-1 机器人内部/外部判定）：Tag.source——空=内部变量 / modbus://·mqtt://=外部；未知变量返回空
     Q_INVOKABLE QString tagSource(const QString& tagName) const;
+    /// 变量数据类型名（W-E DateTimePicker：IO Field 绑 DATETIME 弹日历选择器）——"BOOL"/"INT16"/"UINT16"/
+    /// "INT32"/"FLOAT"/"STRING"/"DATETIME"/"GPS"（对齐 PC 侧枚举名）；未知/不存在返回空
+    Q_INVOKABLE QString tagType(const QString& tagName) const;
 
 signals:
     /// 变量值变化（QML 组件订阅刷新）
@@ -41,6 +44,7 @@ signals:
 private:
     QHash<QString, QVariant> m_values;
     QHash<QString, QString> m_sources;   // J-1: tagName -> Tag.source
+    QHash<QString, int> m_types;         // W-E: tagName -> TagDataType（int——tagType() 转名）
 };
 
 } // namespace navihmi
