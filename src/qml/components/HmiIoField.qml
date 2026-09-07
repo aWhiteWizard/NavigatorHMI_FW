@@ -181,6 +181,13 @@ Rectangle {
         hideBoolPad()
         if (boolPad.parent !== root) boolPad.parent = root
         if (boolDismiss.parent !== root) boolDismiss.parent = root
+        // W-E：dateFieldPicker 防孤儿恢复（对齐 HmiDateTime/先例——picker reparent 窗口层后不随宿主销毁；
+        // 切画面/重载时恢复其回自身随毁，防隐形累积/打开中残影）
+        // ⚠️ N+41 修复（2026-09-08）：必须并入本 onDestruction——同组件定义两个 Component.onDestruction
+        //     = 同一属性赋值两次 → QML 编译错误 "Property value set multiple times" → HmiIoField 组件
+        //     unavailable → 含 IO Field 画面整屏加载失败（纯色 + 只剩 overlay Stop）
+        if (dateFieldPicker.parent === dateFieldPicker.contentRoot && dateFieldPicker.homeParent)
+            dateFieldPicker.parent = dateFieldPicker.homeParent
     }
 
     // ── GPS 度分秒转换（F 循环 2026-08-23，对齐 PC 端 GeoPoint 契约）──
@@ -406,11 +413,5 @@ Rectangle {
                 if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
             }
         }
-    }
-    // 审查 F1：防孤儿恢复放宿主侧（对齐 HmiDateTime/先例——picker reparent 窗口层后不随宿主销毁；
-    // 切画面/重载时恢复其回自身随毁，防隐形累积/打开中残影）
-    Component.onDestruction: {
-        if (dateFieldPicker.parent === dateFieldPicker.contentRoot && dateFieldPicker.homeParent)
-            dateFieldPicker.parent = dateFieldPicker.homeParent
     }
 }
