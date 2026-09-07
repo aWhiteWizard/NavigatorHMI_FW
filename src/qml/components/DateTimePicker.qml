@@ -174,6 +174,8 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     text: "时  " + root.pad(root.selectedDate.getHours())
                     font.pixelSize: 24; font.bold: true; color: "#333"
+                    // Q1 修复（N+42）：编辑态隐藏原值——TextInput 独占显示，防「在原字符上叠蓝色修改字符」
+                    visible: !hEdit.visible
                 }
                 // ▲▼ 箭头列（独立区，不被双击层覆盖）
                 Column {
@@ -189,13 +191,16 @@ Item {
                 // 值双击编辑（限左区，避开箭头列）
                 MouseArea {
                     x: 0; y: 0; width: 128; height: 58
-                    onDoubleClicked: { hEdit.visible = true; hEdit.text = root.pad(root.selectedDate.getHours()); hEdit.forceActiveFocus(); hEdit.selectAll() }
+                    onDoubleClicked: { hEdit.visible = true; hEdit.text = root.pad(root.selectedDate.getHours()); hEdit.forceActiveFocus(); Qt.callLater(hEdit.selectAll) }   // Q1：callLater 延后 selectAll——visible+focus 同帧 selectAll 可能失效（无蓝底可见）
                 }
                 TextInput {
                     id: hEdit
                     visible: false
-                    x: 60; y: 12; width: 64; height: 32
+                    x: 14; y: 12; width: 104; height: 32   // 与原 Text 同位（编辑独占显示区）
                     font.pixelSize: 24; font.bold: true; color: "#1382B1"
+                    selectionColor: "#1382B1"      // Q1：全选蓝底可见（eglfs 无平台默认选中高亮）
+                    selectedTextColor: "#FFFFFF"   // Q1：选中文字白
+                    cursorColor: "#1382B1"
                     verticalAlignment: Text.AlignVCenter
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: IntValidator { bottom: 0; top: 23 }
@@ -215,6 +220,7 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     text: "分  " + root.pad(root.selectedDate.getMinutes())
                     font.pixelSize: 24; font.bold: true; color: "#333"
+                    visible: !mEdit.visible   // Q1（N+42）：编辑态隐藏原值
                 }
                 Column {
                     anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
@@ -228,13 +234,16 @@ Item {
                 }
                 MouseArea {
                     x: 0; y: 0; width: 128; height: 58
-                    onDoubleClicked: { mEdit.visible = true; mEdit.text = root.pad(root.selectedDate.getMinutes()); mEdit.forceActiveFocus(); mEdit.selectAll() }
+                    onDoubleClicked: { mEdit.visible = true; mEdit.text = root.pad(root.selectedDate.getMinutes()); mEdit.forceActiveFocus(); Qt.callLater(mEdit.selectAll) }   // Q1
                 }
                 TextInput {
                     id: mEdit
                     visible: false
-                    x: 60; y: 12; width: 64; height: 32
+                    x: 14; y: 12; width: 104; height: 32
                     font.pixelSize: 24; font.bold: true; color: "#1382B1"
+                    selectionColor: "#1382B1"      // Q1：全选蓝底
+                    selectedTextColor: "#FFFFFF"
+                    cursorColor: "#1382B1"
                     verticalAlignment: Text.AlignVCenter
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: IntValidator { bottom: 0; top: 59 }
@@ -254,6 +263,7 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     text: "秒  " + root.pad(root.selectedDate.getSeconds())
                     font.pixelSize: 24; font.bold: true; color: "#333"
+                    visible: !sEdit.visible   // Q1（N+42）：编辑态隐藏原值
                 }
                 Column {
                     anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
@@ -267,13 +277,16 @@ Item {
                 }
                 MouseArea {
                     x: 0; y: 0; width: 128; height: 58
-                    onDoubleClicked: { sEdit.visible = true; sEdit.text = root.pad(root.selectedDate.getSeconds()); sEdit.forceActiveFocus(); sEdit.selectAll() }
+                    onDoubleClicked: { sEdit.visible = true; sEdit.text = root.pad(root.selectedDate.getSeconds()); sEdit.forceActiveFocus(); Qt.callLater(sEdit.selectAll) }   // Q1
                 }
                 TextInput {
                     id: sEdit
                     visible: false
-                    x: 60; y: 12; width: 64; height: 32
+                    x: 14; y: 12; width: 104; height: 32
                     font.pixelSize: 24; font.bold: true; color: "#1382B1"
+                    selectionColor: "#1382B1"      // Q1：全选蓝底
+                    selectedTextColor: "#FFFFFF"
+                    cursorColor: "#1382B1"
                     verticalAlignment: Text.AlignVCenter
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: IntValidator { bottom: 0; top: 59 }
