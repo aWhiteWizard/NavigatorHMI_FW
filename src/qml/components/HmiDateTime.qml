@@ -1,9 +1,10 @@
-// B-4/F-1: HmiDateTime——日期时间控件组件
-// F-1（2026-09-06 用户报告「DateTime 时间不变」修复）：
-// ① 未绑定 → 按 dtFormat 1Hz 实时系统时间（Qt.formatDateTime 真按格式，原实现硬编码 yyyy-MM-dd 忽略 dtFormat）；
-// ② 绑定 boundTag（DATETIME 变量）→ 显示 DataManager 实时值（1Hz 刷新 + Connections 即时，对齐 HmiNumericDisplay）；
-// ③ dtText 不再参与显示（PC D2 起不再下发占位 Text；旧产物残留忽略 → 防死时间）。
+// B-4/F-1/W-E: HmiDateTime——日期时间控件组件
+// F-1（2026-09-06）：① 未绑定 → dtFormat 1Hz 实时系统时间；② 绑定 boundTag（DATETIME）→ DataManager 实时值；
+//   ③ dtText 不再参与显示。
+// W-E（2026-09-07 用户规格）：绑定时点击控件 → 弹出日历/时间选择器（左日历年月日 + 右时分秒上下箭头
+//   + 双击数值编辑 + 点外确认）→ 确认写回 DATETIME tag。
 import QtQuick 2.15
+import "qrc:/qml/components"   // 三审②：DateTimePicker 类型解析需显式 import（目录导入不传导）
 
 Text {
     id: root
@@ -124,5 +125,34 @@ Text {
                 if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
             }
         }
+    }
+
+    // ── W-E：绑定时点击 → 弹出日历/时间选择器（用户规格 2026-09-07）──
+    // 仅绑定 DATETIME tag 且非只读可编辑（未绑定 = 显示系统时间只读）；确认写回 tag（固定标准格式）
+    property bool pickerEditEnabled: root.boundTag !== "" && !root.isReadOnly && dataManager !== undefined
+                                     && dataManager !== null && dataManager.hasTag(root.boundTag)
+    MouseArea {
+        anchors.fill: parent
+        visible: root.pickerEditEnabled
+        onClicked: {
+            root.hmiClicked()   // 对齐 HmiTextList/HmiImage 先例
+            datePicker.openPicker(String(dataManager.value(root.boundTag)))
+        }
+    }
+    DateTimePicker {
+        id: datePicker
+        onConfirmed: function(text) {
+            if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
+                dataManager.setValue(root.boundTag, text)   // 写回 DATETIME tag（Connections 回刷显示）
+                if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
+            }
+        }
+    }
+    // 三审①：防孤儿恢复放宿主侧（对齐 HmiTextList/HmiImage 先例——浮层 reparent 到窗口层后脱离宿主销毁链，
+    // datePicker 自身 onDestruction 不随宿主触发；宿主销毁时恢复其回自身随毁——打开中切画面残影/关闭后
+    // 对象累积两场景均覆盖；datePicker 自身 onDestruction 保留双保险）
+    Component.onDestruction: {
+        if (datePicker.parent === datePicker.contentRoot && datePicker.homeParent)
+            datePicker.parent = datePicker.homeParent
     }
 }

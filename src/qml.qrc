@@ -1,4 +1,4 @@
-﻿<RCC>
+<RCC>
   <qresource prefix="/">
     <file>qml/main.qml</file>
     <file>qml/nav.qml</file>
@@ -19,6 +19,7 @@
     <file>qml/components/HmiFrameVideo.qml</file>   <!-- P-6 Frame 视频模式（2026-09-04） -->
     <file>qml/components/HmiProgressBar.qml</file>
     <file>qml/components/HmiDateTime.qml</file>
+    <file>qml/components/DateTimePicker.qml</file>   <!-- W-E DateTime 日历/时间选择器（2026-09-07） -->
     <file>qml/components/HmiWindow.qml</file>
     <file>qml/components/HmiPolygon.qml</file>
     <file>qml/components/HmiWorldMap.qml</file>
