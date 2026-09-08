@@ -165,8 +165,10 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
                 out << "    inputMethodHints: Qt.ImhFormattedNumbersOnly\n";
                 out << "    isGps: true\n";
                 // X-2（2026-09-08 用户规格——GPS CoordinatePicker）：注入工程世界地图底图 + 显示范围 bounds
-                // （CoordinatePicker 地图选点用——与画面 HmiWorldMap 同底图同坐标系）；底图缺失/无范围不注入
+                // （CoordinatePicker 地图选点用——与画面 HmiWorldMap 同底图同坐标系）；底图缺失不注入
                 // → IO Field 回退文本编辑（正常工程被 PC 编译校验拦截，此处防手工部署绕过）
+                // X 修复（2026-09-10 Check）：bounds 全 0（工程未手动配显示区域——FW 按点包围盒自适应）→
+                //   用作业点+范围点 fixedPoint（非 0）包围盒兜底注入（CoordinatePicker 底图范围 ≈ 画面自适应范围）
                 {
                     QString gpsBg;
                     if (!resourceRoot.isEmpty()) {
@@ -176,13 +178,33 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
                             gpsBg = resourceRoot + QStringLiteral("/worldmap_bg.png");
                     }
                     const auto& wmc = proj.worldMap;
-                    if (!gpsBg.isEmpty() && wmc.lngMax > wmc.lngMin && wmc.latMax > wmc.latMin) {
+                    double mLngMin = wmc.lngMin, mLngMax = wmc.lngMax;
+                    double mLatMin = wmc.latMin, mLatMax = wmc.latMax;
+                    if (!(mLngMax > mLngMin && mLatMax > mLatMin)) {
+                        // 兜底：作业点+范围点 fixedPoint 包围盒（绑变量点运行时值取不到——fixedPoint 覆盖围栏/固定点场景）
+                        bool any = false;
+                        auto fold = [&](double lng, double lat) {
+                            if (lng == 0 && lat == 0) return;
+                            if (!any) { mLngMin = mLngMax = lng; mLatMin = mLatMax = lat; any = true; }
+                            else {
+                                if (lng < mLngMin) mLngMin = lng;
+                                if (lng > mLngMax) mLngMax = lng;
+                                if (lat < mLatMin) mLatMin = lat;
+                                if (lat > mLatMax) mLatMax = lat;
+                            }
+                        };
+                        for (const auto& wp : wmc.workPoints)
+                            fold(wp.fixedPoint.longitude, wp.fixedPoint.latitude);
+                        for (const auto& rp : wmc.workRangePoints)
+                            fold(rp.fixedPoint.longitude, rp.fixedPoint.latitude);
+                    }
+                    if (!gpsBg.isEmpty() && mLngMax > mLngMin && mLatMax > mLatMin) {
                         out << "    gpsMapBg: \"" << qmlEsc(gpsBg) << "\"\n";
                         // 🟡 reviewer：'f',8 精度（对齐 generateWorldMap setRealNumberPrecision(8)——6 位默认会致 ~百 m 坐标误差）
-                        out << "    gpsMapLngMin: " << QString::number(wmc.lngMin, 'f', 8) << "\n";
-                        out << "    gpsMapLngMax: " << QString::number(wmc.lngMax, 'f', 8) << "\n";
-                        out << "    gpsMapLatMin: " << QString::number(wmc.latMin, 'f', 8) << "\n";
-                        out << "    gpsMapLatMax: " << QString::number(wmc.latMax, 'f', 8) << "\n";
+                        out << "    gpsMapLngMin: " << QString::number(mLngMin, 'f', 8) << "\n";
+                        out << "    gpsMapLngMax: " << QString::number(mLngMax, 'f', 8) << "\n";
+                        out << "    gpsMapLatMin: " << QString::number(mLatMin, 'f', 8) << "\n";
+                        out << "    gpsMapLatMax: " << QString::number(mLatMax, 'f', 8) << "\n";
                     }
                 }
                 break;
