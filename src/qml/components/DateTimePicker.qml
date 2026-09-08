@@ -1,4 +1,5 @@
-// W-E DateTime 日历/时间选择器（2026-09-07 用户规格：左日历年月日 + 右时分秒上下箭头 + 双击编辑 + 点外确认）
+// W-E DateTime 日历/时间选择器（2026-09-07 用户规格演进：年月日三窗+日历联动选择（P2）+ 右时分秒 ▲▼/单击编辑（P1）；
+// N+45 交互语义：编辑态点面板空白/回车 = 保存+退出编辑收键盘；点外不关闭（只有 确定 写回 / 取消 丢弃 关闭）
 // v3（reviewer 复审修复）：浮层生命周期对齐 HmiTextList/HmiImage 先例——contentRoot 声明处缓存（JS 内访问
 // Window attached 抛 TypeError——仓库 MAJOR-5 实证）；关闭只 visible=false 保留 contentRoot parent（二次打开
 // 自然成立）；Component.onDestruction 恢复宿主防孤儿；commitAndClose 前显式提交活动编辑器（防编辑值丢失）。
@@ -54,6 +55,15 @@ Item {
             root.confirmed(root.stdText())
         root.visible = false                 // 保留 parent 于 contentRoot（二次打开自然成立）
     }
+    /// N+45：取消——不写回（丢弃本次选择/编辑），直接关闭（值保持打开前）
+    function cancelAndClose() {
+        // P1-1（reviewer）：取消必须清编辑子项状态（visible/focus/text 残留会让下次 openPicker 直接现编辑框、
+        // 旧文本被后续 commit 带出写回——违背丢弃语义）。不调 applyEdit（apply 会把值写进 selectedDate/interacted）。
+        hEdit.visible = false; hEdit.focus = false
+        mEdit.visible = false; mEdit.focus = false
+        sEdit.visible = false; sEdit.focus = false
+        root.visible = false                 // 不 commitActiveEdit、不 confirmed
+    }
 
     // 浮层根被销毁（宿主画面切换/Stop/下载工程）时若仍挂窗口层 → 恢复宿主一并销毁（防孤儿残影——先例 onDestruction）
     Component.onDestruction: {
@@ -61,12 +71,14 @@ Item {
             root.parent = root.homeParent
     }
 
-    // ── 全屏点外确认层（z 9999 面板下；编辑态禁用——picker 全屏层在虚拟键盘(InputPanel)之上，不禁用会拦截键盘键点击）──
+    // ── 全屏点外层（z 9999 面板下）：N+45 语义——点外**不关闭** picker（只有「确定/取消」关闭）；
+    // 非编辑态 enabled 吞掉点外点击（防穿透下层画面）；编辑态 disabled（让虚拟键盘可点——picker 层在 InputPanel 之上）。
+    // 编辑态收编辑走：panel 空白（panel 底层 MouseArea）/ 回车（onEditingFinished）/ applyEdit。
     MouseArea {
         anchors.fill: parent
         z: 9998
-        enabled: !root.editing   // N+44 P1
-        onClicked: root.commitAndClose()
+        enabled: !root.editing   // N+44 P1：编辑态不禁用会拦键盘键点击
+        // onClicked 无动作（N+45：点外不关 picker）
     }
 
     // ── 面板（屏中，z 10000）──
@@ -79,6 +91,16 @@ Item {
         color: "#FFFFFF"
         border.color: "#1382B1"; border.width: 2
         anchors.centerIn: parent
+
+        // N+45：面板底层 MouseArea（最先声明=最底，按钮/三窗/宫格/编辑区在上层优先）——
+        // 编辑态点面板空白 = 保存当前编辑值并退出编辑（收键盘）；非编辑态无动作
+        MouseArea {
+            anchors.fill: parent
+            z: -1
+            onClicked: {
+                if (root.editing) root.commitActiveEdit()   // N+45：点空白保存 + 退出编辑（applyEdit 收键盘）；不关 picker
+            }
+        }
 
         // ═══ 左：年月日三窗 + 日历模式联动（P2，N+44 用户规格：点年→日历选年 / 点月→选月 / 点日→选日）═══
         Rectangle {
@@ -325,6 +347,7 @@ Item {
                         var n = parseInt(text)
                         if (!isNaN(n)) { root.selectedDate.setHours(Math.min(Math.max(n, 0), 23)); root.touchDate() }
                         visible = false
+                        focus = false   // N+45：退出编辑释放焦点 → 输入法关闭键盘收起
                     }
                     onEditingFinished: hEdit.applyEdit()
                 }
@@ -368,6 +391,7 @@ Item {
                         var n = parseInt(text)
                         if (!isNaN(n)) { root.selectedDate.setMinutes(Math.min(Math.max(n, 0), 59)); root.touchDate() }
                         visible = false
+                        focus = false   // N+45：退出编辑释放焦点 → 输入法关闭键盘收起
                     }
                     onEditingFinished: mEdit.applyEdit()
                 }
@@ -411,21 +435,25 @@ Item {
                         var n = parseInt(text)
                         if (!isNaN(n)) { root.selectedDate.setSeconds(Math.min(Math.max(n, 0), 59)); root.touchDate() }
                         visible = false
+                        focus = false   // N+45：退出编辑释放焦点 → 输入法关闭键盘收起
                     }
                     onEditingFinished: sEdit.applyEdit()
                 }
             }
         }
 
-        // ═══ 底：今天 / 确定 ═══
+        // ═══ 底：今天 / 取消 / 确定（N+45：只有确定/取消关闭 picker——确定写回、取消丢弃）═══
         Row {
             anchors.bottom: parent.bottom; anchors.bottomMargin: 10
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 16
-            Rectangle { width: 120; height: 36; radius: 6; color: "#EEEEEE"
+            Rectangle { width: 100; height: 36; radius: 6; color: "#EEEEEE"
                 Text { anchors.centerIn: parent; text: "今天"; color: "#333"; font.pixelSize: 14 }
                 MouseArea { anchors.fill: parent; onClicked: calPane.goToday() } }
-            Rectangle { width: 120; height: 36; radius: 6; color: "#1382B1"
+            Rectangle { width: 100; height: 36; radius: 6; color: "#F5F5F5"; border.color: "#CCCCCC"; border.width: 1
+                Text { anchors.centerIn: parent; text: "取消"; color: "#666666"; font.pixelSize: 14 }
+                MouseArea { anchors.fill: parent; onClicked: root.cancelAndClose() } }   // N+45：取消不写回
+            Rectangle { width: 100; height: 36; radius: 6; color: "#1382B1"
                 Text { anchors.centerIn: parent; text: "确定"; color: "white"; font.pixelSize: 14 }
                 MouseArea { anchors.fill: parent; onClicked: root.commitAndClose() } }
         }
