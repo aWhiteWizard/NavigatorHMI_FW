@@ -200,7 +200,6 @@ Item {
                     font.pixelSize: 24; font.bold: true; color: "#1382B1"
                     selectionColor: "#1382B1"      // Q1：全选蓝底可见（eglfs 无平台默认选中高亮）
                     selectedTextColor: "#FFFFFF"   // Q1：选中文字白
-                    cursorColor: "#1382B1"
                     verticalAlignment: Text.AlignVCenter
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: IntValidator { bottom: 0; top: 23 }
@@ -243,7 +242,6 @@ Item {
                     font.pixelSize: 24; font.bold: true; color: "#1382B1"
                     selectionColor: "#1382B1"      // Q1：全选蓝底
                     selectedTextColor: "#FFFFFF"
-                    cursorColor: "#1382B1"
                     verticalAlignment: Text.AlignVCenter
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: IntValidator { bottom: 0; top: 59 }
@@ -286,7 +284,6 @@ Item {
                     font.pixelSize: 24; font.bold: true; color: "#1382B1"
                     selectionColor: "#1382B1"      // Q1：全选蓝底
                     selectedTextColor: "#FFFFFF"
-                    cursorColor: "#1382B1"
                     verticalAlignment: Text.AlignVCenter
                     inputMethodHints: Qt.ImhDigitsOnly
                     validator: IntValidator { bottom: 0; top: 59 }
