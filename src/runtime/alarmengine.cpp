@@ -8,6 +8,8 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QDebug>
+#include <QRegularExpression>
+#include <cmath>
 
 namespace navihmi {
 
@@ -28,6 +30,9 @@ void AlarmEngine::setProject(const Project& proj)
     m_triggeredTime.clear();
     m_overThresholdMs.clear();   // 审查 MINOR-2: 工程重载清 delayMs 计时（防同名规则残留旧时间戳）
     m_manualLastMs.clear();      // J-1 审查修复: 工程重载清手动报警去重（防旧消息抑制新报警）
+    m_geoAlerted.clear();        // X-6: 工程重载清几何告警状态（新工程范围/作业点重新判定）
+    m_geoMessage.clear();
+    m_geoLevel.clear();
     emit alarmsChanged();
 }
 
@@ -114,7 +119,10 @@ void AlarmEngine::ackAll()
 
 void AlarmEngine::poll()
 {
-    if (!m_dataManager || m_project.alarms.isEmpty())
+    if (!m_dataManager)
+        return;
+    geoCheck();   // X-6: 几何范围检测独立于阈值报警（无 alarm 规则也执行——作业点出范围告警）
+    if (m_project.alarms.isEmpty())
         return;
     bool changed = false;
     const QString now = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
@@ -234,6 +242,135 @@ void AlarmEngine::raiseManualAlarm(int level, const QString& message)
     emit alarmsChanged();
     emit alarmTriggered(a.id, QString(), level, message);   // DataLogger TRIGGER 联动
     qInfo().noquote() << "AlarmEngine: 手动报警" << message;
+}
+
+// ── X-6（2026-09-08 用户规格）：作业点出作业范围几何告警（走报警体系 TRIGGER/CLEAR；含固定位置作业点）──
+
+void AlarmEngine::raiseGeoAlarm(const QString& key, int level, const QString& message)
+{
+    if (m_geoAlerted.contains(key))
+        return;   // 已触发（出范围期间不重复刷——回范围 clearGeoAlarm 后再次出范围再触发）
+    m_geoAlerted.insert(key);
+    m_geoMessage.insert(key, message);
+    m_geoLevel.insert(key, level);
+    ActiveAlarm a;
+    a.id = QStringLiteral("geo-") + key;
+    a.time = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
+    a.level = level;
+    a.message = message;
+    a.tag = QString();
+    a.priority = 0;
+    a.acked = false;
+    m_active.append(a);
+    m_triggered.insert(a.id, true);
+    emit alarmsChanged();
+    emit alarmTriggered(a.id, QString(), level, message);   // DataLogger TRIGGER 联动
+    qInfo().noquote() << "AlarmEngine: 作业点出范围" << message;
+}
+
+void AlarmEngine::clearGeoAlarm(const QString& key)
+{
+    if (!m_geoAlerted.contains(key))
+        return;
+    m_geoAlerted.remove(key);
+    const QString msg = m_geoMessage.take(key);
+    const int lv = m_geoLevel.take(key);
+    const QString id = QStringLiteral("geo-") + key;
+    for (int i = 0; i < m_active.size(); ++i)
+        if (m_active[i].id == id) {
+            m_active.removeAt(i);
+            break;
+        }
+    m_triggered.remove(id);
+    emit alarmsChanged();
+    emit alarmCleared(id, QString(), lv, msg);   // DataLogger CLEAR 联动
+    qInfo().noquote() << "AlarmEngine: 作业点回范围" << msg;
+}
+
+void AlarmEngine::geoCheck()
+{
+    const auto& wm = m_project.worldMap;
+    if (!m_dataManager || wm.workRangePoints.size() < 3 || wm.workPoints.isEmpty())
+        return;
+    // 范围多边形顶点（范围点绑 GPS 变量 → 动态值；未绑 → fixedPoint）；任一解析失败/未配置 (0,0) → 本 tick 不检测
+    QList<GeoPoint> poly;
+    for (const auto& rp : wm.workRangePoints) {
+        GeoPoint g = rp.fixedPoint;
+        if (!rp.boundTag.isEmpty() && m_dataManager->hasTag(rp.boundTag)) {
+            const QString val = m_dataManager->value(rp.boundTag).toString().trimmed();
+            QString clean = val;
+            if (clean.startsWith(QLatin1Char('('))) clean = clean.mid(1);
+            if (clean.endsWith(QLatin1Char(')'))) clean.chop(1);
+            const QStringList parts = clean.split(QLatin1Char(','));
+            if (parts.size() >= 2) {
+                const double lng = coordToDec(parts.at(0));
+                const double lat = coordToDec(parts.at(1));
+                if (!std::isnan(lng) && !std::isnan(lat)) { g.longitude = lng; g.latitude = lat; }
+            }
+        }
+        if (g.longitude == 0 && g.latitude == 0)
+            return;   // 未配置坐标（对齐 HmiWorldMap (0,0)/NaN 守卫）——本 tick 不检测
+        poly.append(g);
+    }
+    for (const auto& wp : wm.workPoints) {
+        GeoPoint g = wp.fixedPoint;
+        if (!wp.boundTag.isEmpty() && m_dataManager->hasTag(wp.boundTag)) {
+            const QString val = m_dataManager->value(wp.boundTag).toString().trimmed();
+            QString clean = val;
+            if (clean.startsWith(QLatin1Char('('))) clean = clean.mid(1);
+            if (clean.endsWith(QLatin1Char(')'))) clean.chop(1);
+            const QStringList parts = clean.split(QLatin1Char(','));
+            if (parts.size() >= 2) {
+                const double lng = coordToDec(parts.at(0));
+                const double lat = coordToDec(parts.at(1));
+                if (!std::isnan(lng) && !std::isnan(lat)) { g.longitude = lng; g.latitude = lat; }
+            }
+        }
+        if (g.longitude == 0 && g.latitude == 0)
+            continue;   // 未配置坐标（固定点未设）跳过
+        const bool in = pointInPolygon(g.longitude, g.latitude, poly);
+        const QString key = wp.name.isEmpty() ? QStringLiteral("作业点") : wp.name;
+        if (!in && !m_geoAlerted.contains(key))
+            raiseGeoAlarm(key, 1 /* Severity 重要 */,
+                          QStringLiteral("作业点 %1 超出作业范围").arg(key));
+        else if (in && m_geoAlerted.contains(key))
+            clearGeoAlarm(key);
+        // raiseGeoAlarm/clearGeoAlarm 内部已 emit alarmsChanged（🟡 reviewer：此处不再重复 emit）
+    }
+}
+
+// 点在多边形内（射线法）
+bool AlarmEngine::pointInPolygon(double lng, double lat, const QList<GeoPoint>& poly)
+{
+    const int n = poly.size();
+    bool inside = false;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        const GeoPoint& a = poly.at(i);
+        const GeoPoint& b = poly.at(j);
+        if ((a.latitude > lat) != (b.latitude > lat)
+            && lng < (b.longitude - a.longitude) * (lat - a.latitude) / (b.latitude - a.latitude) + a.longitude)
+            inside = !inside;
+    }
+    return inside;
+}
+
+// DMS/十进制坐标解析（对齐 QML HmiWorldMap.dmsToDec：DMS "E104°3'30\"" / 十进制 "104.1423"；W/S 为负）
+double AlarmEngine::coordToDec(const QString& raw)
+{
+    QString s = raw.trimmed();
+    const bool neg = s.contains(QLatin1Char('W')) || s.contains(QLatin1Char('S'));
+    QRegularExpression re(QStringLiteral("([0-9.]+)°([0-9.]+)'([0-9.]+)\""));
+    const auto m = re.match(s);
+    double v;
+    if (m.hasMatch())
+        v = m.captured(1).toDouble() + m.captured(2).toDouble() / 60.0 + m.captured(3).toDouble() / 3600.0;
+    else {
+        bool ok = false;
+        v = s.toDouble(&ok);
+        if (!ok)
+            return qQNaN();
+    }
+    return neg ? -v : v;
 }
 
 } // namespace navihmi

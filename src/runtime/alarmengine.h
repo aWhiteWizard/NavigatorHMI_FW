@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QList>
 #include <QHash>
+#include <QSet>
 #include <QString>
 #include <QVariantList>
 #include <QTimer>
@@ -43,6 +44,18 @@ public:
     /// J-1: 手动报警（操作未生效等事件型报警——非阈值驱动）；入活动列表 + alarmTriggered（DataLogger 联动）；
     ///      同消息 10s 去重（防操作连点刷报警）
     Q_INVOKABLE void raiseManualAlarm(int level, const QString& message);
+    /// X-6（2026-09-08 用户规格）：作业点出作业范围几何告警——触发（入活动列表 + TRIGGER）；
+    ///      同 key（作业点名）已在触发态不重复（回范围 clearGeoAlarm 后再次出范围再触发）
+    Q_INVOKABLE void raiseGeoAlarm(const QString& key, int level, const QString& message);
+    /// X-6：作业点回到作业范围 → 清除（移出活动列表 + CLEAR）
+    Q_INVOKABLE void clearGeoAlarm(const QString& key);
+
+    /// X-6：几何范围检测（poll 每 tick：作业点 vs 作业范围多边形——出范围触发/回范围清除；含固定位置作业点）
+    void geoCheck();
+    /// 点在多边形内（射线法；poly 顶点 ≥3）
+    static bool pointInPolygon(double lng, double lat, const QList<GeoPoint>& poly);
+    /// DMS/十进制坐标解析（对齐 QML HmiWorldMap.dmsToDec——"E104°3'30\""/"104.1423" → 数值，W/S 负）
+    static double coordToDec(const QString& raw);
 
 signals:
     /// 活动报警列表变化（QML 刷新）
@@ -76,6 +89,10 @@ private:
     QHash<QString, QString> m_triggeredTime;
     QHash<QString, qint64> m_overThresholdMs;   // H-5(M9): 首次超阈值时间戳（delayMs 延迟触发）
     QHash<QString, qint64> m_manualLastMs;      // J-1: 手动报警去重（message -> 上次时间戳，10s 窗口）
+    // X-6: 几何告警状态（key=作业点名 → 是否处于出范围触发态；message/level 缓存供清除还原）
+    QSet<QString> m_geoAlerted;
+    QHash<QString, QString> m_geoMessage;
+    QHash<QString, int> m_geoLevel;
     QTimer* m_timer = nullptr;
 };
 

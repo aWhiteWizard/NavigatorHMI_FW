@@ -8,6 +8,7 @@
 #include <QStringList>
 #include <QRegularExpression>
 #include <QFileInfo>
+#include <QFile>
 #include <QDebug>
 #include <cmath>
 
@@ -163,6 +164,27 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
                 // 显示态转 DMS, 编辑态回小数, 提交双格式解析写回括号基准值); 键盘仍数字+小数点
                 out << "    inputMethodHints: Qt.ImhFormattedNumbersOnly\n";
                 out << "    isGps: true\n";
+                // X-2（2026-09-08 用户规格——GPS CoordinatePicker）：注入工程世界地图底图 + 显示范围 bounds
+                // （CoordinatePicker 地图选点用——与画面 HmiWorldMap 同底图同坐标系）；底图缺失/无范围不注入
+                // → IO Field 回退文本编辑（正常工程被 PC 编译校验拦截，此处防手工部署绕过）
+                {
+                    QString gpsBg;
+                    if (!resourceRoot.isEmpty()) {
+                        if (QFile::exists(resourceRoot + QStringLiteral("/res/worldmap_bg.png")))
+                            gpsBg = resourceRoot + QStringLiteral("/res/worldmap_bg.png");
+                        else if (QFile::exists(resourceRoot + QStringLiteral("/worldmap_bg.png")))
+                            gpsBg = resourceRoot + QStringLiteral("/worldmap_bg.png");
+                    }
+                    const auto& wmc = proj.worldMap;
+                    if (!gpsBg.isEmpty() && wmc.lngMax > wmc.lngMin && wmc.latMax > wmc.latMin) {
+                        out << "    gpsMapBg: \"" << qmlEsc(gpsBg) << "\"\n";
+                        // 🟡 reviewer：'f',8 精度（对齐 generateWorldMap setRealNumberPrecision(8)——6 位默认会致 ~百 m 坐标误差）
+                        out << "    gpsMapLngMin: " << QString::number(wmc.lngMin, 'f', 8) << "\n";
+                        out << "    gpsMapLngMax: " << QString::number(wmc.lngMax, 'f', 8) << "\n";
+                        out << "    gpsMapLatMin: " << QString::number(wmc.latMin, 'f', 8) << "\n";
+                        out << "    gpsMapLatMax: " << QString::number(wmc.latMax, 'f', 8) << "\n";
+                    }
+                }
                 break;
             case TagDataType::Bool:
                 out << "    isBoolean: true\n";

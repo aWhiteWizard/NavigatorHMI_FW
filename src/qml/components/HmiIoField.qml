@@ -28,6 +28,14 @@ Rectangle {
     property bool isDateTimeInput: false
     // GPS 编辑中(聚焦)显示小数, 非编辑显示度分秒——避免用户输入时被格式转换打断
     property bool gpsEditing: false
+    // X-2（2026-09-08 用户规格——GPS CoordinatePicker）：注入的工程世界地图底图 + 显示范围（qmlgenerator 填；
+    // 非空 = 单击弹地图选点器替代键盘输坐标；空（老工程/无地图）回退文本编辑）
+    property string gpsMapBg: ""
+    property real gpsMapLngMin: 0
+    property real gpsMapLngMax: 0
+    property real gpsMapLatMin: 0
+    property real gpsMapLatMax: 0
+    property bool gpsMapReady: gpsMapBg !== "" && gpsMapLngMax > gpsMapLngMin && gpsMapLatMax > gpsMapLatMin
     // 用户 2026-08-22: 点击空白不改用户已输入内容——编辑中标记, 变量回写不覆盖用户输入(提交后恢复跟随)
     property bool editing: false
     property string textColor: "#000000"
@@ -188,6 +196,9 @@ Rectangle {
         //     unavailable → 含 IO Field 画面整屏加载失败（纯色 + 只剩 overlay Stop）
         if (dateFieldPicker.parent === dateFieldPicker.contentRoot && dateFieldPicker.homeParent)
             dateFieldPicker.parent = dateFieldPicker.homeParent
+        // X-2：gpsFieldPicker 防孤儿恢复（并入本 onDestruction——N+41 同组件禁重复 onDestruction）
+        if (gpsFieldPicker.parent === gpsFieldPicker.contentRoot && gpsFieldPicker.homeParent)
+            gpsFieldPicker.parent = gpsFieldPicker.homeParent
     }
 
     // ── GPS 度分秒转换（F 循环 2026-08-23，对齐 PC 端 GeoPoint 契约）──
@@ -391,14 +402,24 @@ Rectangle {
         }
     }
 
-    // ── W-E：DATETIME 绑定 → 点击弹日历/时间选择器（替代键盘输日期——2026-09-07 用户规格）──
+    // ── W-E：DATETIME 绑定 → 点击弹日历/时间选择器；X-2：GPS 绑定（有地图注入）→ 点击弹地图选点器 ──
     MouseArea {
         anchors.fill: parent
-        z: 2   // 盖 input 吞点击（DATETIME 不用文本键盘）
-        visible: root.isDateTimeInput && !root.isReadOnly
+        z: 2   // 盖 input 吞点击（DATETIME/GPS 选点器不用文本键盘）
+        visible: (root.isDateTimeInput || (root.isGps && root.gpsMapReady)) && !root.isReadOnly
         onClicked: {
             root.hmiClicked()
-            dateFieldPicker.openPicker(root.content)
+            if (root.isDateTimeInput) {
+                dateFieldPicker.openPicker(root.content)
+            } else if (root.isGps) {
+                // X-2：注入地图上下文（底图 + bounds）→ 弹选点器（预填当前值十进制）
+                gpsFieldPicker.backgroundImage = root.gpsMapBg
+                gpsFieldPicker.lngMin = root.gpsMapLngMin
+                gpsFieldPicker.lngMax = root.gpsMapLngMax
+                gpsFieldPicker.latMin = root.gpsMapLatMin
+                gpsFieldPicker.latMax = root.gpsMapLatMax
+                gpsFieldPicker.openPicker(root.isGps ? root.toDecimal(root.content) : "")
+            }
         }
     }
     DateTimePicker {
@@ -408,6 +429,20 @@ Rectangle {
                 root.content = text
                 dataManager.setValue(root.boundTag, text)   // 写回 DATETIME tag
                 input.text = text
+                root.hmiInput()
+                root.editing = false
+                if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
+            }
+        }
+    }
+    // X-2：GPS 地图选点器（CoordinatePicker）——确认写回 GPS tag（十进制 "lng,lat" → 括号基准值格式，对齐现有提交契约）
+    CoordinatePicker {
+        id: gpsFieldPicker
+        onConfirmed: function(text) {
+            if (root.boundTag !== "" && dataManager && dataManager.hasTag(root.boundTag)) {
+                root.content = root.fromDms(text)   // "(E104°3'30\", N30°40'20\")" 括号基准值
+                dataManager.setValue(root.boundTag, root.content)
+                input.text = root.toDms(root.content)
                 root.hmiInput()
                 root.editing = false
                 if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)

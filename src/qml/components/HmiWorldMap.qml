@@ -328,7 +328,7 @@ Rectangle {
         }
     }
 
-    // ── 作业范围（红点 + 多边形）──
+    // ── 作业范围（蓝点 + 多边形——X-5 颜色对齐 PC：范围=蓝、作业点=红，2026-09-08）──
     Canvas {
         id: rangeCanvas
         anchors.fill: parent
@@ -348,16 +348,16 @@ Rectangle {
                 if (!started) { ctx.moveTo(sx, sy); started = true } else { ctx.lineTo(sx, sy) }
             }
             if (started) ctx.closePath()
-            ctx.fillStyle = "rgba(255, 0, 0, 0.08)"
+            ctx.fillStyle = "rgba(21, 101, 192, 0.08)"
             ctx.fill()
-            ctx.strokeStyle = "#D32F2F"
+            ctx.strokeStyle = "#1565C0"
             ctx.lineWidth = 2
             ctx.stroke()
-            // 顶点红点
-            ctx.fillStyle = "#D32F2F"
+            // 顶点蓝点
+            ctx.fillStyle = "#1565C0"
             for (var j = 0; j < root.workRange.length; j++) {
                 var rl = root.pointLng(root.workRange[j]); var rt = root.pointLat(root.workRange[j])
-                // N-5 复审：同守卫——(0,0)/isNaN 顶点不画红点（与多边形路径一致）
+                // N-5 复审：同守卫——(0,0)/isNaN 顶点不画蓝点（与多边形路径一致）
                 if (isNaN(rl) || isNaN(rt) || (rl === 0 && rt === 0)) continue
                 var rx = root.toScreenX(rl)
                 var ry = root.toScreenY(rt)
@@ -368,7 +368,7 @@ Rectangle {
         }
     }
 
-    // ── 作业点（蓝点 + 名称）──
+    // ── 作业点（红点 + 名称——X-5 颜色对齐 PC：作业点=红）──
     Repeater {
         model: root.workPoints
         delegate: Item {
@@ -380,7 +380,7 @@ Rectangle {
             Rectangle {
                 anchors.fill: parent
                 radius: 8
-                color: "#1565C0"
+                color: "#D32F2F"
                 border.color: "white"
                 border.width: 2
             }
@@ -390,7 +390,7 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: modelData.name
                 font.pixelSize: 10
-                color: "#0D47A1"
+                color: "#B71C1C"
                 font.bold: true
             }
             MouseArea {

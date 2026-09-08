@@ -207,7 +207,7 @@ struct WorldMapConfig {
     QString tileSource;
     int zoomLevel = 0;
     bool showGlobalOverlay = false;
-    QList<MapWorkPoint> workPoints;          // 作业点（蓝点）
+    QList<MapWorkPoint> workPoints;          // 作业点（红点——X-5 颜色对齐 PC：作业点红/范围蓝）
     QList<WorkRangePoint> workRangePoints;   // 作业范围点（围栏顶点）
     QList<WidgetEvent> events;               // 点击切换画面事件（地图级）
     bool viewLocked = false;                 // 锁定预览

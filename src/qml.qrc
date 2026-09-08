@@ -20,6 +20,7 @@
     <file>qml/components/HmiProgressBar.qml</file>
     <file>qml/components/HmiDateTime.qml</file>
     <file>qml/components/DateTimePicker.qml</file>   <!-- W-E DateTime 日历/时间选择器（2026-09-07） -->
+    <file>qml/components/CoordinatePicker.qml</file>   <!-- X-2 GPS 地图选点器（2026-09-08） -->
     <file>qml/components/HmiWindow.qml</file>
     <file>qml/components/HmiPolygon.qml</file>
     <file>qml/components/HmiWorldMap.qml</file>
