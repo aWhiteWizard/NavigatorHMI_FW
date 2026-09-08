@@ -12,6 +12,7 @@
 #include <QModbusReply>
 #include <QDebug>
 #include <QDateTime>
+#include <cmath>    // Y-7: std::isfinite（Float 写值范围校验）
 #include <memory>
 
 namespace navihmi {
@@ -51,6 +52,9 @@ bool ModbusTcpDriver::configure(const QList<DriverTagInfo>& tags)
         if (parts.size() >= 2 && !parts[1].isEmpty())
             mt.reg = quint16(parts[1].toUInt());
         if (mt.slave < 1 || mt.slave > kModbusSlaveMax)
+            continue;
+        // Y-7：寄存器地址范围校验（Modbus 保持寄存器 0-65535；越界 → 跳过该变量防读写越界）
+        if (parts.size() >= 2 && !parts[1].isEmpty() && parts[1].toUInt() > 0xFFFF)
             continue;
         if (!haveFirstConn) {
             m_conn = tag.conn;   // 连接参数: Manager 已展开 deviceName→connectionInfo（首个有效 tag 决定连接目标）
@@ -210,22 +214,63 @@ bool ModbusTcpDriver::writeValue(const QString& tagName, const QVariant& value)
         return false;
     for (const auto& tag : m_tags) {
         if (tag.tagName == tagName) {
+            // Y-7：寄存器范围校验在 configure 完成（quint16 类型 + configure 拦 >65535 原始值）——此处无需重复
             QModbusDataUnit unit(QModbusDataUnit::HoldingRegisters, tag.reg, 1);
             // 按类型编码——Float 按 /100 约定反向缩放（原 Acquisition MAJOR-6 语义）
             quint16 raw = 0;
             switch (tag.dataType) {
-            case int(TagDataType::Float):
-                raw = quint16(qRound(value.toDouble() * 100.0) & 0xFFFF);
+            case int(TagDataType::Float): {
+                // Y-7：Float 编码侧防溢出（/100 放大后 quint16 域 ±327.67——越界/NaN/Inf 拒绝防静默截断写坏设备；
+                // 负值回读不对称（读端无符号 /100 解码）系既有 MAJOR-6 约定，本批不改编码语义）
+                const double d = value.toDouble();
+                if (!std::isfinite(d) || d < -327.68 || d > 327.67) {
+                    qWarning().noquote() << "ModbusTcpDriver: 写" << tagName << "Float 值越界/非法（" << d
+                                         << "，编码侧支持 ±327.67 内）——拒绝写入";
+                    return false;
+                }
+                raw = quint16(qRound(d * 100.0) & 0xFFFF);
                 break;
+            }
             case int(TagDataType::Bool):
                 raw = value.toBool() ? 1 : 0;
                 break;
-            default:
-                raw = quint16(value.toInt() & 0xFFFF);
+            default: {
+                // Y-7：整型值范围校验（Int16 -32768~32767 / Uint16 0~65535——防符号位静默翻转写错）
+                const long long v = value.toLongLong();
+                bool okRange = tag.dataType == int(TagDataType::Int16) ? (v >= -32768 && v <= 32767)
+                    : (v >= 0 && v <= 65535);   // Uint16/Int32 写低 16 位按 Uint16 范围
+                if (!okRange) {
+                    qWarning().noquote() << "ModbusTcpDriver: 写" << tagName << "整型值越界（" << v
+                                         << "）——拒绝写入";
+                    return false;
+                }
+                raw = quint16(v & 0xFFFF);
                 break;
             }
+            }
             unit.setValue(0, raw);
-            m_client->sendWriteRequest(unit, tag.slave);
+            // Y-7：写回复错误检查（原 sendWriteRequest 丢弃 reply——写失败静默；补 reply 错误日志——
+            // 写失败事件驱动频率有限，逐条记录不设降频；reviewer 🟡 立即分支日志补 slave/reg）
+            const int slave = tag.slave;
+            const quint16 reg = tag.reg;
+            const QString tName = tagName;
+            if (auto* reply = m_client->sendWriteRequest(unit, tag.slave)) {
+                if (reply->isFinished()) {
+                    if (reply->error() != QModbusDevice::NoError)
+                        qWarning().noquote() << "ModbusTcpDriver: 写" << tName
+                                             << "slave=" << slave << "reg=" << reg << "失败（错误"
+                                             << int(reply->error()) << "）";
+                    reply->deleteLater();
+                } else {
+                    connect(reply, &QModbusReply::finished, this, [this, reply, tName, slave, reg]() {
+                        if (reply->error() != QModbusDevice::NoError)
+                            qWarning().noquote() << "ModbusTcpDriver: 写" << tName
+                                                 << "slave=" << slave << "reg=" << reg << "失败（错误"
+                                                 << int(reply->error()) << "）";
+                        reply->deleteLater();
+                    });
+                }
+            }
             qInfo().noquote() << "ModbusTcpDriver: 写" << tagName
                               << "slave=" << tag.slave << "reg=" << tag.reg << "val=" << value << "raw=" << raw;
             return true;
