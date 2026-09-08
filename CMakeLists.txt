@@ -59,6 +59,13 @@ if(Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
 else()
     message(WARNING "QtHttpServer 未找到——K-8b 接收端不可用（需先跑 build-qthttp.sh 构建并安装到 sysroot）")
 endif()
+# Y-4: Qt6Mqtt（官方仓库 qt/qtmqtt v6.4.3 交叉编译——build-qtmqtt.sh；MqttDriver 需链接 Qt6::Mqtt）
+find_package(Qt${QT_VERSION_MAJOR}Mqtt QUIET)
+if(Qt${QT_VERSION_MAJOR}Mqtt_FOUND)
+    message(STATUS "Qt6Mqtt 可用（Y-4 MQTT 驱动启用）")
+else()
+    message(WARNING "Qt6Mqtt 未找到——Y-4 MQTT 驱动不可用（需先跑 build-qtmqtt.sh 构建并安装到 sysroot）")
+endif()
 message(STATUS "Qt 版本: ${QT_VERSION_MAJOR}.${Qt${QT_VERSION_MAJOR}_VERSION}  QML: ${HAVE_QT_QML}")
 
 # ============================================================
@@ -90,6 +97,12 @@ list(FILTER SOURCES EXCLUDE REGEX ".*/src/tests/.*")
 if(NOT Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
     list(FILTER SOURCES EXCLUDE REGEX ".*/src/httpreceiver/.*")
     message(STATUS "httpreceiver 已排除（QtHttpServer 未找到——接收端编译被跳过，主程序正常）")
+endif()
+# Y-4: Qt6Mqtt 缺失时排除 mqtt_driver（reviewer 🔴2——mqtt_driver.cpp 无条件 #include <QMqttClient>，
+# 无 Qt6Mqtt 环境（Windows 仿真器/未跑 build-qtmqtt.sh）编译硬失败；宏 NAVIHMI_HAVE_MQTT_DRIVER 仅控注册/链接）
+if(NOT Qt${QT_VERSION_MAJOR}Mqtt_FOUND)
+    list(FILTER SOURCES EXCLUDE REGEX ".*/src/drivers/mqtt_driver\\.cpp")
+    message(STATUS "mqtt_driver 已排除（Qt6Mqtt 未找到——MQTT 驱动编译被跳过，主程序正常）")
 endif()
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.h
@@ -147,6 +160,11 @@ if(SOURCES)
         if(Qt${QT_VERSION_MAJOR}HttpServer_FOUND)
             target_link_libraries(${PROJECT_NAME} Qt${QT_VERSION_MAJOR}::HttpServer)   # K-8b 接收端
             target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_QT_HTTPSERVER=1)
+        endif()
+        if(Qt${QT_VERSION_MAJOR}Mqtt_FOUND)
+            # Y-4: MQTT 驱动（MqttDriver 直接引用 QMqttClient——必须链接 Qt6::Mqtt；宏驱动注册/裁剪）
+            target_link_libraries(${PROJECT_NAME} Qt${QT_VERSION_MAJOR}::Mqtt)
+            target_compile_definitions(${PROJECT_NAME} PRIVATE NAVIHMI_HAVE_MQTT_DRIVER=1)
         endif()
         if(Qt${QT_VERSION_MAJOR}Multimedia_FOUND)
             # P-6 Frame 视频（审查 2026-09-04）：**不链接** Qt::Multimedia——主程序 C++ 零 QtMultimedia 符号引用，

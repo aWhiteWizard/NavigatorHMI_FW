@@ -152,6 +152,7 @@ struct Tag {
     QString description;
     QString baseValue;       // 设计态基准值
     QString deviceName;      // 关联设备名（空 = 无）
+    QString group;           // 变量分组（Y-5 PC 契约 + Y-4 FW 解析透传——运行时不做分组逻辑）
 };
 
 struct AlarmRule {
@@ -236,6 +237,40 @@ struct SecuritySettings {
     int lockMinutes = 0;
 };
 
+// ═══════════════════════════════════════════════════════════════
+// Y-2/Y-4 MQTT 三层映射运行时模型（2026-09-10 ④通信批；与 proto MqttSettings 对齐）
+// 连接参数真源 = DeviceConfig MQTT connection_info JSON（PC 裁决——MqttConfig 承载 UI 规范化，
+// FW MqttDriver 实际连接参数从 DeviceConfig JSON 键值来（Acquisition connInfoForDevice 展开）
+// ═══════════════════════════════════════════════════════════════
+
+enum class MqttTopicDirection { Publish = 0, Subscribe = 1 };
+enum class MqttJsonTemplate { Kv = 0, KvWithTimestamp = 1 };
+
+struct MqttTopicConfig {
+    QString name;              // 配置名（工程内唯一，Binding 引用锚）
+    MqttTopicDirection direction = MqttTopicDirection::Publish;
+    QString topic;             // topic 路径
+    int qos = 0;
+    bool retain = false;
+    int publishIntervalMs = 0; // 周期发布间隔（0 = 仅按需）
+    MqttJsonTemplate jsonTemplate = MqttJsonTemplate::Kv;
+    QString responseTopic;
+};
+
+struct MqttBindingConfig {
+    QString topicName;         // 所属 MqttTopicConfig.name
+    QString tagName;           // 变量名（订阅=写入目标，发布=数据源）
+    QString fieldName;         // JSON 字段名
+};
+
+struct MqttSettings {
+    bool enableMqtt = false;   // 总开关（禁用：FW 不建连接对象）
+    int schemaVersion = 1;
+    QList<MqttTopicConfig> topics;
+    QList<MqttBindingConfig> bindings;
+    bool hasMqttSettings = false;   // proto 有 mqtt_settings 消息（缺省=未配置——区分「未配置」与「配了但开关关」）
+};
+
 /// 工程根模型
 struct Project {
     QString name;
@@ -258,6 +293,7 @@ struct Project {
     QList<UserGroup> groups;
     SecuritySettings security;
     bool enableVnc = false;   // VNC 镜像开关（proto 21；默认关=零开销，无人车场景不启）
+    MqttSettings mqtt;        // Y-2/Y-4：MQTT 三层映射（hasMqttSettings 区分未配置）
 
     /// 按名称查画面（找不到返回 nullptr）
     const Screen* ScreenByName(const QString& name) const;

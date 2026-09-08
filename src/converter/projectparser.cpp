@@ -274,6 +274,7 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
         t.description = s(pt.description());
         t.baseValue = s(pt.base_value());
         t.deviceName = s(pt.device_name());
+        t.group = s(pt.group());   // Y-5：变量分组（PC 组态语义透传）
         out.tags.append(t);
     }
 
@@ -387,6 +388,38 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
         out.security.passwordMaxAgeDays = sec.password_max_age_days();
         out.security.failedLoginLockout = sec.failed_login_lockout();
         out.security.lockMinutes = sec.lock_minutes();
+    }
+
+    // Y-2/Y-4（2026-09-10）：MQTT 三层映射解析（proto mqtt_settings=24；缺省 = 未配置 MQTT）
+    if (pb.has_mqtt_settings()) {
+        const auto& ms = pb.mqtt_settings();
+        out.mqtt.hasMqttSettings = true;
+        out.mqtt.enableMqtt = ms.enable_mqtt();
+        out.mqtt.schemaVersion = ms.schema_version();
+        // Y-4 reviewer 🟡13：JSON 模板 schema 版本不匹配告警（proto 注释「PC/设备共用——联调硬约束」；
+        // 当前唯一版本 = 1，未来模板演化时两端同步升版）
+        if (ms.schema_version() != 1)
+            qWarning("projectparser: MQTT JSON 模板 schema_version=%d 与本设备支持的 1 不匹配——JSON 字段语义可能不一致",
+                     ms.schema_version());
+        for (const auto& pt : ms.topics()) {
+            MqttTopicConfig tc;
+            tc.name = s(pt.name());
+            tc.direction = static_cast<MqttTopicDirection>(pt.direction());
+            tc.topic = s(pt.topic());
+            tc.qos = pt.qos();
+            tc.retain = pt.retain();
+            tc.publishIntervalMs = pt.publish_interval_ms();
+            tc.jsonTemplate = static_cast<MqttJsonTemplate>(pt.json_template());
+            tc.responseTopic = s(pt.response_topic());
+            out.mqtt.topics.append(tc);
+        }
+        for (const auto& pb : ms.bindings()) {
+            MqttBindingConfig bc;
+            bc.topicName = s(pb.topic_name());
+            bc.tagName = s(pb.tag_name());
+            bc.fieldName = s(pb.field_name());
+            out.mqtt.bindings.append(bc);
+        }
     }
 
     return true;

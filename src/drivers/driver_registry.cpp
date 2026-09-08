@@ -5,6 +5,7 @@
  */
 #include "drivers/driver_registry.h"
 #include "drivers/modbus_tcp_driver.h"   // init_driver_modbus_tcp（extern C，文件尾全局声明）
+#include "drivers/mqtt_driver.h"         // Y-4: init_driver_mqtt（NAVIHMI_HAVE_MQTT_DRIVER 裁剪）
 
 #include <QHash>
 #include <vector>
@@ -57,6 +58,9 @@ void registerBuiltinDrivers()
     s_done = true;
 #ifdef NAVIHMI_HAVE_MODBUS_DRIVER
     init_driver_modbus_tcp();
+#endif
+#ifdef NAVIHMI_HAVE_MQTT_DRIVER
+    init_driver_mqtt();   // Y-4: MQTT 驱动（qtmqtt 链接级——宏裁剪时关宏不链接）
 #endif
 }
 
