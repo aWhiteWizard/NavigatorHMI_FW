@@ -21,6 +21,71 @@ Item {
     property real latMin: 0
     property real latMax: 0
     property bool mapReady: root.backgroundImage !== "" && root.lngMax > root.lngMin && root.latMax > root.latMin
+    // X Check（2026-09-10 用户）：叠加作业范围 + 作业点——固定点 "name,lng,lat"；绑变量点 "name,0,0,boundTag"
+    property string gpsMapRange: ""
+    property string gpsMapPoints: ""
+    property var rangePts: []    // 解析后 [{lng,lat}]
+    property var workPts: []     // [{name, lng, lat, boundTag}]——绑变量点坐标由 dataManager 动态刷新
+    function coordDec(s) {
+        // GPS tag 值坐标解析：十进制 "104.1423" 或 DMS "E104°3'30\""（W/S 负）——对齐 FW/HmiWorldMap 契约
+        s = String(s).trim()
+        var neg = (s.indexOf("W") >= 0 || s.indexOf("S") >= 0)
+        var m = s.match(/([0-9.]+)°([0-9.]+)'([0-9.]+)"/)
+        var v
+        if (m) v = parseFloat(m[1]) + parseFloat(m[2]) / 60 + parseFloat(m[3]) / 3600
+        else { v = parseFloat(s); if (isNaN(v)) return NaN }
+        return neg ? -v : v
+    }
+    function parseGpsLayer() {
+        root.rangePts = []
+        if (root.gpsMapRange !== "") {
+            var ps = String(root.gpsMapRange).split("|")
+            for (var i = 0; i < ps.length; i++) {
+                var c = ps[i].split(",")
+                if (c.length >= 2) root.rangePts.push({ lng: parseFloat(c[0]), lat: parseFloat(c[1]) })
+            }
+        }
+        root.workPts = []
+        if (root.gpsMapPoints !== "") {
+            ps = String(root.gpsMapPoints).split("|")
+            for (i = 0; i < ps.length; i++) {
+                c = ps[i].split(",")
+                if (c.length >= 4)      // 绑变量点 "name,0,0,boundTag"——坐标运行时读（refreshDynamicPoints）
+                    root.workPts.push({ name: c[0], lng: parseFloat(c[1]), lat: parseFloat(c[2]), boundTag: c[3] })
+                else if (c.length >= 3) // 固定点 "name,lng,lat"
+                    root.workPts.push({ name: c[0], lng: parseFloat(c[1]), lat: parseFloat(c[2]), boundTag: "" })
+            }
+        }
+        root.refreshDynamicPoints()
+    }
+    // 绑变量作业点 → dataManager 读 GPS tag 动态坐标（值格式 "(E…, N…)" 括号 DMS 或 "lng,lat" 十进制）
+    function refreshDynamicPoints() {
+        if (typeof dataManager === "undefined" || dataManager === null || dataManager === undefined) return
+        var changed = false
+        for (var i = 0; i < root.workPts.length; i++) {
+            var p = root.workPts[i]
+            if (p.boundTag === "" || p.boundTag === undefined) continue
+            if (!dataManager.hasTag(p.boundTag)) continue
+            var raw = dataManager.value(p.boundTag)
+            if (raw === undefined || raw === null || String(raw).trim() === "") { if (p.lng !== 0 || p.lat !== 0) { p.lng = 0; p.lat = 0; changed = true } continue }
+            var s = String(raw).trim()
+            if (s.charAt(0) === "(" && s.charAt(s.length - 1) === ")") s = s.substring(1, s.length - 1).trim()
+            var parts = s.split(/[,，]/)
+            if (parts.length >= 2) {
+                var lng = root.coordDec(parts[0]), lat = root.coordDec(parts[1])
+                if (!isNaN(lng) && !isNaN(lat) && (lng !== p.lng || lat !== p.lat)) { p.lng = lng; p.lat = lat; changed = true }
+            }
+        }
+        if (changed && layerCanvas) layerCanvas.requestPaint()
+    }
+    // 绑变量点动态刷新（GPS 值变化轮询——工程绑变量作业点移动实时体现）
+    Timer {
+        id: dynTimer
+        interval: 500
+        repeat: true
+        running: root.visible && root.mapReady
+        onTriggered: root.refreshDynamicPoints()
+    }
 
     // 选点状态
     property real pickLng: 0
@@ -88,6 +153,7 @@ Item {
             root.width = root.contentRoot.width
             root.height = root.contentRoot.height
         }
+        root.parseGpsLayer()   // X Check：解析作业范围/作业点叠加（注入在 openPicker 前由宿主设置）
         // 预填：initialText（"lng,lat" 十进制）→ 地图选点初始十字
         if (initialText !== undefined && initialText !== null && String(initialText).length > 0) {
             var parts = String(initialText).split(",")
@@ -97,6 +163,7 @@ Item {
             }
         }
         root.visible = true
+        if (layerCanvas) layerCanvas.requestPaint()   // 可见后重绘叠加层（范围/作业点）
     }
     function commitAndClose() {
         if (root.picked)
@@ -155,6 +222,48 @@ Item {
                 source: root.mapReady ? "file://" + root.backgroundImage : ""
                 fillMode: Image.Stretch
                 visible: root.mapReady
+            }
+            // X Check（2026-09-10 用户）：作业范围多边形（蓝描边——X-5 范围色）+ 作业点（红点+名称——X-5 点色）叠加
+            Canvas {
+                id: layerCanvas
+                anchors.fill: parent
+                visible: root.mapReady
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.reset()
+                    // 作业范围多边形
+                    if (root.rangePts.length >= 3) {
+                        ctx.beginPath()
+                        var started = false
+                        for (var i = 0; i < root.rangePts.length; i++) {
+                            var px = root.toX(root.rangePts[i].lng)
+                            var py = root.toY(root.rangePts[i].lat)
+                            if (!started) { ctx.moveTo(px, py); started = true } else { ctx.lineTo(px, py) }
+                        }
+                        if (started) ctx.closePath()
+                        ctx.strokeStyle = "#1565C0"
+                        ctx.lineWidth = 2.5
+                        ctx.stroke()
+                    }
+                    // 作业点（红点 + 名称；0,0 无值点跳过——绑变量点未取到值不画）
+                    for (i = 0; i < root.workPts.length; i++) {
+                        if (root.workPts[i].lng === 0 && root.workPts[i].lat === 0) continue
+                        px = root.toX(root.workPts[i].lng)
+                        py = root.toY(root.workPts[i].lat)
+                        ctx.beginPath()
+                        ctx.arc(px, py, 5, 0, Math.PI * 2)
+                        ctx.fillStyle = "#D32F2F"
+                        ctx.fill()
+                        ctx.strokeStyle = "white"
+                        ctx.lineWidth = 1.5
+                        ctx.stroke()
+                        if (root.workPts[i].name !== "") {
+                            ctx.font = "10px sans-serif"
+                            ctx.fillStyle = "#B71C1C"
+                            ctx.fillText(root.workPts[i].name, px + 7, py - 5)
+                        }
+                    }
+                }
             }
             // 无底图兜底（X-4：正常工程被 PC 编译校验拦截——此处防手工部署绕过）
             Text {

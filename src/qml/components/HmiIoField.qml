@@ -36,6 +36,9 @@ Rectangle {
     property real gpsMapLatMin: 0
     property real gpsMapLatMax: 0
     property bool gpsMapReady: gpsMapBg !== "" && gpsMapLngMax > gpsMapLngMin && gpsMapLatMax > gpsMapLatMin
+    // X Check（2026-09-10 用户）：CoordinatePicker 叠加作业范围 + 作业点（"lng,lat|…" / "name,lng,lat|…"）
+    property string gpsMapRange: ""
+    property string gpsMapPoints: ""
     // 用户 2026-08-22: 点击空白不改用户已输入内容——编辑中标记, 变量回写不覆盖用户输入(提交后恢复跟随)
     property bool editing: false
     property string textColor: "#000000"
@@ -412,12 +415,14 @@ Rectangle {
             if (root.isDateTimeInput) {
                 dateFieldPicker.openPicker(root.content)
             } else if (root.isGps) {
-                // X-2：注入地图上下文（底图 + bounds）→ 弹选点器（预填当前值十进制）
+                // X-2：注入地图上下文（底图 + bounds + 范围/作业点叠加）→ 弹选点器（预填当前值十进制）
                 gpsFieldPicker.backgroundImage = root.gpsMapBg
                 gpsFieldPicker.lngMin = root.gpsMapLngMin
                 gpsFieldPicker.lngMax = root.gpsMapLngMax
                 gpsFieldPicker.latMin = root.gpsMapLatMin
                 gpsFieldPicker.latMax = root.gpsMapLatMax
+                gpsFieldPicker.gpsMapRange = root.gpsMapRange
+                gpsFieldPicker.gpsMapPoints = root.gpsMapPoints
                 gpsFieldPicker.openPicker(root.isGps ? root.toDecimal(root.content) : "")
             }
         }

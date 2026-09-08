@@ -205,6 +205,35 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
                         out << "    gpsMapLngMax: " << QString::number(mLngMax, 'f', 8) << "\n";
                         out << "    gpsMapLatMin: " << QString::number(mLatMin, 'f', 8) << "\n";
                         out << "    gpsMapLatMax: " << QString::number(mLatMax, 'f', 8) << "\n";
+                        // X Check（2026-09-10 用户）：CoordinatePicker 叠加作业范围 + 作业点（固定点）——
+                        //   格式 "lng,lat|lng,lat"（范围，| 分隔）；"name,lng,lat|…"（作业点，含名称；绑变量点跳过）
+                        QString rangeStr, pointStr;
+                        auto addPair = [](QString& s, double lng, double lat) {
+                            if (!s.isEmpty()) s += QLatin1Char('|');
+                            s += QString::number(lng, 'f', 8) + QLatin1Char(',') + QString::number(lat, 'f', 8);
+                        };
+                        for (const auto& rp : wmc.workRangePoints)
+                            if (rp.fixedPoint.longitude != 0 || rp.fixedPoint.latitude != 0)
+                                addPair(rangeStr, rp.fixedPoint.longitude, rp.fixedPoint.latitude);
+                        for (const auto& wp : wmc.workPoints) {
+                            // 固定点 → "name,lng,lat"（3 段）；绑变量点（fixedPoint 0 + boundTag）→ "name,0,0,boundTag"（4 段，
+                            // 运行时 CoordinatePicker 从 dataManager 读 tag 动态显示——2026-09-10 用户规格）；两者皆空跳过
+                            const bool hasFix = wp.fixedPoint.longitude != 0 || wp.fixedPoint.latitude != 0;
+                            if (hasFix || !wp.boundTag.isEmpty()) {
+                                if (!pointStr.isEmpty()) pointStr += QLatin1Char('|');
+                                pointStr += qmlEsc(wp.name);
+                                if (hasFix)
+                                    pointStr += QLatin1Char(',')
+                                             + QString::number(wp.fixedPoint.longitude, 'f', 8) + QLatin1Char(',')
+                                             + QString::number(wp.fixedPoint.latitude, 'f', 8);
+                                else
+                                    pointStr += QStringLiteral(",0,0,") + qmlEsc(wp.boundTag);
+                            }
+                        }
+                        if (!rangeStr.isEmpty())
+                            out << "    gpsMapRange: \"" << rangeStr << "\"\n";
+                        if (!pointStr.isEmpty())
+                            out << "    gpsMapPoints: \"" << pointStr << "\"\n";
                     }
                 }
                 break;
