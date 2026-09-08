@@ -569,6 +569,9 @@ Rectangle {
                     border.color: "#DDDDDD"
                     border.width: 1
                     property var histData: modelData
+                    // N+44 P3：event 区分——CLEAR（报警消除/恢复正常）标记「正常」+ 绿色；ACK 灰色；TRIGGER 按级别色
+                    property bool isClear: histData.event === "CLEAR"
+                    property bool isAck: histData.event === "ACK"
                     Text {
                         anchors.left: parent.left
                         anchors.leftMargin: 3
@@ -585,7 +588,9 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 18; height: 10
                         radius: 2
-                        color: Number(histData.level) === 0 ? "#D32F2F"
+                        color: parent.isClear ? "#2E7D32"          // N+44 P3：恢复正常 → 绿
+                             : parent.isAck ? "#607D8B"            // 确认 → 灰蓝
+                             : Number(histData.level) === 0 ? "#D32F2F"
                              : Number(histData.level) === 1 ? "#F57C00"
                              : Number(histData.level) === 2 ? "#F9A825"
                              : "#1976D2"
@@ -594,9 +599,10 @@ Rectangle {
                         anchors.left: parent.left
                         anchors.leftMargin: 128
                         anchors.verticalCenter: parent.verticalCenter
-                        text: histData.message
+                        // N+44 P3：CLEAR 前缀「正常 」/ ACK 前缀「确认 」（触发行保持原样）
+                        text: (parent.isClear ? "正常 " : parent.isAck ? "确认 " : "") + histData.message
                         font.pixelSize: 9
-                        color: "#333333"
+                        color: parent.isClear ? "#2E7D32" : "#333333"   // N+44 P3：恢复正常行文字绿
                         elide: Text.ElideRight
                         width: parent.width - 140
                     }
