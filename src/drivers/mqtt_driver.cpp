@@ -171,8 +171,16 @@ void MqttDriver::ensureConnected()
             emit stateChanged(true);
             // 连接成功 → 订阅全部订阅 topic（含通配符）
             for (const auto& j : m_subscribeJobs) {
-                m_client->subscribe(QMqttTopicFilter(j.topic), quint8(j.qos));
-                qInfo().noquote() << "MqttDriver: 订阅" << j.topic << "qos=" << j.qos;
+                auto* sub = m_client->subscribe(QMqttTopicFilter(j.topic), quint8(j.qos));
+                qInfo().noquote() << "MqttDriver: 订阅" << j.topic << "qos=" << j.qos
+                                  << "sub=" << (sub ? "ok" : "null");
+                // Y-8 诊断：订阅状态变化（Subscribed/Unsubscribed/Error——SUBACK 确认与否）
+                if (sub) {
+                    connect(sub, &QMqttSubscription::stateChanged, this,
+                            [this, j](QMqttSubscription::SubscriptionState st) {
+                        qInfo().noquote() << "MqttDriver: 订阅状态" << j.topic << "→" << int(st);
+                    });
+                }
             }
             // 周期发布：初始全量（启动即发一次）
             const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -231,6 +239,8 @@ void MqttDriver::ensureConnected()
 void MqttDriver::ParseAndDispatch(const QByteArray& message, const QString& sourceTopic)
 {
     if (m_subscribeJobs.isEmpty()) return;
+    // Y-8 联调诊断：收到消息即记录（成功路径原静默——联调期留 info 便于确认订阅链路；正式可降 debug）
+    qInfo().noquote() << "MqttDriver: 收到消息 topic=" << sourceTopic << "len=" << message.size();
     // 匹配订阅 job（通配符 filter——可能多 filter 命中同一实际 topic，全部处理 reviewer 🟡7）
     QList<const SubscribeJob*> matched;
     for (const auto& j : m_subscribeJobs)
