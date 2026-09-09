@@ -38,6 +38,7 @@ void Acquisition::destroyDrivers()
         delete d;   // IDriver QObject——stop/清理由析构
     }
     m_drivers.clear();
+    m_driverConns.clear();   // Z 循环：driver↔连接映射同步清
 }
 
 void Acquisition::stop()
@@ -58,17 +59,22 @@ QString Acquisition::protocolForSource(const QString& source) const
 
 void Acquisition::setProject(const Project& proj)
 {
-    m_project = proj;
-    m_lastVal.clear();
-
-    // 重建驱动（工程重载/切工程：旧驱动 stop 删除——多协议全清）
+    // 🟡1（reviewer Z-5）：先销毁旧驱动再替换 m_project——驱动 m_cfg/connCfg 指向旧 Project.connections，
+    // 若先 m_project = proj（旧 connections 析构）则 stop()→disconnected→emitConnState→lambda 读悬垂 cfg
     destroyDrivers();
     if (m_timer) {
         m_timer->stop();
     }
+    m_statusTagWarned.clear();
+    m_project = proj;
+    m_lastVal.clear();
 
-    // tag 解析分组：按协议分桶（modbus:// → modbus_tcp；mqtt:// → mqtt；空 = 内部变量跳过）
+    // tag 解析分组：
+    //  - modbus：按协议桶（modbus:// → modbus_tcp——连接参数 deviceName → DeviceConfig JSON）
+    //  - mqtt：Z 循环多连接——每 MqttConnectionConfig 一驱动；tag 归属 = 出现在该连接 bindings 的 mqtt:// tag
     QHash<QString, QList<DriverTagInfo>> byProtocol;
+    QList<QPair<const MqttConnectionConfig*, QList<DriverTagInfo>>> mqttGroups;
+    QList<DriverTagInfo> mqttTagInfos;   // 工程全部 mqtt:// tag（先收集再按连接归属）
     for (const auto& tag : m_project.tags) {
         const QString proto = protocolForSource(tag.source);
         if (proto.isEmpty())
@@ -76,45 +82,101 @@ void Acquisition::setProject(const Project& proj)
         DriverTagInfo info;
         info.name = tag.name;
         info.source = tag.source;
-        // Y Check 裁决（2026-09-11）：MQTT 连接参数真源 = MqttSettings.deviceName（选定设备）——
-        // 非空时所有 mqtt tag 统一用选定设备展开连接（工程级单 MQTT 连接语义；旧工程 deviceName 空回退 tag.deviceName）
-        if (proto == QLatin1String("mqtt") && !m_project.mqtt.deviceName.isEmpty())
-            info.deviceName = m_project.mqtt.deviceName;
-        else
-            info.deviceName = tag.deviceName;
+        info.deviceName = tag.deviceName;
         info.dataType = int(tag.dataType);
         info.scanMs = tag.scanIntervalMs;
         info.deadband = tag.deadband;
-        info.conn = connInfoForDevice(info.deviceName);
-        info.mqtt = &m_project.mqtt;   // Y-4: MQTT 三层映射注入（MqttDriver configure 消费）
-        byProtocol[proto].append(info);
+        if (proto == QLatin1String("mqtt")) {
+            mqttTagInfos.append(info);   // 连接归属由 bindings 决定（Z 循环——tag 不加归属字段）
+        } else {
+            info.conn = connInfoForDevice(info.deviceName);
+            byProtocol[proto].append(info);
+        }
     }
-    if (byProtocol.isEmpty()) {
+    // Z 循环：mqtt 按连接分组（西门子同构——Binding 挂哪棵 Topic 树即属哪个连接；enableMqtt 关 → 不建任何连接对象）
+    const bool mqttEnabled = m_project.mqtt.hasMqttSettings && m_project.mqtt.enableMqtt;
+    if (mqttEnabled) {
+        for (const auto& conn : m_project.mqtt.connections) {
+            QList<DriverTagInfo> connTags;
+            for (const auto& info : mqttTagInfos) {
+                bool bound = false;
+                for (const auto& b : conn.bindings)
+                    if (b.tagName == info.name) { bound = true; break; }
+                if (!bound) continue;
+                // 🔴1（reviewer Z-5）：归属连接时注入 mqttConn（mqtt_driver configure 唯一消费端——
+                // 不注入则 m_cfg 恒 nullptr → 驱动不建，订阅/发布/StatusTag 全链路失效）
+                DriverTagInfo ti = info;
+                ti.mqttConn = &conn;
+                connTags.append(ti);
+            }
+            if (connTags.isEmpty()) {
+                qInfo().noquote() << "Acquisition: MQTT 连接" << conn.name << "无绑定变量（映射未建），跳过";
+                continue;
+            }
+            mqttGroups.append(qMakePair(&conn, connTags));
+        }
+    }
+    if (byProtocol.isEmpty() && mqttGroups.isEmpty()) {
         qInfo().noquote() << "Acquisition: 无采集来源变量, 采集未启动";
         return;
     }
 
-    // 按协议建驱动（注册表路由；未注册/被裁剪协议 → 跳过并告警）
-    for (auto it = byProtocol.constBegin(); it != byProtocol.constEnd(); ++it) {
-        const QString proto = it.key();
+    // 建驱动：modbus 按协议桶（同 Y 语义）→ mqtt 每连接一实例（一协议多驱动——Z 循环）
+    auto startDriver = [&](const QString& proto, const QList<DriverTagInfo>& tags,
+                           const MqttConnectionConfig* connCfg) -> IDriver* {
         auto* driver = createDriverForProtocol(proto, this);
         if (!driver) {
-            qWarning().noquote() << "Acquisition: 无可用驱动" << proto << "（未注册/被裁剪）——" << it.value().size() << "个变量跳过";
-            continue;
+            qWarning().noquote() << "Acquisition: 无可用驱动" << proto << "（未注册/被裁剪）——"
+                                 << tags.size() << "个变量跳过";
+            return nullptr;
         }
         connect(driver, &IDriver::valueRead, this, &Acquisition::onDriverValueRead);
         connect(driver, &IDriver::connectionError, this,
                 [](const QString& msg) { qWarning().noquote() << "Acquisition:" << msg; });
-        if (!driver->configure(it.value())) {
+        // Z 循环：MQTT 4 态连接状态 → 本连接 statusTag 回写（0-3——proto MqttConnectionState；modbus 不 emit 此信号）
+        if (connCfg) {
+            connect(driver, &IDriver::connectionStateChanged, this,
+                    [this, driver](int state) {
+                // 🟡3（reviewer Z-5）：经 m_driverConns 查本连接 cfg（成员有消费点——driver↔连接映射）
+                auto it = m_driverConns.constFind(driver);
+                if (it == m_driverConns.constEnd())
+                    return;
+                const QString st = (*it)->statusTag;
+                if (st.isEmpty() || !m_dataManager)
+                    return;
+                // 🟡6（reviewer Z-5）：statusTag 变量须工程已声明（DataManager::setValue 对未声明 tag 静默 return）——
+                // 首现告警防静默失效（QSet 去重：每 tag 只告警一次）
+                bool declared = false;
+                for (const auto& t : m_project.tags)
+                    if (t.name == st) { declared = true; break; }
+                if (!declared) {
+                    if (!m_statusTagWarned.contains(st)) {
+                        m_statusTagWarned.insert(st);
+                        qWarning().noquote() << "Acquisition: MQTT 连接" << (*it)->name
+                                             << "的 StatusTag \"" << st << "\" 未在工程声明——状态不回写";
+                    }
+                    return;
+                }
+                m_dataManager->setValue(st, state);
+            });
+        }
+        if (!driver->configure(tags)) {
             qInfo().noquote() << "Acquisition: 驱动配置无有效采集项" << proto;
             delete driver;
-            continue;
+            return nullptr;
         }
-        driver->start();
         m_drivers.append(driver);
+        if (connCfg) m_driverConns.insert(driver, connCfg);   // 🟡复审：先登记再 start——首连 Connecting(1) 状态经 map 可写
+        driver->start();
         qInfo().noquote() << "Acquisition: 驱动启动 protocol=" << proto
-                          << "tags=" << it.value().size();
-    }
+                          << "conn=" << (connCfg ? connCfg->name : QStringLiteral("-"))
+                          << "tags=" << tags.size();
+        return driver;
+    };
+    for (auto it = byProtocol.constBegin(); it != byProtocol.constEnd(); ++it)
+        startDriver(it.key(), it.value(), nullptr);
+    for (const auto& g : mqttGroups)
+        startDriver(QStringLiteral("mqtt"), g.second, g.first);
     if (m_drivers.isEmpty()) {
         qInfo().noquote() << "Acquisition: 无驱动成功启动（协议均不可用）";
         return;
@@ -178,14 +240,22 @@ void Acquisition::onDriverValueRead(const QString& tagName, const QVariant& valu
 
 void Acquisition::handleValueWritten(const QString& tagName, const QVariant& value)
 {
-    // 写通道: DataManager 写采集来源变量 → 路由到对应协议驱动（Y-4 多协议分发——
-    // 按 tag.source 前缀找驱动；main.cpp 连接 valueChanged 调用）
+    // 写通道: DataManager 写采集来源变量 → 路由到对应驱动（Y-4 多协议分发 + Z 循环多连接——
+    // mqtt 广播到全部 MQTT 驱动（每驱动自行判断本连接发布绑定——tag 无发布映射则忽略，防跨连接误发）；
+    // modbus 首协议匹配（单实例）；main.cpp 连接 valueChanged 调用）
     for (const auto& tag : m_project.tags) {
         if (tag.name != tagName)
             continue;
         const QString proto = protocolForSource(tag.source);
         if (proto.isEmpty())
             return;   // 内部变量——无驱动写
+        if (proto == QLatin1String("mqtt")) {
+            // Z 循环：tag 可被多个连接绑定（不同 broker 各发各的 topic）——广播全部 mqtt 驱动
+            for (auto* d : m_drivers)
+                if (d->protocol() == QLatin1String("mqtt"))
+                    d->writeValue(tagName, value);
+            return;
+        }
         for (auto* d : m_drivers)
             if (d->protocol() == proto) { d->writeValue(tagName, value); return; }
         return;

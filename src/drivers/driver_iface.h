@@ -17,18 +17,19 @@
 
 namespace navihmi {
 
-struct MqttSettings;   // 前向声明（projectmodel.h——Acquisition 注入 MQTT 三层映射，driver 配置用）
+struct MqttConnectionConfig;   // 前向声明（projectmodel.h——Acquisition 按连接注入，driver 配置用；Z 循环多连接）
 
 /// 采集项（Manager 解析工程 Tag 后统一传给 Driver；Driver 自行解析 source/类型/连接参数）
 struct DriverTagInfo {
     QString name;
     QString source;         // "modbus://{slave}/{reg}" / "mqtt://..."；空 = 内部变量不采集
-    QString deviceName;     // 关联设备名（连接参数来源）
+    QString deviceName;     // 关联设备名（连接参数来源——modbus；Z 循环 MQTT 连接参数内联不用）
     int dataType = 0;       // TagDataType 数值（Bool/Int16/Uint16/Int32/Float/String/DateTime/Gps）
     int scanMs = 0;         // 采集周期 ms（<=0 用驱动默认）
     double deadband = 0;    // 死区（Manager 写入 DataManager 前判断）
-    QHash<QString, QString> conn;   // 连接参数（deviceName → connectionInfo JSON 键值展开；空=驱动默认）
-    const MqttSettings* mqtt = nullptr;   // Y-4: MQTT 三层映射（仅 MQTT 驱动用；Acquisition setProject 注入）
+    QHash<QString, QString> conn;   // 连接参数（deviceName → connectionInfo JSON 键值展开；空=驱动默认——modbus）
+    const MqttConnectionConfig* mqttConn = nullptr;   // Z 循环（2026-09-11）：所属 MQTT 连接（每连接一驱动，
+                                                      // Acquisition 按连接注入；弃 Y 时代整份 MqttSettings 单连接语义）
 };
 
 /// 采集驱动接口。生命周期: configure → start → poll×N（Manager 100ms 调度）→ stop。
@@ -60,6 +61,9 @@ signals:
     void stateChanged(bool connected);
     /// 连接失败/错误（Manager 上报日志/状态 tag——V+1 状态诊断用）
     void connectionError(const QString& message);
+    /// MQTT 连接状态 4 态（Z 循环 2026-09-11 StatusTag 回写；值 = MqttConnState 0-3——
+    /// Disconnected/Connecting/Connected/Error；仅 MQTT 驱动 emit——modbus 用 stateChanged(bool)）
+    void connectionStateChanged(int state);
 };
 
 /// 驱动工厂（注册表登记；extern C init_driver_xxx() 返回实例——宏裁剪时可不注册）

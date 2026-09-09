@@ -238,16 +238,19 @@ struct SecuritySettings {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// Y-2/Y-4 MQTT 三层映射运行时模型（2026-09-10 ④通信批；与 proto MqttSettings 对齐）
-// 连接参数真源 = DeviceConfig MQTT connection_info JSON（PC 裁决——MqttConfig 承载 UI 规范化，
-// FW MqttDriver 实际连接参数从 DeviceConfig JSON 键值来（Acquisition connInfoForDevice 展开）
+// Y-2/Y-4 MQTT 三层映射 + Z 循环多连接重构（2026-09-11）
+// 连接参数内联 MqttConnectionConfig（proto MqttConnection.config——弃 Y 时代 DeviceConfig JSON 真源；
+// FW 不兜底旧单份 device_name——用户 2026-09-11 拍板；每连接独立 topics/bindings，西门子同构归属）
 // ═══════════════════════════════════════════════════════════════
 
 enum class MqttTopicDirection { Publish = 0, Subscribe = 1 };
 enum class MqttJsonTemplate { Kv = 0, KvWithTimestamp = 1 };
 
+// 连接状态 4 态（proto MqttConnectionState 对齐——StatusTag 回写数值 0-3，2026-09-11 Z-1 定稿）
+enum class MqttConnState { Disconnected = 0, Connecting = 1, Connected = 2, Error = 3 };
+
 struct MqttTopicConfig {
-    QString name;              // 配置名（工程内唯一，Binding 引用锚）
+    QString name;              // 配置名（连接内唯一，Binding 引用锚）
     MqttTopicDirection direction = MqttTopicDirection::Publish;
     QString topic;             // topic 路径
     int qos = 0;
@@ -258,18 +261,32 @@ struct MqttTopicConfig {
 };
 
 struct MqttBindingConfig {
-    QString topicName;         // 所属 MqttTopicConfig.name
+    QString topicName;         // 所属 MqttTopicConfig.name（本连接内）
     QString tagName;           // 变量名（订阅=写入目标，发布=数据源）
     QString fieldName;         // JSON 字段名
+};
+
+/// 单个 broker 连接（Z 循环：连接参数内联 + 本连接 topics/bindings——Acquisition 每连接建一个 MqttDriver）
+struct MqttConnectionConfig {
+    QString name;
+    // 连接参数（proto MqttConfig）
+    QString broker;            // 主机/IP（不含协议前缀）
+    int port = 1883;
+    int version = 0;           // 0=3.1.1 1=5.0
+    QString clientId;          // 空 = FW 自动生成
+    QString username;
+    QString password;          // nhfw1: 加密包（Z-4b 编译再加密；FW OpenSSL EVP 解密；空=匿名）
+    int keepAliveSec = 60;
+    bool enableTls = false;    // V1.2 预留（恒 false）
+    QString statusTag;         // 连接状态回写变量名（4 态 0-3；空 = 不回写）
+    QList<MqttTopicConfig> topics;
+    QList<MqttBindingConfig> bindings;
 };
 
 struct MqttSettings {
     bool enableMqtt = false;   // 总开关（禁用：FW 不建连接对象）
     int schemaVersion = 1;
-    QString deviceName;        // Y Check 裁决（2026-09-11）：选定的 MQTT 设备名（DeviceConfig.Name，proto 6）——
-                               // FW 连接参数真源：优先本字段 → 该 DeviceConfig.connection_info（connInfoForDevice）；空 = 回退 tag.deviceName 旧逻辑
-    QList<MqttTopicConfig> topics;
-    QList<MqttBindingConfig> bindings;
+    QList<MqttConnectionConfig> connections;   // 多连接管理器（Z 循环）
     bool hasMqttSettings = false;   // proto 有 mqtt_settings 消息（缺省=未配置——区分「未配置」与「配了但开关关」）
 };
 

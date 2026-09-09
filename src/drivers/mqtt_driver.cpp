@@ -63,40 +63,37 @@ bool MqttDriver::configure(const QList<DriverTagInfo>& tags)
     m_publishJobs.clear();
     m_subscribeJobs.clear();
     m_conn = {};
+    m_cfg = nullptr;
     m_failCount = 0;
     m_nextRetryMs = 0;
-    bool haveMqttTag = false;
 
     for (const auto& tag : tags) {
         if (!tag.source.startsWith(QStringLiteral("mqtt://")))
-            continue;   // Manager 已按协议分组，双保险过滤
-        haveMqttTag = true;
-        m_mqtt = tag.mqtt;
-        if (m_conn.host.isEmpty() && !tag.conn.isEmpty()) {
-            // 连接参数: deviceName → DeviceConfig MQTT connection_info JSON 键值（Acquisition 展开）
-            m_conn.host = tag.conn.value(QStringLiteral("host"), tag.conn.value(QStringLiteral("broker")));
-            bool okPort = false;
-            int p = tag.conn.value(QStringLiteral("port")).toInt(&okPort);
-            m_conn.port = (okPort && p > 0) ? p : 1883;
-            m_conn.clientId = tag.conn.value(QStringLiteral("clientId"));
-            m_conn.username = tag.conn.value(QStringLiteral("username"));
-            m_conn.password = tag.conn.value(QStringLiteral("password"));   // 加密包——本轮匿名空；日志绝不打印
-            bool okKa = false;
-            int ka = tag.conn.value(QStringLiteral("keepAlive")).toInt(&okKa);
-            m_conn.keepAliveSec = (okKa && ka >= 0) ? ka : 60;
+            continue;   // Manager 已按连接分组，双保险过滤
+        // Z 循环：连接参数内联本连接 cfg（Acquisition 按连接注入 mqttConn——弃 Y 时代 DeviceConfig JSON 展开）
+        m_cfg = tag.mqttConn;
+        if (m_cfg) {
+            m_conn.host = m_cfg->broker;
+            m_conn.port = m_cfg->port > 0 ? m_cfg->port : 1883;
+            m_conn.clientId = m_cfg->clientId;
+            m_conn.username = m_cfg->username;
+            m_conn.password = m_cfg->password;   // nhfw1: 加密包——本轮匿名空（有密码解密 V1.2/凭据批）；日志绝不打印
+            m_conn.keepAliveSec = m_cfg->keepAliveSec >= 0 ? m_cfg->keepAliveSec : 60;
+            // 🟡4（reviewer Z-5）：version=1(MQTT5)/enableTls=true 非默认值 FW 未实现——显式告警防静默降级错连
+            // （本轮按 3.1.1/无 TLS 连接——V1.2 实现前 PC 侧不放开）
+            if (m_cfg->version != 0)
+                qWarning().noquote() << "MqttDriver: 连接" << m_cfg->name << "version=" << m_cfg->version
+                                     << "（5.0）FW 本轮不支持——按 3.1.1 连接（V1.2 实现）";
+            if (m_cfg->enableTls)
+                qWarning().noquote() << "MqttDriver: 连接" << m_cfg->name << "enableTls=true 本轮不支持——按无 TLS 连接（V1.2 实现）";
         }
+        break;   // 首 tag 即带本连接 cfg（每驱动实例只属一个连接——Acquisition 分组保证）
     }
-    if (!haveMqttTag) {
-        qInfo().noquote() << "MqttDriver: 无 mqtt:// 变量，不启动";
+    if (!m_cfg) {
+        qInfo().noquote() << "MqttDriver: 无本连接配置（mqttConn 未注入），不启动";
         return false;
     }
-    if (!m_mqtt || !m_mqtt->hasMqttSettings || !m_mqtt->enableMqtt) {
-        qInfo().noquote() << "MqttDriver: MQTT 未配置/总开关关（hasMqttSettings="
-                          << (m_mqtt ? m_mqtt->hasMqttSettings : false)
-                          << " enableMqtt=" << (m_mqtt ? m_mqtt->enableMqtt : false) << "），不启动";
-        return false;
-    }
-    // 连接参数兜底（MQTT tag 无 deviceName/conn——测试/模拟环境）
+    // 连接参数兜底（模拟/测试环境——环境变量覆盖）
     if (m_conn.host.isEmpty()) {
         m_conn.host = qEnvironmentVariable("NAVIHMI_MQTT_HOST", "127.0.0.1");
         bool okP = false;
@@ -104,11 +101,11 @@ bool MqttDriver::configure(const QList<DriverTagInfo>& tags)
         m_conn.port = (okP && p > 0) ? p : 1883;
     }
 
-    // 按 MqttSettings 建订阅/发布任务（Bindings 引用 TopicName 归组）
+    // 按本连接 cfg 建订阅/发布任务（Bindings 引用本连接 TopicName 归组——西门子同构归属）
     QHash<QString, QList<const MqttBindingConfig*>> bindingsByTopic;
-    for (const auto& b : m_mqtt->bindings)
+    for (const auto& b : m_cfg->bindings)
         bindingsByTopic[b.topicName].append(&b);
-    for (const auto& tc : m_mqtt->topics) {
+    for (const auto& tc : m_cfg->topics) {
         const auto bs = bindingsByTopic.value(tc.name);
         if (tc.direction == MqttTopicDirection::Subscribe) {
             SubscribeJob j;
@@ -132,11 +129,11 @@ bool MqttDriver::configure(const QList<DriverTagInfo>& tags)
         }
     }
     if (m_subscribeJobs.isEmpty() && m_publishJobs.isEmpty()) {
-        qInfo().noquote() << "MqttDriver: MQTT 配置无 Topic/Binding（映射未建），不启动";
+        qInfo().noquote() << "MqttDriver: 连接" << m_cfg->name << "无 Topic/Binding（映射未建），不启动";
         return false;
     }
-    qInfo().noquote() << "MqttDriver: 配置就绪 host=" << m_conn.host << "port=" << m_conn.port
-                      << "sub=" << m_subscribeJobs.size() << "pub=" << m_publishJobs.size();
+    qInfo().noquote() << "MqttDriver: 配置就绪 连接=" << m_cfg->name << "host=" << m_conn.host
+                      << "port=" << m_conn.port << "sub=" << m_subscribeJobs.size() << "pub=" << m_publishJobs.size();
     return true;
 }
 
@@ -159,16 +156,17 @@ void MqttDriver::stop()
 
 void MqttDriver::ensureConnected()
 {
-    if (!m_mqtt || !m_mqtt->hasMqttSettings || !m_mqtt->enableMqtt)
-        return;
+    if (!m_cfg)
+        return;   // Z 循环：configure 未注入本连接配置（Acquisition 只在 enableMqtt 时建驱动——此处防御）
     if (!m_client) {
         m_client = new QMqttClient(this);
         connect(m_client, &QMqttClient::connected, this, [this]() {
             m_connected = true;
             m_failCount = 0;
             m_nextRetryMs = 0;
-            qInfo().noquote() << "MqttDriver: 已连接" << m_conn.host << m_conn.port;
+            qInfo().noquote() << "MqttDriver: 已连接" << m_cfg->name << m_conn.host << m_conn.port;
             emit stateChanged(true);
+            emitConnState(int(MqttConnState::Connected));   // Z：StatusTag 4 态回写（2=已连接）
             // 连接成功 → 订阅全部订阅 topic（含通配符）
             for (const auto& j : m_subscribeJobs) {
                 auto* sub = m_client->subscribe(QMqttTopicFilter(j.topic), quint8(j.qos));
@@ -194,6 +192,7 @@ void MqttDriver::ensureConnected()
             m_connecting = false;
             qInfo().noquote() << "MqttDriver: 已断开（将退避重连）";
             emit stateChanged(false);
+            emitConnState(int(MqttConnState::Disconnected));   // Z：4 态回写（0=未连接）
             // Y-4 reviewer 🟡3：断线不计失败计数——失败统一走 errorChanged（防同一次失败双计数，20 次报警按真实失败推进）
         });
         connect(m_client, &QMqttClient::messageReceived, this,
@@ -205,14 +204,18 @@ void MqttDriver::ensureConnected()
                 [this](QMqttClient::ClientError e) {
             if (m_connected || e == QMqttClient::NoError) return;
             m_failCount++;
+            m_connecting = false;   // 🟡7（reviewer Z-5）：失败须清 connecting——若 broker 只发 errorChanged 不发 disconnected，
+                                    // 不清则 m_connecting 卡 true → 永不重试（Y 遗留，4 态后影响面变大）
             const qint64 now = QDateTime::currentMSecsSinceEpoch();
             m_nextRetryMs = now + qMin(kMaxRetryMs, kMinRetryMs * (1LL << qMin(6, m_failCount)));
+            emitConnState(int(MqttConnState::Error));   // Z：4 态回写（3=错误/连接失败退避中）
             // 降频日志（防高频刷屏）；连续 20 次报警（防静默失败——执行书 Y-4）
             if (m_failCount % 5 == 1 || m_failCount == kFailWarnThreshold) {
                 qWarning().noquote() << "MqttDriver: 连接失败（连续" << m_failCount << "次，错误"
                                      << int(e) << "）——" << (m_failCount >= kFailWarnThreshold ? "已达报警阈值" : "退避重连中");
                 if (m_failCount >= kFailWarnThreshold)
-                    emit connectionError(QStringLiteral("MQTT 连续 %1 次连接失败（host: %2）").arg(m_failCount).arg(m_conn.host));
+                    emit connectionError(QStringLiteral("MQTT 连续 %1 次连接失败（连接: %2 host: %3）")
+                                             .arg(m_failCount).arg(m_cfg ? m_cfg->name : QString()).arg(m_conn.host));
             }
         });
         m_client->setHostname(m_conn.host);
@@ -221,9 +224,9 @@ void MqttDriver::ensureConnected()
         else m_client->setClientId(nextClientId());
         if (!m_conn.username.isEmpty()) {
             m_client->setUsername(m_conn.username);
-            // 密码：加密包——FW 解密后设置（本轮匿名空；有密码场景 V1.2 解密——绝不明文日志）
+            // 密码：加密包——FW 解密后设置（本轮匿名空；有密码场景 V1.2/凭据批解密——绝不明文日志）
             if (!m_conn.password.isEmpty())
-                qWarning().noquote() << "MqttDriver: 密码为加密包，本轮匿名联调不消费（V1.2 解密）——已忽略";
+                qWarning().noquote() << "MqttDriver: 密码为加密包，本轮匿名联调不消费（解密待凭据批）——已忽略";
         }
         m_client->setKeepAlive(quint16(m_conn.keepAliveSec));
     }
@@ -233,7 +236,16 @@ void MqttDriver::ensureConnected()
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (now < m_nextRetryMs) return;
     m_connecting = true;
+    emitConnState(int(MqttConnState::Connecting));   // Z：4 态回写（1=连接中——发起连接尝试）
     m_client->connectToHost();
+}
+
+void MqttDriver::emitConnState(int state)
+{
+    if (state == m_lastState)
+        return;   // 状态未变不重复广播（StatusTag 少写）
+    m_lastState = state;
+    emit connectionStateChanged(state);
 }
 
 void MqttDriver::ParseAndDispatch(const QByteArray& message, const QString& sourceTopic)
@@ -347,8 +359,8 @@ void MqttDriver::poll(qint64 nowMs)
 {
     // Y-4 reviewer 🔴1：每 100ms tick 驱动重连（对齐 Modbus ensureConnected 模式）——
     // 否则首连失败/断线后退避到期无触发源（断线重连整套死代码）
-    if (!m_mqtt || !m_mqtt->hasMqttSettings || !m_mqtt->enableMqtt)
-        return;
+    if (!m_cfg)
+        return;   // Z 循环：本连接配置（Acquisition 保证 enableMqtt 才建）
     ensureConnected();
     if (!m_client || m_client->state() != QMqttClient::Connected) return;
     // 周期发布（intervalMs > 0 且到期）

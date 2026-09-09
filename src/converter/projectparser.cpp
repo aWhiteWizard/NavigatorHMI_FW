@@ -390,36 +390,52 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
         out.security.lockMinutes = sec.lock_minutes();
     }
 
-    // Y-2/Y-4（2026-09-10）：MQTT 三层映射解析（proto mqtt_settings=24；缺省 = 未配置 MQTT）
+    // Y-2/Y-4 + Z 循环多连接（2026-09-11）：MQTT 解析（proto mqtt_settings=24；缺省 = 未配置 MQTT）
+    // Z：只认 connections（repeated MqttConnection——每连接 name + config 内联参数 + topics + bindings）；
+    // 旧单份 device_name/topics/bindings（deprecated）不解析不兜底（用户 2026-09-11 拍板：FW 不兜底）
     if (pb.has_mqtt_settings()) {
         const auto& ms = pb.mqtt_settings();
         out.mqtt.hasMqttSettings = true;
         out.mqtt.enableMqtt = ms.enable_mqtt();
         out.mqtt.schemaVersion = ms.schema_version();
-        out.mqtt.deviceName = s(ms.device_name());   // Y Check 裁决（2026-09-11）：选定 MQTT 设备名（连接参数真源）
         // Y-4 reviewer 🟡13：JSON 模板 schema 版本不匹配告警（proto 注释「PC/设备共用——联调硬约束」；
         // 当前唯一版本 = 1，未来模板演化时两端同步升版）
         if (ms.schema_version() != 1)
             qWarning("projectparser: MQTT JSON 模板 schema_version=%d 与本设备支持的 1 不匹配——JSON 字段语义可能不一致",
                      ms.schema_version());
-        for (const auto& pt : ms.topics()) {
-            MqttTopicConfig tc;
-            tc.name = s(pt.name());
-            tc.direction = static_cast<MqttTopicDirection>(pt.direction());
-            tc.topic = s(pt.topic());
-            tc.qos = pt.qos();
-            tc.retain = pt.retain();
-            tc.publishIntervalMs = pt.publish_interval_ms();
-            tc.jsonTemplate = static_cast<MqttJsonTemplate>(pt.json_template());
-            tc.responseTopic = s(pt.response_topic());
-            out.mqtt.topics.append(tc);
-        }
-        for (const auto& pb : ms.bindings()) {
-            MqttBindingConfig bc;
-            bc.topicName = s(pb.topic_name());
-            bc.tagName = s(pb.tag_name());
-            bc.fieldName = s(pb.field_name());
-            out.mqtt.bindings.append(bc);
+        for (const auto& mc : ms.connections()) {
+            MqttConnectionConfig cc;
+            cc.name = s(mc.name());
+            const auto& cfg = mc.config();
+            cc.broker = s(cfg.broker());
+            cc.port = cfg.port();
+            cc.version = cfg.version();
+            cc.clientId = s(cfg.client_id());
+            cc.username = s(cfg.username());
+            cc.password = s(cfg.password());
+            cc.keepAliveSec = cfg.keep_alive_sec();
+            cc.enableTls = cfg.enable_tls();
+            cc.statusTag = s(cfg.status_tag());
+            for (const auto& pt : mc.topics()) {
+                MqttTopicConfig tc;
+                tc.name = s(pt.name());
+                tc.direction = static_cast<MqttTopicDirection>(pt.direction());
+                tc.topic = s(pt.topic());
+                tc.qos = pt.qos();
+                tc.retain = pt.retain();
+                tc.publishIntervalMs = pt.publish_interval_ms();
+                tc.jsonTemplate = static_cast<MqttJsonTemplate>(pt.json_template());
+                tc.responseTopic = s(pt.response_topic());
+                cc.topics.append(tc);
+            }
+            for (const auto& pb : mc.bindings()) {
+                MqttBindingConfig bc;
+                bc.topicName = s(pb.topic_name());
+                bc.tagName = s(pb.tag_name());
+                bc.fieldName = s(pb.field_name());
+                cc.bindings.append(bc);
+            }
+            out.mqtt.connections.append(cc);
         }
     }
 

@@ -13,6 +13,7 @@
 #include <QObject>
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QVariant>
 #include <QTimer>
@@ -40,7 +41,7 @@ public:
 private:
     void tick();                    // 100ms 调度: driver.poll（到期读）
     void onDriverValueRead(const QString& tagName, const QVariant& value, double deadband);   // deadband + 写 DataManager
-    /// 设备连接参数展开（deviceName → DeviceConfig.connectionInfo JSON 键值；空 = 无设备）
+    /// 设备连接参数展开（deviceName → DeviceConfig.connectionInfo JSON 键值；空 = 无设备——modbus 用）
     QHash<QString, QString> connInfoForDevice(const QString& deviceName) const;
     /// 按 source 前缀路由协议（modbus:// → modbus_tcp；mqtt:// → mqtt；空 → 未知）
     QString protocolForSource(const QString& source) const;
@@ -50,7 +51,11 @@ private:
     Project m_project;
     DataManager* m_dataManager = nullptr;
     QTimer* m_timer = nullptr;
-    QList<IDriver*> m_drivers;            // Y-4: 多协议驱动列表（modbus_tcp/mqtt 并存）
+    QList<IDriver*> m_drivers;            // Y-4: 多协议驱动列表（modbus_tcp + mqtt×连接 并存）
+    /// Z 循环：driver → 本连接配置映射（StatusTag 回写按连接找 status_tag；驱动销毁时同步清）
+    QHash<const IDriver*, const MqttConnectionConfig*> m_driverConns;
+    /// StatusTag 未声明告警去重（每 tag 首现 qWarning——reviewer Z-5 🟡6）
+    QSet<QString> m_statusTagWarned;
     QHash<QString, QVariant> m_lastVal;   // deadband 判断（跨协议统一语义——原 Acquisition per-tag lastVal 上移）
 };
 
