@@ -76,11 +76,16 @@ void Acquisition::setProject(const Project& proj)
         DriverTagInfo info;
         info.name = tag.name;
         info.source = tag.source;
-        info.deviceName = tag.deviceName;
+        // Y Check 裁决（2026-09-11）：MQTT 连接参数真源 = MqttSettings.deviceName（选定设备）——
+        // 非空时所有 mqtt tag 统一用选定设备展开连接（工程级单 MQTT 连接语义；旧工程 deviceName 空回退 tag.deviceName）
+        if (proto == QLatin1String("mqtt") && !m_project.mqtt.deviceName.isEmpty())
+            info.deviceName = m_project.mqtt.deviceName;
+        else
+            info.deviceName = tag.deviceName;
         info.dataType = int(tag.dataType);
         info.scanMs = tag.scanIntervalMs;
         info.deadband = tag.deadband;
-        info.conn = connInfoForDevice(tag.deviceName);
+        info.conn = connInfoForDevice(info.deviceName);
         info.mqtt = &m_project.mqtt;   // Y-4: MQTT 三层映射注入（MqttDriver configure 消费）
         byProtocol[proto].append(info);
     }

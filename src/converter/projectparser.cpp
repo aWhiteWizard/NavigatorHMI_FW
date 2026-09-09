@@ -396,6 +396,7 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
         out.mqtt.hasMqttSettings = true;
         out.mqtt.enableMqtt = ms.enable_mqtt();
         out.mqtt.schemaVersion = ms.schema_version();
+        out.mqtt.deviceName = s(ms.device_name());   // Y Check 裁决（2026-09-11）：选定 MQTT 设备名（连接参数真源）
         // Y-4 reviewer 🟡13：JSON 模板 schema 版本不匹配告警（proto 注释「PC/设备共用——联调硬约束」；
         // 当前唯一版本 = 1，未来模板演化时两端同步升版）
         if (ms.schema_version() != 1)

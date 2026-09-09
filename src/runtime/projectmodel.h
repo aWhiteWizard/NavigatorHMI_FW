@@ -266,6 +266,8 @@ struct MqttBindingConfig {
 struct MqttSettings {
     bool enableMqtt = false;   // 总开关（禁用：FW 不建连接对象）
     int schemaVersion = 1;
+    QString deviceName;        // Y Check 裁决（2026-09-11）：选定的 MQTT 设备名（DeviceConfig.Name，proto 6）——
+                               // FW 连接参数真源：优先本字段 → 该 DeviceConfig.connection_info（connInfoForDevice）；空 = 回退 tag.deviceName 旧逻辑
     QList<MqttTopicConfig> topics;
     QList<MqttBindingConfig> bindings;
     bool hasMqttSettings = false;   // proto 有 mqtt_settings 消息（缺省=未配置——区分「未配置」与「配了但开关关」）
