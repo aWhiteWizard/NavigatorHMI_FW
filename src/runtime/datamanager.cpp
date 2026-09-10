@@ -77,6 +77,8 @@ void DataManager::setValue(const QString& tagName, const QVariant& value)
                   // QML onValueChanged 同值不触发 → OnValueChange 事件链自环天然断在源头；
                   // 增值类动作自激（每次值变）由 RuntimeBus 风暴熔断（保险②）兜底）
     m_values.insert(tagName, value);
+    ++m_valueRevision;
+    emit valueRevisionChanged();   // 先修订号（QML 绑定依赖失效重求值）再 valueChanged（订阅侧显式刷新）
     emit valueChanged(tagName, value);
 }
 

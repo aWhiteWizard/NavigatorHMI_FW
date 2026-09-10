@@ -80,9 +80,15 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: 4
         // 绑定变量 → DataManager 实时值; 否则自身 value
-        text: boundTag !== "" && dataManager !== undefined && dataManager !== null
-              ? dataManager.value(boundTag) + ""
-              : root.value.toFixed(2)
+        // 2026-09-11 Check 修复：dataManager.value(tag) 是函数调用，QML 不做依赖跟踪 → 值变化不刷新绑定
+        //   （现象：同画面内数值不动，切画面重建控件才读到新值）。故绑定里先读 valueRevision 注册依赖。
+        text: {
+            if (boundTag !== "" && dataManager !== undefined && dataManager !== null) {
+                var rev = dataManager.valueRevision;   // 依赖锚点（值变化 → 本绑定重求值）
+                return String(dataManager.value(boundTag));
+            }
+            return root.value.toFixed(2);
+        }
         color: root.textColor
         font.pixelSize: root.fontSize
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"

@@ -17,11 +17,19 @@ namespace navihmi {
 class DataManager : public QObject
 {
     Q_OBJECT
+    /// 值修订号（Z 循环 Check 2026-09-11：QML 绑定 `dataManager.value(tag)` 是**函数调用**，
+    /// QML 无法对其做依赖跟踪 → 同画面内值变化不刷新绑定（仅切画面重建控件时才读到新值）。
+    /// 每次 setValue 生效时递增并 emit valueRevisionChanged；QML 绑定表达式里读一次本属性即注册依赖 → 值变化重求值。
+    /// 用法（QML）：`text: { var rev = dataManager.valueRevision; return String(dataManager.value(boundTag)) }`）
+    Q_PROPERTY(int valueRevision READ valueRevision NOTIFY valueRevisionChanged)
 public:
     explicit DataManager(QObject* parent = nullptr);
 
     /// 初始化变量表（从工程模型建初始值：用 baseValue）
     void setProject(const Project& proj);
+
+    /// 值修订号（QML 绑定依赖跟踪锚点——见 Q_PROPERTY 说明）
+    int valueRevision() const { return m_valueRevision; }
 
     /// 读取变量值（不存在返回 invalid QVariant）
     Q_INVOKABLE QVariant value(const QString& tagName) const;
@@ -40,11 +48,14 @@ public:
 signals:
     /// 变量值变化（QML 组件订阅刷新）
     void valueChanged(const QString& tagName, const QVariant& value);
+    /// 值修订号变化（QML 绑定依赖跟踪用——见 valueRevision Q_PROPERTY 说明）
+    void valueRevisionChanged();
 
 private:
     QHash<QString, QVariant> m_values;
     QHash<QString, QString> m_sources;   // J-1: tagName -> Tag.source
     QHash<QString, int> m_types;         // W-E: tagName -> TagDataType（int——tagType() 转名）
+    int m_valueRevision = 0;             // 值修订号（setValue 生效时递增）
 };
 
 } // namespace navihmi
