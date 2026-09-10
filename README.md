@@ -42,7 +42,7 @@ NavigatorHMI_FW（本仓库）
 | **converter** | .navihmi → QML | projectparser 解 proto（protobuf LITE）；qmlgenerator 生成每画面 QML（控件属性并集输出 + 事件信号绑定）；世界地图输出 bounds/作业点/范围点/tileBasePath |
 | **runtimebus** | 事件路由 | QML `runtimeBus.emitEvent(obj, type)` → 按工程配置匹配控件事件 → 执行动作（screen_switch/tag_write/tag_add/.../run_command）；⑪同名事件限当前+上一+全局画面；TraceLog（NAVIHMI_TRACE） |
 | **datamanager** | 变量中心 | 变量值存储（baseValue 初始化）；`value/setValue/hasTag`；valueChanged 通知（同值跳过防回环）；交互控件绑定（R1） |
-| **vncmirror** | VNC 镜像 | 生产端 markDirty 报告（西门子 dirty-rect 模式）+ 局部读回 + 心跳帧率；切页分条带；NAVIHMI_VNC 开关 |
+| **vncmirror** | VNC 镜像 | 生产端 markDirty 报告（脏矩形 dirty-rect 模式）+ 局部读回 + 心跳帧率；切页分条带；NAVIHMI_VNC 开关 |
 | **QML 组件库** | 19 控件 | 与 PC 端控件契约对齐（属性并集容忍）；交互控件 boundTag 绑 DataManager（状态持久化） |
 | **hwt** | 板级覆盖 | buildroot 配置（rk3562_navihmi_defconfig：Qt6.4.3 + protobuf + openssh）；fs-overlay（navigatorhmi-fw / VNC 键盘模块 / logo 素材） |
 

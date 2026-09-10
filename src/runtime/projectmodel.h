@@ -240,7 +240,7 @@ struct SecuritySettings {
 // ═══════════════════════════════════════════════════════════════
 // Y-2/Y-4 MQTT 三层映射 + Z 循环多连接重构（2026-09-11）
 // 连接参数内联 MqttConnectionConfig（proto MqttConnection.config——弃 Y 时代 DeviceConfig JSON 真源；
-// FW 不兜底旧单份 device_name——用户 2026-09-11 拍板；每连接独立 topics/bindings，西门子同构归属）
+// FW 不兜底旧单份 device_name——用户 2026-09-11 拍板；每连接独立 topics/bindings，连接归属：Binding 挂哪棵 Topic 树即属该连接）
 // ═══════════════════════════════════════════════════════════════
 
 enum class MqttTopicDirection { Publish = 0, Subscribe = 1 };

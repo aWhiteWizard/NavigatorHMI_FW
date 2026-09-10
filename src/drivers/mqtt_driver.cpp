@@ -101,7 +101,7 @@ bool MqttDriver::configure(const QList<DriverTagInfo>& tags)
         m_conn.port = (okP && p > 0) ? p : 1883;
     }
 
-    // 按本连接 cfg 建订阅/发布任务（Bindings 引用本连接 TopicName 归组——西门子同构归属）
+    // 按本连接 cfg 建订阅/发布任务（Bindings 引用本连接 TopicName 归组——连接归属：Binding 挂哪棵 Topic 树即属该连接）
     QHash<QString, QList<const MqttBindingConfig*>> bindingsByTopic;
     for (const auto& b : m_cfg->bindings)
         bindingsByTopic[b.topicName].append(&b);

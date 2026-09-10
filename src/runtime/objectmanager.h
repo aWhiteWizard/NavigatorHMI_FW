@@ -2,7 +2,7 @@
  * @FilePath: \NavigatorHMI_FW\src\runtime\objectmanager.h
  * @Description: 对象管理器（架构三件套之一，G-0 新增）——全局对象注册表（画面/控件实例 + 系统对象）
  *               跨画面寻址 screenName.objectName；暴露可读属性（映射 QML 属性）
- *               西门子 SmartLine om/objectmanager 对照：数据中枢，UI/脚本/报警/通信统一经此访问
+ *               分层对照（om/objectmanager 层）：数据中枢，UI/脚本/报警/通信统一经此访问
  */
 #pragma once
 

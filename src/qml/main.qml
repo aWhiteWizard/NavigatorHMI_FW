@@ -127,7 +127,7 @@ Window {
         // G-0: ObjectManager 当前画面同步（空 screenName 寻址的默认上下文）
         if (objectManager) objectManager.setCurrentScreen(screenFiles[index].name)
         screenLoader.source = "file://" + screenFiles[index].file
-        // VNC 脏矩形：切页 → 全屏报告（西门子 dirty-rect 模式；QML 生产端报告变化区域——物理屏全幅）
+        // VNC 脏矩形：切页 → 全屏报告（脏矩形 dirty-rect 模式；QML 生产端报告变化区域——物理屏全幅）
         if (vncMirror) vncMirror.markDirty(0, 0, physicalWidth, physicalHeight)
     }
 

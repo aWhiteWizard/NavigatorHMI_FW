@@ -93,7 +93,7 @@ void Acquisition::setProject(const Project& proj)
             byProtocol[proto].append(info);
         }
     }
-    // Z 循环：mqtt 按连接分组（西门子同构——Binding 挂哪棵 Topic 树即属哪个连接；enableMqtt 关 → 不建任何连接对象）
+    // Z 循环：mqtt 按连接分组（连接归属——Binding 挂哪棵 Topic 树即属哪个连接；enableMqtt 关 → 不建任何连接对象）
     const bool mqttEnabled = m_project.mqtt.hasMqttSettings && m_project.mqtt.enableMqtt;
     if (mqttEnabled) {
         for (const auto& conn : m_project.mqtt.connections) {

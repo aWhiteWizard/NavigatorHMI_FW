@@ -7,7 +7,7 @@
  *                               → valueRead(tagName, 值) → Acquisition deadband + DataManager.setValue
  *               数据流（发布）：writeValue(tagName, value)（DataManager.valueChanged → handleValueWritten 转发）
  *                               → 找本连接发布绑定 → 组 JSON → publish；poll 周期发布（含初始全量）
- *               映射：本连接 cfg.topics/bindings（西门子同构归属——Binding 挂 Topic 树即属本连接）
+ *               映射：本连接 cfg.topics/bindings（连接归属——Binding 挂 Topic 树即属本连接）
  *               断线重连：1s→60s 退避（失败次数指数）+ 连续 20 次报警 + connectionStateChanged(4 态) StatusTag 回写
  */
 #pragma once

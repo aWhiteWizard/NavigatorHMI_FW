@@ -46,7 +46,7 @@ public:
     void stop();
     bool isRunning() const { return m_server != nullptr; }
 
-    /// QML 生产端报告画面变化区域（西门子 dirty-rect 模式：QML 层知道哪里变了，
+    /// QML 生产端报告画面变化区域（脏矩形 dirty-rect 模式：QML 层知道哪里变了，
     /// VNC 只读该区域全分辨率，绕开全帧 792ms 读回）。线程安全。
     Q_INVOKABLE void markDirty(int x, int y, int w, int h);
 

@@ -624,7 +624,7 @@ int main(int argc, char *argv[])
     navihmi::DataManager dataManager;
 
     // G-0: 对象管理器（架构三件套之一）——全局对象注册表 + 跨画面寻址
-    // 系统对象注册：dataManager/runtimeBus（三件套数据访问统一入口, 西门子 Proxy 模式）
+    // 系统对象注册：dataManager/runtimeBus（三件套数据访问统一入口，Proxy 模式）
     navihmi::ObjectManager objectManager;
 
     // G-1a: 用户系统（登录/注销/权限/管理；三件套 UserView 数据源）
@@ -713,7 +713,7 @@ int main(int argc, char *argv[])
 
     // VNC 镜像（eglfs 物理屏照常，额外远程通道，端口默认 5900 见 fw-config.json；按工程 enable_vnc 启停）
     navihmi::VncManager vncManager(qobject_cast<QQuickWindow*>(rootObj));
-    // QML 生产端脏矩形报告（西门子 dirty-rect 模式：画面变化点调 vncManager.markDirty）
+    // QML 生产端脏矩形报告（脏矩形 dirty-rect 模式：画面变化点调 vncManager.markDirty）
     engine.rootContext()->setContextProperty("vncMirror", &vncManager);
     // K-9: VNC 运行时启停注入——SSH CLI 命令（无条件，不依赖 HTTP）；proto enable_vnc=21 启动默认值，运行时指令覆盖
     commandService.setVncManager(&vncManager);
