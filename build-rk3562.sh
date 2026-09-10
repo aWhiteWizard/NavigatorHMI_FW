@@ -112,10 +112,21 @@ apply_hwt() {
     local src_dir=$1
     local dst_dir=$2
     if [ -d "${HWT}/${src_dir}" ] && [ "$(ls -A ${HWT}/${src_dir} 2>/dev/null)" ]; then
-        echo ">>> 应用 hwt/${src_dir} 覆盖到 ${dst_dir} ..."
-        for item in ${HWT}/${src_dir}/*; do
+        echo ">>> 应用 ${HWT}/${src_dir} 覆盖到 ${dst_dir} ..."
+        # AB-1（2026-09-11）：dotglob 让隐藏条目（.config）也参与覆盖——
+        # 此前 `for item in ${HWT}/${src_dir}/*` 不匹配点开头文件，导致
+        # menuconfig 存下的 hwt/rk3562/kernel/.config 从不生效（构建静默沿用 SDK 旧 .config）。
+        # 约定：${HWT}/${src_dir} 顶层只放显式声明的点文件（如 .config）——顶层任何点文件
+        # 都会被 cp -rf 进 SDK 源码根；子目录内容随目录整体合并，不受 dotglob 影响。
+        local prev_dotglob
+        prev_dotglob=$(shopt -p dotglob 2>/dev/null || true)
+        shopt -s dotglob
+        for item in "${HWT}/${src_dir}"/*; do
+            [ -e "$item" ] || continue          # 无匹配时 glob 原样展开为字面量，跳过
             cp -rf "$item" "${dst_dir}/"
         done
+        # 还原调用前的 dotglob 状态（shopt -p 失败/为空串时显式关闭；eval "" 返回 0 不会兜底）
+        if [ -n "${prev_dotglob}" ]; then eval "${prev_dotglob}"; else shopt -u dotglob; fi
     fi
 }
 
