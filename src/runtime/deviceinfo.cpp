@@ -14,9 +14,11 @@ namespace navihmi {
 
 namespace {
 // 版本号（与 CMake project VERSION 对齐；无宏时兜底）
-// 2026-09-04：v1.1.0 = 调试基线（用户定：调试期每次编译 FW 版本恒 v1.1.0，OTA 包唯一性靠打包时刻——见 otaTimestamp）
+// 2026-10-24：v1.1.1 = RTSP 断流卡死修复版（用户定：修复后版本号自 v1.1.0 提升；OTA 包唯一性仍靠打包时刻——见 otaTimestamp）
+// 版本号单点化（2026-10-24 复审 O1）：正常构建由 CMake 注入 NAVIGATORHMI_VERSION_STR="${PROJECT_VERSION}"；
+// 下面仅为兜底，用哨兵值 "0.0.0-fallback"——若设备信息页出现它，说明 CMake 宏未生效（一眼可辨，防静默等价）。
 #ifndef NAVIGATORHMI_VERSION_STR
-#define NAVIGATORHMI_VERSION_STR "1.1.0"
+#define NAVIGATORHMI_VERSION_STR "0.0.0-fallback"
 #endif
 } // namespace
 

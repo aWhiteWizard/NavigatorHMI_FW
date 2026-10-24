@@ -44,6 +44,7 @@
 #include "runtime/fwconfig.h"   // K-9 评论3：VNC 端口配置单点
 #include "ota/otaupdater.h"     // D1：.fw OTA 安装器（app 替换→重启；rootfs/kernel 分区路径）
 #include "runtime/touchcalibrator.h"
+#include "runtime/rtsp_probe.h"   // AC-2（2026-10-24）：网络视频源可达性预探测
 #include "runtime/devicemeta.h"   // kDefaultDeviceWidth/Height 单点（K-9 评论1：默认分辨率收敛，替代本地 kDefaultDevW/H）
 #include "cli/commands.h"
 #include "cli/cliserver.h"
@@ -578,7 +579,12 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("NavigatorHMI_FW"));
-    app.setApplicationVersion(QStringLiteral("1.1.0"));   // v1.1.0 = 调试基线（2026-09-04 用户定：调试期每次编译 FW 版本恒 v1.1.0，OTA 包文件名带打包时刻区分——NavigatorHMI_v1.1.0_7inch_<YYYYMMDDHHMMSS>.fw）
+    // v1.1.1（2026-10-24 用户定：RTSP 断流卡死修复后版本号自 v1.1.0 提升；OTA 包文件名仍带打包时刻区分——
+    //   NavigatorHMI_v1.1.1_7inch_<YYYYMMDDHHMMSS>.fw）。复审 O1：改用 CMake 注入的宏，与 deviceinfo 同源单点。
+#ifndef NAVIGATORHMI_VERSION_STR
+#define NAVIGATORHMI_VERSION_STR "0.0.0-fallback"
+#endif
+    app.setApplicationVersion(QStringLiteral(NAVIGATORHMI_VERSION_STR));
 
     // 启动诊断（B6-8）: 信号处理器——退出原因定位
     std::signal(SIGSEGV, onSignal);
@@ -662,6 +668,10 @@ int main(int argc, char *argv[])
     // 注: 必须在 engine.load 之前注入——main.qml 顶层绑定引用 touchCalibrator
     navihmi::TouchCalibrator touchCalibrator;
 
+    // AC-2（2026-10-24）：网络视频源可达性预探测（RTSP 不可达 ⇒ 整机卡死修复的 L1 层）
+    // 必须在 engine 之前构造（同下方 M1 纪律）；QML 侧以 context property `rtspProbe` 使用
+    navihmi::RtspProbe rtspProbe;
+
     QQmlApplicationEngine engine;
 
     // ── 服务初始化 + context property 注入（engine.load 之前）──
@@ -680,6 +690,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("dataLogger", &dataLogger);
     engine.rootContext()->setContextProperty("deviceInfo", &deviceInfo);
     engine.rootContext()->setContextProperty("storageInfo", &storageInfo);
+    engine.rootContext()->setContextProperty("rtspProbe", &rtspProbe);   // AC-2: 网络视频源预探测
     touchCalibrator.setProjectPath(projectPath);   // FW 自重启(--project)用原始工程路径
     engine.rootContext()->setContextProperty("touchCalibrator", &touchCalibrator);
 

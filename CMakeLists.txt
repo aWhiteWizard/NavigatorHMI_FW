@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(NavigatorHMI_FW VERSION 1.1.0 LANGUAGES C CXX)
+project(NavigatorHMI_FW VERSION 1.1.1 LANGUAGES C CXX)
 
 # ============================================================
 # NavigatorHMI FW 应用（跨平台）
@@ -186,6 +186,9 @@ if(SOURCES)
         FW_PLATFORM_BACKEND="${FW_PLATFORM_BACKEND}"
         FW_QT_MAJOR=${QT_VERSION_MAJOR}
         NAVIHMI_HAVE_MODBUS_DRIVER=1   # V-1 驱动插件化：Modbus TCP 驱动注册（裁剪关掉则不注册）
+        # 版本号单点（2026-10-24 复审建议）：由 project VERSION 注入，deviceinfo.cpp 里的 #define 降级为哨兵兜底
+        # —— 原三处（CMake/main.cpp/deviceinfo.cpp）靠人工同步，实测已漂移过一次（v1.1.0→v1.1.1）
+        NAVIGATORHMI_VERSION_STR="${PROJECT_VERSION}"
     )
     message(STATUS "已添加可执行目标: ${PROJECT_NAME}")
     message(STATUS "源文件数量: ${SOURCES} + proto: ${PROTO_SRCS}")

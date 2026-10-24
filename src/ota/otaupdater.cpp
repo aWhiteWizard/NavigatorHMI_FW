@@ -90,8 +90,8 @@ QString OtaUpdater::install(const QString& stagingFwPath)
     }
 
     emit progress(100, QStringLiteral("OTA 安装完成，即将重启"));
-    // 2026-09-04 调试 OTA：全部组件安装成功 → 记录 .fw header 打包时刻（PC 端同版 v1.1.0 覆盖判断依据——
-    // 调试期版本恒 v1.1.0，靠打包时刻先后区分每次调试固件；用户 2026-09-04 裁决「按打包时间」）
+    // 全部组件安装成功 → 记录 .fw header 打包时刻（PC 端覆盖判断依据：版本号优先，同版本号时按打包时刻
+    // 先后区分——版本号已随每次发布提升（2026-10-24 起 v1.1.1），打包时刻用于同版本重打包场景）
     // header 布局（FwPackageBuilder 单一事实源）：magic4 + version16 + timestamp8(LE, 偏移 20) + count4 + sha64
     {
         quint64 packTs = 0;
@@ -303,7 +303,7 @@ QString OtaUpdater::installRootfsFiles(const Component& comp, const QByteArray& 
         }
 
         // 备份目录准备辅助：mkpath + 同 relPath 三形态标记统一清理
-        // （审查 🟡：恒 v1.1.0 调试流程同 fwver 备份目录复用——不清陈旧 .new/.symlink 会被回滚重放/顺序依赖）
+        // （审查 🟡：同版本重复打包时 fwver 备份目录会被复用——不清陈旧 .new/.symlink 会被回滚重放/顺序依赖）
         auto prepareBackupDir = [&]() -> bool {
             if (!QDir().mkpath(QFileInfo(backupPath).absolutePath())) return false;
             for (const auto& suffix : { QStringLiteral(""), QStringLiteral(".new"), QStringLiteral(".symlink") }) {

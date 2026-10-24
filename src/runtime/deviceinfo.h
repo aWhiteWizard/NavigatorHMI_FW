@@ -40,7 +40,8 @@ public:
     /// （低频命令路径，阻塞可接受；QML 用异步 ipAddress() 防 GUI 卡顿）。结果缓存 m_ip（QML 后续读一致）。
     QString ipAddressBlocking() const;
     /// 当前生效固件的 OTA 打包时刻（/etc/navigatorhmi/ota-installed-ts，Unix 秒字符串；
-    /// 未 OTA 装过/旧固件无标记 → "0"）——2026-09-04 调试 OTA：版本恒 v1.1.0，PC 端按打包时刻先后判断是否可覆盖
+    /// 未 OTA 装过/旧固件无标记 → "0"）——PC 端按打包时刻先后判断是否可覆盖（同版本号时靠它区分先后；
+    /// 版本号已随每次发布提升，2026-10-24 起为 v1.1.1）
     QString otaTimestamp() const;
 
     /// 运行时间（/proc/uptime 秒 → "Xd Xh Ym"），QML Timer 周期调用
