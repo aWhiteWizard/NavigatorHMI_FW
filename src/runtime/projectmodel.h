@@ -122,8 +122,8 @@ struct Widget {
     QStringList historyTagTitles;    // Q-6(2026-09-04): 各变量列显示名（平行 historyTags[i]；空=显示变量名——老工程兼容）
     // 窗口控件扩展 (P-5)
     int displayMode = 0;             // WindowWidget AlarmView 显示模式：0=当前报警 1=报警缓冲区（DisplayMode 权威）
-    // Frame 视频 (P-6 2026-09-02)
-    bool showVideo = false;          // Frame 视频模式（checkbox——true=视频；false/无源=普通 Frame）
+    // Frame 视频 (P-6 2026-09-02；AD 2026-10-24 用户裁决：Frame 恒为视频控件)
+    bool showVideo = true;           // 恒 true（字段仅为 proto 契约兼容保留；生成器不再按它分支）
     QString videoSource;             // Frame 视频源（本地路径打包 / rtsp:// URL 不入包）
     // R-4 (2026-09-05 用户 Check): Frame 播放控制变量（布尔驱动播放/暂停；空=未绑定）
     QString playTag;                 // true=播放 false=暂停（点击控件翻转并写回）

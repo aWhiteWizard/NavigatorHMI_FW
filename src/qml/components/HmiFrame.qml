@@ -18,7 +18,7 @@ Rectangle {
     property double strokeThickness: 0
     property string titleColor: "#000000"
     property double fontSize: 13
-    property bool showVideo: false  // P-6: 视频模式（生成器仅视频 Frame 输出 true）——Loader 动态挂 HmiFrameVideo
+    property bool showVideo: true  // AD（2026-10-24 用户裁决）：Frame 恒为视频控件——生成器恒输出 true
     property string videoSource: ""  // P-6: 视频源（生成器 resolveVideoPath 重定位：本地绝对路径 / RTSP/网络 URL 原样）
     property string playTag: ""  // R-4: 播放控制布尔变量（空=未绑定；生成器仅视频 Frame 输出）
     property string videoListRef: ""  // S-5: 视频源列表名（生成器仅视频 Frame 且选了列表时输出）
@@ -82,15 +82,16 @@ Rectangle {
 
     // P-6: 视频模式——Loader 动态加载 HmiFrameVideo.qml（独立 import QtMultimedia：
     // 非视频 Frame 不依赖媒体模块，模块缺失不拖垮普通 Frame）；视频层铺满控件，
-    // titleBar 在其上（title 非空时标题悬浮视频顶部）；视频源为空或加载失败由组件内提示
+    // AD（2026-10-24 用户裁决）：Frame 恒为视频控件 ⇒ Loader **恒挂载** HmiFrameVideo.qml；
+    // titleBar 在其上（title 非空时标题悬浮视频顶部）；视频源为空/不可播放/断流均由组件内提示
     Loader {
         id: videoLayer
         anchors.fill: parent
         visible: false
-        // 复审 🔴（2026-09-05 FW 审）：gate 必须纳入列表模式——S-5 list-only 配置（videoListRef 非空 +
-        // videoSource 空）若仍只判 videoSource，Loader 恒不激活 → 列表模式无视频且无任何提示（生成器在
-        // videoSource 空时不输出该属性，qmlgenerator.cpp S-5 展开段）；单源与列表任一非空即挂载。
-        active: root.showVideo && (root.videoSource !== "" || root.videoListRef !== "")
+        // AD（2026-10-24 用户裁决）：Frame 恒为视频控件 ⇒ 门禁只看 showVideo（恒 true）。
+        // **不再要求源非空**——未配视频列表的 Frame 也必须挂载 HmiFrameVideo，由组件显示
+        // 「视频源不可用（未选择视频列表）」（原"源为空则不挂载"会导致空白无提示）。
+        active: root.showVideo
         source: active ? "HmiFrameVideo.qml" : ""
         onLoaded: {
             // 顺序关键（复审 🔴 2026-09-05）：playTag **先于**源同步——syncSources() 内设 player.source 同步触发

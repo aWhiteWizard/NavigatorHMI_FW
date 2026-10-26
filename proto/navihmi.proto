@@ -279,8 +279,8 @@ message Widget {
   // P-5 历史记录（W_HISTORY_VIEW=19，73-74；2026-09-02）
   repeated string history_tags = 73;    // HistoryView 变量列表（多变量，运行时切换）
   string history_db_path = 74;          // HistoryView 数据库路径（空=设备端默认 navihmi_history.db）
-  // P-6 Frame 视频（75-76；2026-09-02）
-  bool show_video = 75;                 // Frame 视频模式（checkbox；false=普通 Frame）
+  // P-6 Frame 视频（75-76；2026-09-02）；AD（2026-10-24 用户裁决）：Frame 恒为视频控件
+  bool show_video = 75;                 // 恒 true（字段保留仅为契约兼容；false 已无意义，生成器不再读）
   string video_source = 76;             // Frame 视频源（本地路径打包入包 / RTSP URL 不入包）
   repeated string history_tag_titles = 77;   // Q-6: HistoryView 各变量列显示名（平行 history_tags[i]; 空=显示变量名）
   // R-4 Frame 视频播放控制（2026-09-05）：绑定布尔变量驱动播放/暂停（空=未绑定，点击直接控制）

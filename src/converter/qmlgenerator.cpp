@@ -375,9 +375,10 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
         }
         appendProp(out, "historyDbPath", w.historyDbPath);
     }
-    // P-6 Frame 视频属性（仅 W_FRAME 类型且视频模式输出——HmiFrame 默认普通模式；
+    // Frame 视频属性（AD 2026-10-24 用户裁决：**Frame 恒为视频控件**——不再判 w.showVideo，
+    // 一律输出 showVideo: true；图片模式残留由 PC 侧编译期校验拦截，此处不做"普通 Frame"分支。
     // 本地视频源 resolveVideoPath 重定位（打包 rel → 设备端 <resourceRoot>/media/<rel>），RTSP/绝对路径原样）
-    if (w.type == WidgetType::Frame && w.showVideo) {
+    if (w.type == WidgetType::Frame) {
         appendProp(out, "showVideo", true);
         appendProp(out, "videoSource", resolveVideoPath(w.videoSource, resourceRoot));
         appendProp(out, "playTag", w.playTag);   // R-4: 播放控制变量（空=未绑定——HmiFrameVideo 点击直接控制）

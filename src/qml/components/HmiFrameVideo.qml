@@ -233,7 +233,16 @@ Item {
             player.source = ""
             vroot.clearingSource = false
             vroot.pendingUrl = ""
-            showHint("视频源不可用（当前索引无有效源）")
+            // AD（2026-10-24 用户裁决 ①）：三种空源语义分开提示——它们对用户意味着完全不同的动作：
+            //   ① 根本没配视频列表 → "未选择视频列表"（去属性面板选列表）
+            //   ② 配了列表但列表没有有效项 → "视频列表无有效项"（去列表管理补项）
+            //   ③ 配了列表且列表有项，但索引越界/指向空项 → "当前索引无有效源"（查视频源选择变量）
+            if (vroot.videoListRef === "" && vroot.videoSource === "")
+                showHint("视频源不可用（未选择视频列表）")
+            else if (vroot.videoListRef !== "" && vroot.sourceItems.length === 0)
+                showHint("视频源不可用（视频列表无有效项）")
+            else
+                showHint("视频源不可用（当前索引无有效源）")
             console.warn("[HmiFrameVideo] 无有效视频源 listRef=" + vroot.videoListRef + " videoSource=" + vroot.videoSource)
             return
         }
