@@ -6,7 +6,8 @@ Item {
     id: root
     width: 100
     height: 40
-    clip: true
+    // 不 clip：负方向线段（向左/向上）会画到 Item 边界之外，clip 会把它整段裁掉
+    //（Item 尺寸 = PC 派生的 |dx|×|dy| 命中框，不含负方向外扩）
 
     property string objectName: ""
     property string textDecoration: "None"
@@ -73,23 +74,38 @@ Item {
     signal hmiAck()
     signal hmiSelect()
 
-    // 起点 = 控件原点 (0,0), 终点 = (x2, y2) 相对控件; 线段从 (0,0) 到 (x2-x, y2-y) 局部坐标
-    // 画布内直接用: 线从 (0,0) 画到 (dx, dy)
-    readonly property double dx: root.x2 > 0 ? root.x2 : 0
-    readonly property double dy: root.y2 > 0 ? root.y2 : 0
+    // 坐标语义（AG 2026-10-27 修）：PC 端 LineWidget：X/Y = **起点**（第一点击点），
+    //   X2/Y2 = 终点相对起点的**有符号**偏移（可为负——向左/向上拖拽），Width/Height = |dx|/|dy|（仅命中框）。
+    //   本组件的 Item 就摆在起点，故线从局部 (0,0) 画到 (dx,dy)。
+    //   ⚠️ 修前写的是 `x2 > 0 ? x2 : 0`——负偏移被截成 0 ⇒ 向左/向上的线段退化成零长点，设备端看不到
+    //   （PC 端 WPF Line 用同一组正值/负值都画，所以 PC 正常）。
+    readonly property double dx: root.x2
+    readonly property double dy: root.y2
+    // 描边外半条会被 Canvas 纹理边界裁掉（与 HmiPolygon 同一坑）⇒ 画布按"线段实际外接框 + pad"布局，
+    // 并把绘制原点平移到画布内，使任意方向（含负 dx/dy）的线段都完整可见。
+    readonly property double linePad: Math.max(root.strokeThickness, 0) / 2 + 1
+    readonly property double lineMinX: Math.min(0, root.dx)
+    readonly property double lineMinY: Math.min(0, root.dy)
 
     Canvas {
         id: lineCanvas
-        anchors.fill: parent
+        x: root.lineMinX - root.linePad
+        y: root.lineMinY - root.linePad
+        width: Math.abs(root.dx) + 2 * root.linePad
+        height: Math.abs(root.dy) + 2 * root.linePad
         onPaint: {
             var ctx = getContext("2d")
+            // ⚠️ 硬顺序：Qt 6 的 reset() 复位变换/绘图状态并清空 save 栈 ⇒ save/translate 必须在 reset 之后
             ctx.reset()
             ctx.strokeStyle = root.strokeColor
             ctx.lineWidth = root.strokeThickness > 0 ? root.strokeThickness : 1
+            ctx.save()
+            ctx.translate(-root.lineMinX + root.linePad, -root.lineMinY + root.linePad)
             ctx.beginPath()
             ctx.moveTo(0, 0)
             ctx.lineTo(root.dx, root.dy)
             ctx.stroke()
+            ctx.restore()
         }
     }
 
