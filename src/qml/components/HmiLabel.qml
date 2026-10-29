@@ -8,7 +8,12 @@ Rectangle {
     id: root
     width: 100
     height: 30
-    color: "transparent"
+    // AH 修复（2026-10-30 用户实测）：PC 端 Label 的背景来自
+    // WidgetItemsControlFactory.WrapWithBorder(bindFillBackground: true) —— Border.Background = FillColor
+    // （LabelWidget.FillColor 默认 "#EEEEEE"），所以 PC 画布上标签是**带底色**的矩形块。
+    // FW 这边原来写死 transparent 且 `fillColor` 属性声明后从未使用 ⇒ 设备端永远透明、与 PC 不一致。
+    // 现在按 PC 语义取 fillColor；空串才回落透明（保持"无底色"这种历史配置的原样表现）。
+    color: root.fillColor !== "" ? root.fillColor : "transparent"
 
     // ── 模型属性（与生成器输出一致）──
     property string objectName: ""
