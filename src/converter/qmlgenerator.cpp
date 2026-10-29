@@ -5,6 +5,7 @@
 #include "converter/qmlgenerator.h"
 
 #include <QTextStream>
+#include <QSet>
 #include <QStringList>
 #include <QRegularExpression>
 #include <QFileInfo>
@@ -399,7 +400,19 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
 
     // 事件占位：onClick 等 → 信号处理器（联动 ActionRunner 后续循环接入）
     // E 循环: 组件已统一声明全 19 事件信号(审查修复)——任意事件输出不会 Cannot assign
+    // AH 修复（2026-10-30 用户实测「设备纯色屏」根因）：**同一事件类型只输出一条 handler**。
+    //   原实现逐条 w.events 输出 ⇒ 模型里有 N 条同类型事件就输出 N 个同名属性赋值 ⇒ QML 报
+    //   "Property value set multiple times" ⇒ 整个画面组件加载失败 ⇒ 只剩底色（纯色屏，实测 7 条）。
+    //   去重安全：handler 只负责 emitEvent，动作由 C++ RuntimeBus::executeWidgetEvents 遍历**所有**
+    //   同类型事件逐条执行（condition/action 都在 C++ 侧判定），一条 handler 不丢任何功能。
+    QSet<int> emittedEventTypes;
     for (const auto& ev : w.events) {
+        if (emittedEventTypes.contains(int(ev.type))) {
+            qWarning().noquote() << "[qmlgenerator] 控件" << w.objectName
+                                 << "重复事件类型" << int(ev.type) << "已合并输出（动作仍全部执行）";
+            continue;
+        }
+        emittedEventTypes.insert(int(ev.type));
         QString signalName;
         switch (ev.type) {
         case EventType::OnClick: signalName = "onHmiClicked"; break;
