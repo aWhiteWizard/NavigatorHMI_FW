@@ -6,15 +6,26 @@
 //                    ——QML Popup 无 Overlay 不渲染) → 点击选图 → 更新显示 + 绑 tag 回写 + hmiSelect。
 import QtQuick 2.15
 
-Image {
+Rectangle {
     id: root
     width: 100
     height: 60
-    source: root.currentImagePath
-    fillMode: stretchMode === "Fill" ? Image.Stretch
-            : stretchMode === "Uniform" ? Image.PreserveAspectFit
-            : stretchMode === "UniformToFill" ? Image.PreserveAspectCrop
-            : Image.PreserveAspectFit
+    // AH 修复（2026-10-30 用户实测）：PC 端 `CreateImageTemplate` 把 **Border.Background 绑到 FillColor**
+    // （`ImageWidget.FillColor` 默认 "#EEEEEE"，注释「保证图片路径为空/图片透明时控件仍可见、可选中」），
+    // 而 FW 原来根元素就是 Image —— Image 不能自绘背景 ⇒ 没设图片时设备端整块透明，与 PC 不一致。
+    // 现改为 Rectangle 根承载底色（fillColor 为空才透明，保持"用户主动要无底色"的既有工程表现），
+    // 图片本体移到内层 Image。
+    color: root.fillColor !== "" ? root.fillColor : "transparent"
+
+    Image {
+        id: imageItem
+        anchors.fill: parent
+        source: root.currentImagePath
+        fillMode: root.stretchMode === "Fill" ? Image.Stretch
+                : root.stretchMode === "Uniform" ? Image.PreserveAspectFit
+                : root.stretchMode === "UniformToFill" ? Image.PreserveAspectCrop
+                : Image.PreserveAspectFit
+    }
 
     property string objectName: ""
     property string textDecoration: "None"

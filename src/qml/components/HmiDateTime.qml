@@ -6,21 +6,31 @@
 import QtQuick 2.15
 import "qrc:/qml/components"   // 三审②：DateTimePicker 类型解析需显式 import（目录导入不传导）
 
-Text {
+Rectangle {
     id: root
     width: 160
     height: 30
-    // 绑定 → DataManager 实时值；未绑定 → dtFormat 实时系统时间（formatNow 兜底非法/空格式）
-    text: root.boundTag !== "" && dataManager !== undefined && dataManager !== null && dataManager.hasTag(root.boundTag)
-          ? String(dataManager.value(root.boundTag))
-          : root.formatNow()
-    color: textColor !== "" ? textColor : "#000000"
-    font.pixelSize: fontSize > 0 ? fontSize : 14
-    font.family: fontFamily !== "" ? fontFamily : "sans-serif"
-    horizontalAlignment: hAlign === "Center" ? Text.AlignHCenter
-                      : hAlign === "Right" ? Text.AlignRight
-                      : Text.AlignLeft
-    verticalAlignment: Text.AlignVCenter
+    // AH 修复（2026-10-30 用户实测）：PC 端 `CreateDateTimeTemplate` 给 TextBlock 设了**硬编码白底**
+    // （`TextBlock.BackgroundProperty = Brushes.White`，注释「D8：白底可读（与画布区分）」），
+    // 而 FW 原来根元素是 Text —— Text 不能自绘背景 ⇒ 设备端透明，与 PC 不一致。现由 Rectangle 根承载白底。
+    color: "#FFFFFF"
+
+    // 显示文本：原实现直接写在根 Text 上（Timer/Connections 都写 root.text）；
+    // 改成 Rectangle 根后由内层 Text 承载，这里保留同名 property 以维持既有引用不变。
+    property string text: ""
+
+    Text {
+        id: label
+        anchors.fill: parent
+        text: root.text
+        color: root.textColor !== "" ? root.textColor : "#000000"
+        font.pixelSize: root.fontSize > 0 ? root.fontSize : 14
+        font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
+        horizontalAlignment: root.hAlign === "Center" ? Text.AlignHCenter
+                          : root.hAlign === "Right" ? Text.AlignRight
+                          : Text.AlignLeft
+        verticalAlignment: Text.AlignVCenter
+    }
 
     property string objectName: ""
     property string textDecoration: "None"
@@ -100,6 +110,17 @@ Text {
         return Qt.formatDateTime(new Date(), root.effectiveFormat)
     }
 
+    /// AH（2026-10-30）：根元素由 Text 改为 Rectangle 后，文本不再是"绑定表达式"，改由本函数统一重算；
+    /// 调用点 = Component.onCompleted（首帧立即有值）+ 1Hz Timer + Connections.onValueChanged。
+    function refreshText() {
+        root.text = root.boundTag !== "" && dataManager !== undefined && dataManager !== null
+                    && dataManager.hasTag(root.boundTag)
+                    ? String(dataManager.value(root.boundTag))
+                    : root.formatNow()
+    }
+
+    Component.onCompleted: root.refreshText()
+
     // 1Hz 实时刷新（未绑定系统时间 / 绑定 tag 值都经此重算——dataManager.value 无依赖跟踪需显式刷新；
     // Connections 提供绑定场景即时性，Timer 保底）
     Timer {
@@ -107,10 +128,7 @@ Text {
         repeat: true
         running: true
         onTriggered: {
-            root.text = root.boundTag !== "" && dataManager !== undefined && dataManager !== null
-                        && dataManager.hasTag(root.boundTag)
-                        ? String(dataManager.value(root.boundTag))
-                        : root.formatNow()
+            root.refreshText()
             if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
         }
     }
@@ -120,7 +138,7 @@ Text {
         target: dataManager !== undefined && dataManager !== null ? dataManager : null
         onValueChanged: function(tagName, value) {
             if (tagName === root.boundTag && root.boundTag !== "") {
-                root.text = String(value)
+                root.refreshText()
                 root.hmiValueChanged()
                 if (vncMirror) vncMirror.markDirty(root.x, root.y, root.width, root.height)
             }
