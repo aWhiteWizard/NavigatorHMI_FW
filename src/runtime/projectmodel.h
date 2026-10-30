@@ -153,6 +153,8 @@ struct Tag {
     QString baseValue;       // 设计态基准值
     QString deviceName;      // 关联设备名（空 = 无）
     QString group;           // 变量分组（Y-5 PC 契约 + Y-4 FW 解析透传——运行时不做分组逻辑）
+    double scale = 1.0;      // AH：换算系数（工程值 = 原始值×scale+offset；默认 1 = 不换算）
+    double offset = 0.0;     // AH：换算偏移
 };
 
 struct AlarmRule {

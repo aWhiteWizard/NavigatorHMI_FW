@@ -51,6 +51,11 @@ private:
     /// 销毁全部驱动（工程重载/析构用）
     void destroyDrivers();
 
+    /// AH（2026-10-30）：按变量名取 Tag 配置（换算系数/偏移用；找不到返回 nullptr）
+    const Tag* findTag(const QString& name) const;
+    /// 变量名 → tags 下标（setProject 时构建，避免每次采集线性查找）
+    QHash<QString, int> m_tagIndex;
+
     Project m_project;
     DataManager* m_dataManager = nullptr;
     QTimer* m_timer = nullptr;

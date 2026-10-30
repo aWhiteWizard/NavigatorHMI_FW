@@ -90,6 +90,9 @@ void Acquisition::setProject(const Project& proj)
     m_project = proj;
     m_lastVal.clear();
     m_ringBack.clear();   // AB-5：工程重载清回环标记
+    m_tagIndex.clear();   // AH：重建变量索引（换算查配置用）
+    for (int i = 0; i < m_project.tags.size(); ++i)
+        m_tagIndex.insert(m_project.tags.at(i).name, i);
 
     // tag 解析分组：
     //  - modbus：AB-3（2026-09-11）按「协议 + 设备」分桶——每设备一驱动实例（一协议多从站/多设备）；
@@ -258,6 +261,14 @@ void Acquisition::setProject(const Project& proj)
     m_timer->start();
 }
 
+const Tag* Acquisition::findTag(const QString& name) const
+{
+    const auto it = m_tagIndex.constFind(name);
+    if (it == m_tagIndex.constEnd()) return nullptr;
+    return &m_project.tags.at(it.value());
+}
+
+
 void Acquisition::setDataManager(DataManager* dm)
 {
     m_dataManager = dm;
@@ -313,10 +324,19 @@ void Acquisition::tick()
         d->poll(nowMs);
 }
 
-void Acquisition::onDriverValueRead(const QString& tagName, const QVariant& value, double deadband)
+void Acquisition::onDriverValueRead(const QString& tagName, const QVariant& rawValue, double deadband)
 {
     if (!m_dataManager)
         return;
+    // AH（2026-10-30 用户需求）：换算——工程值 = 原始值 × scale + offset。
+    // 在**采集入口**统一做（Modbus/MQTT 同一条链路），且在死区判断**之前**：
+    //   这样死区、报警阈值、事件动作、界面显示全部使用工程值，各处无需各自处理。
+    // 结果按 6 位小数四舍五入，避免二进制浮点把 199×0.1 显示成 19.900000000000002。
+    QVariant value = rawValue;   // 局部副本：换算后就是工程值（不改调用方引用）
+    if (const Tag* tag = findTag(tagName)) {
+        if (tag->scale != 1.0 || tag->offset != 0.0)
+            value = qRound((rawValue.toDouble() * tag->scale + tag->offset) * 1e6) / 1e6;
+    }
     // deadband 防抖（跨协议统一——原 Acquisition readTag 内判断上移 Manager）
     const auto it = m_lastVal.constFind(tagName);
     const bool haveLast = it != m_lastVal.constEnd();

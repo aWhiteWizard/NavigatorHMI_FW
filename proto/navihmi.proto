@@ -331,6 +331,10 @@ message Tag {
   string base_value = 8;     // 设计态基准值
   string device_name = 9;    // 关联设备名（DeviceConfig.Name；空 = 无）
   string group = 10;         // Y-5 变量分组（空 = 未分组；运行时仅 PC 组态语义，FW 透传）
+  // AH（2026-10-30）：换算——工程值 = 原始值 × scale + offset（1 位小数传感器：原始 199 + scale 0.1 → 19.9）
+  // FW 在**采集入口**统一应用（Modbus/MQTT 同链路），死区/报警/动作/显示均用换算后的工程值
+  double scale = 11;         // 换算系数（proto3 缺省 0 → FW 归一为 1 = 不换算）
+  double offset = 12;        // 换算偏移（默认 0）
 }
 
 message AlarmRule {

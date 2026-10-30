@@ -275,6 +275,9 @@ bool ProjectParser::parseBytes(const QByteArray& data, Project& out)
         t.baseValue = s(pt.base_value());
         t.deviceName = s(pt.device_name());
         t.group = s(pt.group());   // Y-5：变量分组（PC 组态语义透传）
+        t.scale = pt.scale();      // AH：换算系数（proto 11）
+        t.offset = pt.offset();    // AH：换算偏移（proto 12）
+        if (t.scale == 0.0) t.scale = 1.0;   // proto3 double 无 presence：旧产物缺省 0 ⇒ 归一为 1（不换算）
         out.tags.append(t);
     }
 
