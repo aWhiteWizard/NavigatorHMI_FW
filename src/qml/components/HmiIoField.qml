@@ -6,7 +6,9 @@ Rectangle {
     id: root
     width: 100
     height: 40
-    color: fillColor !== "" ? fillColor : "#FFFFFF"
+    // AH 修复（2026-10-30）：PC 端 ColorStringToBrushConverter 对空 fillColor 返回 Transparent（注释「留空 = 不显示背景」），
+    // 设备端却回退成常量色（#FFFFFF/#EEEEEE/#F0F0F0/#FAFAFA/状态色）⇒ 两端不一致（用户实测 IOField 背景色不同）。统一改成 transparent。
+    color: root.fillColor !== "" ? root.fillColor : "transparent"
     border.color: strokeColor !== "" ? strokeColor : "#999999"
     border.width: strokeThickness > 0 ? strokeThickness : 1
     radius: 2

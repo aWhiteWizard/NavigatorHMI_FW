@@ -10,7 +10,9 @@ Rectangle {
     height: 120
     // 审查 M7: fillColor 渲染生效（PC set_property 键）; borderColor 走 proto:36 title 槽位（PC 既有契约:
     // ProjectGenerator WindowWidget 写 title=BorderColor, FW 解析 title）——border 绑定 title, 补全边框色链路
-    color: root.fillColor !== "" ? root.fillColor : "#FAFAFA"
+    // AH 修复（2026-10-30）：PC 端 ColorStringToBrushConverter 对空 fillColor 返回 Transparent（注释「留空 = 不显示背景」），
+    // 设备端却回退成常量色（#FFFFFF/#EEEEEE/#F0F0F0/#FAFAFA/状态色）⇒ 两端不一致（用户实测 IOField 背景色不同）。统一改成 transparent。
+    color: root.fillColor !== "" ? root.fillColor : "transparent"
     border.color: root.title !== "" ? root.title : "#999999"
     border.width: 1
     radius: 3

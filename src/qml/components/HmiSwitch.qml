@@ -6,10 +6,11 @@ Rectangle {
     width: 100
     height: 40
     radius: 5
-    // AH 修复（2026-10-30）：PC 端 Switch 模板把 Button.Background 绑到 FillColor（默认 #EEEEEE），
-    // 开关状态由 OnText/OffText 文本表达；FW 原来只用状态色、忽略 fillColor ⇒ 与 PC 不一致。
-    // 现在：配置了 fillColor 就用它（对齐 PC），没配则保留原状态色（向后兼容，仍能一眼看出通断）。
-    color: root.fillColor !== "" ? root.fillColor : (root.isOn ? "#4CAF50" : "#9E9E9E")
+    // AH 修复（2026-10-30）：PC 端 Switch 模板把 Button.Background 绑到 FillColor，
+    // 且 ColorStringToBrushConverter 对**空 fillColor 返回 Transparent**（留空 = 不显示背景）。
+    // 之前设备端在空值时回退成状态色（绿/灰）⇒ 与 PC 不一致（用户要求两端完全对齐）⇒ 现统一 transparent；
+    // 通断状态由 OnText/OffText 文本表达（与 PC 一致）。
+    color: root.fillColor !== "" ? root.fillColor : "transparent"
     border.color: strokeColor !== "" ? strokeColor : "transparent"
     border.width: strokeThickness > 0 ? strokeThickness : 0
 
