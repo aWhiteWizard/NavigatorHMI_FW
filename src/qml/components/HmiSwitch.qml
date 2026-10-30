@@ -6,7 +6,10 @@ Rectangle {
     width: 100
     height: 40
     radius: 5
-    color: isOn ? "#4CAF50" : "#9E9E9E"
+    // AH 修复（2026-10-30）：PC 端 Switch 模板把 Button.Background 绑到 FillColor（默认 #EEEEEE），
+    // 开关状态由 OnText/OffText 文本表达；FW 原来只用状态色、忽略 fillColor ⇒ 与 PC 不一致。
+    // 现在：配置了 fillColor 就用它（对齐 PC），没配则保留原状态色（向后兼容，仍能一眼看出通断）。
+    color: root.fillColor !== "" ? root.fillColor : (root.isOn ? "#4CAF50" : "#9E9E9E")
     border.color: strokeColor !== "" ? strokeColor : "transparent"
     border.width: strokeThickness > 0 ? strokeThickness : 0
 
@@ -81,7 +84,8 @@ Rectangle {
         id: swText
         anchors.fill: parent
         text: root.isOn ? root.labelOn : root.labelOff
-        color: root.textColor
+        // AH 修复（2026-10-30）：对齐 PC 的 SafeTextColorConverter 前景自适应
+        color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: 14
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

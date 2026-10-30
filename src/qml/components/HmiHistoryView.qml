@@ -9,7 +9,9 @@ Rectangle {
     id: root
     width: 360
     height: 200
-    color: "#FFFFFF"
+    // AH 修复（2026-10-30）：PC 端 HistoryView 模板的 Border.Background 是硬编码 #FAFBFC，
+    // FW 原来整块 #FFFFFF ⇒ 两端纸面底色不同。
+    color: "#FAFBFC"
     border.color: "#B0B8C4"
     border.width: 1
     radius: 2

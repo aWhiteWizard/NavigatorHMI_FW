@@ -83,7 +83,8 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: 4
         text: root.text
-        color: root.textColor
+        // AH 修复（2026-10-30）：对齐 PC 的 SafeTextColorConverter 前景自适应
+        color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: root.fontSize
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
         font.bold: root.fontWeight === "Bold"

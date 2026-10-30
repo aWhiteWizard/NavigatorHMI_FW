@@ -5,7 +5,9 @@ Rectangle {
     id: root
     width: 120
     height: 30
-    color: "transparent"
+    // AH 修复（2026-10-30）：PC 端 CheckBox 模板把 CheckBox.Background 绑到 FillColor（用户可设背景色，
+    // 默认 #EEEEEE）；FW 原来写死 transparent ⇒ 设备端无底色，与 PC 不一致。空串仍走透明（保持旧工程表现）。
+    color: root.fillColor !== "" ? root.fillColor : "transparent"
 
     property string objectName: ""
     property string textDecoration: "None"
@@ -99,7 +101,8 @@ Rectangle {
         anchors.leftMargin: 6
         anchors.verticalCenter: parent.verticalCenter
         text: root.text
-        color: root.textColor
+        // AH 修复（2026-10-30）：对齐 PC 的 SafeTextColorConverter 前景自适应
+        color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: root.fontSize
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
     }

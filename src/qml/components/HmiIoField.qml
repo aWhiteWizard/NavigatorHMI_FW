@@ -111,7 +111,8 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: 6
         text: root.isOn ? "1" : "0"
-        color: root.textColor
+        // AH 修复（2026-10-30）：对齐 PC 的 SafeTextColorConverter 前景自适应
+        color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: root.fontSize
         font.bold: true
         verticalAlignment: Text.AlignVCenter
@@ -322,7 +323,8 @@ Rectangle {
         clip: true
         horizontalAlignment: root.hAlign === "Right" ? Text.AlignRight : Text.AlignLeft
         text: root.displayText()
-        color: root.textColor
+        // AH 修复（2026-10-30）：输入框正文同样对齐 PC 前景自适应
+        color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: root.fontSize
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
         readOnly: root.isReadOnly

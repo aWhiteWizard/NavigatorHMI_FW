@@ -10,7 +10,9 @@ Rectangle {
     id: root
     width: 300
     height: 150
-    color: "#FFFFFF"
+    // AH 修复（2026-10-30）：PC 端 TrendView 模板的 Border.Background 是硬编码 #F5F7FA（绘图区另为白底），
+    // FW 原来整块 #FFFFFF ⇒ 两端纸面底色不同。
+    color: "#F5F7FA"
     border.color: "#B0B8C4"
     border.width: 1
     radius: 2

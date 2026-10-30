@@ -105,7 +105,8 @@ Rectangle {
         anchors.margins: 4
         anchors.rightMargin: 22  // 给下拉箭头留位
         text: root.currentText
-        color: root.textColor
+        // AH 修复（2026-10-30）：对齐 PC 的 SafeTextColorConverter 前景自适应
+        color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: root.fontSize
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight

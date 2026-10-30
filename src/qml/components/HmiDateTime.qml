@@ -23,7 +23,8 @@ Rectangle {
         id: label
         anchors.fill: parent
         text: root.text
-        color: root.textColor !== "" ? root.textColor : "#000000"
+        // AH 修复（2026-10-30）：对齐 PC 的 SafeTextColorConverter（含 textColor==fillColor 回落黑）
+        color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: root.fontSize > 0 ? root.fontSize : 14
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
         horizontalAlignment: root.hAlign === "Center" ? Text.AlignHCenter
