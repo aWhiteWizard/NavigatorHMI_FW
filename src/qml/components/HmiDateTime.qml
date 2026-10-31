@@ -15,7 +15,11 @@ Rectangle {
     // 而 FW 原来根元素是 Text —— Text 不能自绘背景 ⇒ 设备端透明，与 PC 不一致。现由 Rectangle 根承载白底。
     // AH（2026-10-30）：背景改绑模型 fillColor（默认 #FFFFFF）——此前两端都硬编码白色，用户改不了；
     // 现在 PC 与设备端同源（空串回退白，保持"白底可读"的历史观感）。
-    color: root.fillColor !== "" ? root.fillColor : "#FFFFFF"
+    // AH 修复（2026-10-30 用户实测「组态里设透明，设备上却是白底」）：
+    //   取色器的「透明」可能写成空串或 "Transparent" 两种，而这里原来只判空串 ⇒ 空串回退白底、
+    //   用户选的透明被吞掉。现在两种写法都按透明处理；只有真正没配过（null）才回退白底。
+    //   PC 端同源：ColorStringToBrushConverter 对空串返回 Transparent。
+    color: (root.fillColor === "" || root.fillColor.toLowerCase() === "transparent") ? "transparent" : root.fillColor
 
     // 显示文本：原实现直接写在根 Text 上（Timer/Connections 都写 root.text）；
     // 改成 Rectangle 根后由内层 Text 承载，这里保留同名 property 以维持既有引用不变。
