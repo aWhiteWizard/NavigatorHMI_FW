@@ -13,7 +13,9 @@ Rectangle {
     // AH 修复（2026-10-30 用户实测）：PC 端 `CreateDateTimeTemplate` 给 TextBlock 设了**硬编码白底**
     // （`TextBlock.BackgroundProperty = Brushes.White`，注释「D8：白底可读（与画布区分）」），
     // 而 FW 原来根元素是 Text —— Text 不能自绘背景 ⇒ 设备端透明，与 PC 不一致。现由 Rectangle 根承载白底。
-    color: "#FFFFFF"
+    // AH（2026-10-30）：背景改绑模型 fillColor（默认 #FFFFFF）——此前两端都硬编码白色，用户改不了；
+    // 现在 PC 与设备端同源（空串回退白，保持"白底可读"的历史观感）。
+    color: root.fillColor !== "" ? root.fillColor : "#FFFFFF"
 
     // 显示文本：原实现直接写在根 Text 上（Timer/Connections 都写 root.text）；
     // 改成 Rectangle 根后由内层 Text 承载，这里保留同名 property 以维持既有引用不变。
@@ -27,6 +29,11 @@ Rectangle {
         color: (root.textColor === "" || root.textColor === "Transparent" || root.textColor === root.fillColor) ? "#000000" : root.textColor
         font.pixelSize: root.fontSize > 0 ? root.fontSize : 14
         font.family: root.fontFamily !== "" ? root.fontFamily : "sans-serif"
+        // AH（2026-10-30）：补齐字重/斜体/下划线——PC 端 BindTextFormatting 一直绑这三项，
+        // 设备端此前只认 fontSize/fontFamily ⇒ 设了 Bold 两端不同。
+        font.bold: root.fontWeight === "Bold"
+        font.italic: root.fontStyle === "Italic"
+        font.underline: root.textDecoration === "Underline"
         horizontalAlignment: root.hAlign === "Center" ? Text.AlignHCenter
                           : root.hAlign === "Right" ? Text.AlignRight
                           : Text.AlignLeft
