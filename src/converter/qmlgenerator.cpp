@@ -274,6 +274,7 @@ void generateWidget(QTextStream& out, const Widget& w, const Project& proj, cons
             appendProp(out, "imagePath", resolveResPath(w.imagePath, resourceRoot));
         else
             appendProp(out, "imagePath", w.imagePath);
+    appendProp(out, "sourceMode", w.imageSourceMode);   // AH：图片来源模式（static/list；空=自动）
         if (!w.listRef.isEmpty()) {
             const ListDef* imgList = proj.ListByName(w.listRef, ListType::Image);   // U-2：Image 消费 Image 型列表
             if (imgList) {

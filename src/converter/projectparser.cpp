@@ -136,6 +136,7 @@ bool mapWidget(const pb::Widget& p, Widget& w)
     w.strokeColor = s(p.stroke_color());
     w.strokeThickness = p.stroke_thickness();
     w.imagePath = s(p.image_path());
+    w.imageSourceMode = s(p.image_source_mode());   // AH：图片来源模式（static/list/空=自动）
     w.stretchMode = s(p.stretch_mode());
     w.listRef = s(p.list_ref());
     w.defaultIndex = p.default_index();

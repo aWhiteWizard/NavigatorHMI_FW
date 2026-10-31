@@ -37,6 +37,7 @@ Rectangle {
 
     // D-B2: 列表数据——listRef 非空时按工程图片列表项展开（qmlgenerator 输出为 | 分隔路径串）
     property string listItems: ""          // 生成器展开: "path1|path2|..."（listRef 非空时）
+    property string sourceMode: ""         // AH："static" 只用 imagePath / "list" 只用列表 / 空 = 自动（列表优先）
     property var items: root.listItems.length > 0 ? root.listItems.split("|") : []
 
     // D-B2: 当前索引——默认 defaultIndex，绑变量时随变量值（钳制防越界，对齐 HmiTextList）
@@ -47,6 +48,10 @@ Rectangle {
     // → Cannot open 白图——对齐 main.qml/HmiWorldMap 先例 file:// + path）
     property string currentImagePath: {
         var p = ""
+        // AH（2026-10-31 用户裁决）：**显式来源模式**优先——
+        //   sourceMode="static" ⇒ 只用 imagePath（忽略列表）；"list" ⇒ 只用列表；空 ⇒ 旧规则（列表优先）
+        //   解决"既配了图片路径又配了图片列表，谁生效"的歧义（PC 属性面板单选 / CLI set-property / AI 同字段）
+        if (root.sourceMode === "static") return root.toFileUrl(root.imagePath)
         if (root.items.length > 0) {
             var i = Math.max(0, Math.min(root.currentIndex, root.items.length - 1))
             p = root.items[i]

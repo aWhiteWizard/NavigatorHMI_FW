@@ -85,6 +85,7 @@ struct Widget {
     QString textColor, fillColor, strokeColor;
     double strokeThickness = 0;
     QString imagePath, stretchMode;
+    QString imageSourceMode;   // AH："static" 只用 imagePath / "list" 只用列表 / 空 = 自动（列表优先）
     QString listRef;
     int defaultIndex = 0;
     double value = 0, min = 0, max = 0;

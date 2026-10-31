@@ -224,6 +224,8 @@ message Widget {
   double stroke_thickness = 20;
   // 图片（Image/Frame）
   string image_path = 21;
+  // AH（2026-10-31）：图片来源模式——"static"=只用 image_path / "list"=只用 list_ref；空=自动（旧规则：列表优先）
+  string image_source_mode = 81;
   string stretch_mode = 22;
   // 列表绑定（Image/Frame/TextList）
   string list_ref = 23;
