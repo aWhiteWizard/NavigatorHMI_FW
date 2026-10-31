@@ -90,7 +90,7 @@ models/
 third_party/qt*/
 __pycache__/
 
-# B-4: fs-overlay Ô¤±àÒë¶þ½øÖÆ (ÓÉ build-rk3562.sh ×¢Èë, ²»Èë¿â)
+# B-4: fs-overlay Ô¤ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ build-rk3562.sh ×¢ï¿½ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½)
 hwt/rk3562/buildroot/fs-overlay/usr/bin/navigatorhmi-fw
 hwt/rk3562/buildroot/fs-overlay/usr/bin/qt-test
 
@@ -102,3 +102,4 @@ tiles-demo/
 bin/
 obj/
 hwt/rk3562/buildroot/fs-overlay/usr/bin/touch-calibrate
+.agent/

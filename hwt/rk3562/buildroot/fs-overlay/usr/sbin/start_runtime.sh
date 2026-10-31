@@ -18,6 +18,13 @@ export QML_IMPORT_PATH=/usr/qml
 export QML2_IMPORT_PATH=/usr/qml
 export QT_QPA_EGLFS_ALWAYS_SET_MODE=1
 
+# ── VNC 镜像开关（main.cpp：0=强制关 / 2=强制开调试 / 不设=按工程 enable_vnc）──
+# 2026-10-24 起默认 2：视频拍摄与远程调试期需要 VNC（S4-09 双画面对照镜头 + 板上画面截图，
+# EGLFS/DRM 下无 fbdev 截图能力，VNC 是唯一路径）。端口仍由 fw-config.json vnc.port 决定。
+# 关闭：NAVIHMI_VNC=0，或删除本行回落到「按工程 enable_vnc」。
+# ⚠️ RFB 3.3 无鉴权——量产固件请务必改回不设(默认关)或 0。
+export NAVIHMI_VNC="${NAVIHMI_VNC:-2}"
+
 FW=/usr/bin/navigatorhmi-fw
 PROJECT=/mnt/user/userdata/app.navihmi
 EXPECTED_MD5=/etc/navigatorhmi/expected-md5
@@ -36,7 +43,7 @@ if [ -f "${EXPECTED_MD5}" ]; then
     if [ -n "${exp_md5}" ] && [ -x "${FW}" ]; then
         cur_md5=$(md5sum "${FW}" | awk '{print $1}')
         if [ "${cur_md5}" != "${exp_md5}" ]; then
-            echo "[$(date +%H:%M:%S)] start_runtime: FW md5 与期望不符 (${cur_md5} != ${exp_md5})——"
+            echo "[$(date +%H:%M:%S)] start_runtime: FW md5 与期望不符 (${cur_md5} != ${exp_md5})——" \
                  "可能是 OTA 升级后首次启动（otaupdater 将更新期望 md5）；不回滚，告警记录" >> "${LOG}"
         fi
     fi
