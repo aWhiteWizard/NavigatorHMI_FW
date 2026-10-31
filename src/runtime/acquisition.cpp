@@ -334,8 +334,17 @@ void Acquisition::onDriverValueRead(const QString& tagName, const QVariant& rawV
     // 结果按 6 位小数四舍五入，避免二进制浮点把 199×0.1 显示成 19.900000000000002。
     QVariant value = rawValue;   // 局部副本：换算后就是工程值（不改调用方引用）
     if (const Tag* tag = findTag(tagName)) {
-        if (tag->scale != 1.0 || tag->offset != 0.0)
-            value = qRound((rawValue.toDouble() * tag->scale + tag->offset) * 1e6) / 1e6;
+        if (tag->scale != 1.0 || tag->offset != 0.0) {
+            const double eng = rawValue.toDouble() * tag->scale + tag->offset;
+            // AH（2026-10-31 用户裁决 A）：**整型变量换算后取整**——
+            //   BOOL/INT16/UINT16/INT32 的语义是整数，显示不该出现小数（UINT16 211×0.1 ⇒ 21，不是 21.1）。
+            //   需要小数请把变量类型改成 FLOAT（FLOAT 保持 6 位小数四舍五入）。
+            const bool integerType = tag->dataType == TagDataType::Bool
+                                  || tag->dataType == TagDataType::Int16
+                                  || tag->dataType == TagDataType::Uint16
+                                  || tag->dataType == TagDataType::Int32;
+            value = integerType ? qRound(eng) : qRound(eng * 1e6) / 1e6;
+        }
     }
     // deadband 防抖（跨协议统一——原 Acquisition readTag 内判断上移 Manager）
     const auto it = m_lastVal.constFind(tagName);
@@ -369,7 +378,15 @@ void Acquisition::handleValueWritten(const QString& tagName, const QVariant& val
                 qWarning().noquote() << "Acquisition: 变量" << tagName << "scale=0（禁止）——写值忽略";
                 return;
             }
-            outValue = (value.toDouble() - tag.offset) / tag.scale;
+            // AH（2026-10-31）：反算回寄存器量纲；整型变量写入时取整（防 21/0.1=209.99 截断成 209）
+            {
+                const double raw = (value.toDouble() - tag.offset) / tag.scale;
+                const bool integerType = tag.dataType == TagDataType::Bool
+                                      || tag.dataType == TagDataType::Int16
+                                      || tag.dataType == TagDataType::Uint16
+                                      || tag.dataType == TagDataType::Int32;
+                outValue = integerType ? QVariant(qRound(raw)) : QVariant(raw);
+            }
         }
 
         // AB-5 联调发现（2026-09-11）：**读回环抑制（仅 modbus）**——采集写入 DataManager 的值经
