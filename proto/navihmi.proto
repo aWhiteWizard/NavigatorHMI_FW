@@ -335,6 +335,7 @@ message Tag {
   // FW 在**采集入口**统一应用（Modbus/MQTT 同链路），死区/报警/动作/显示均用换算后的工程值
   double scale = 11;         // 换算系数（proto3 缺省 0 → FW 归一为 1 = 不换算）
   double offset = 12;        // 换算偏移（默认 0）
+  int32 decimals = 13;       // AH：小数位（需求表「小数位 N」→ Scale=10^-N；也用于显示精度，0=不限）
 }
 
 message AlarmRule {

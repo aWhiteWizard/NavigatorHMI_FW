@@ -360,6 +360,18 @@ void Acquisition::handleValueWritten(const QString& tagName, const QVariant& val
         const QString proto = protocolForTag(tag);
         if (proto.isEmpty())
             return;   // 内部变量——无驱动写
+        // AH（2026-10-30）：写通道**反算**——用户/AI 写的是工程值（如 20.6），
+        // 而寄存器里存的是原始量纲（如 206）⇒ raw = (工程值 - offset) / scale。
+        // mqtt 不做（发布的就是工程值）；scale==1 且 offset==0 时完全不变。
+        QVariant outValue = value;
+        if (proto != QLatin1String("mqtt") && (tag.scale != 1.0 || tag.offset != 0.0)) {
+            if (tag.scale == 0.0) {
+                qWarning().noquote() << "Acquisition: 变量" << tagName << "scale=0（禁止）——写值忽略";
+                return;
+            }
+            outValue = (value.toDouble() - tag.offset) / tag.scale;
+        }
+
         // AB-5 联调发现（2026-09-11）：**读回环抑制（仅 modbus）**——采集写入 DataManager 的值经
         // main.cpp 的 valueChanged→handleValueWritten 连线回流本函数，若不识别会把刚读到的值当"用户写"
         // 回写设备（PT100 只读寄存器 0x0000/0x0001 会发非法 FC06）。
@@ -382,7 +394,7 @@ void Acquisition::handleValueWritten(const QString& tagName, const QVariant& val
             // Z 循环：tag 可被多个连接绑定（不同 broker 各发各的 topic）——广播全部 mqtt 驱动
             for (auto* d : m_drivers)
                 if (d->protocol() == QLatin1String("mqtt"))
-                    d->writeValue(tagName, value);
+                    d->writeValue(tagName, outValue);
             return;
         }
         for (auto* d : m_drivers) {
@@ -392,12 +404,12 @@ void Acquisition::handleValueWritten(const QString& tagName, const QVariant& val
             const QString driverDevice = (it == m_driverDevices.constEnd()) ? QString() : it.value();
             if (driverDevice != tag.deviceName)
                 continue;   // 非本设备实例——跳过（裸变量 deviceName 为空，匹配 device 为空的实例）
-            d->writeValue(tagName, value);
+            d->writeValue(tagName, outValue);
             return;
         }
         // 兜底：设备映射缺失（理论上不发生——上游分组同源）——按协议写首个实例，防写值静默丢弃
         for (auto* d : m_drivers)
-            if (d->protocol() == proto) { d->writeValue(tagName, value); return; }
+            if (d->protocol() == proto) { d->writeValue(tagName, outValue); return; }
         return;
     }
 }

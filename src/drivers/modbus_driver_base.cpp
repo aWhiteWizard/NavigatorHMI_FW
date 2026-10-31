@@ -204,9 +204,9 @@ void ModbusDriverBase::readTag(const ModbusTag* tag)
 {
     if (!m_client || !tag)
         return;
-    // 读保持寄存器（Float/Int32 2 寄存器, 其余 1——原 Acquisition 语义保留）
-    const int count = (tag->dataType == int(TagDataType::Float)
-                       || tag->dataType == int(TagDataType::Int32)) ? 2 : 1;
+    // 读保持寄存器：AH 起 **Float 也是 1 个寄存器**（单寄存器放大整数语义；缩放走 Tag.scale）。
+    // Int32 仍按 2 寄存器请求（历史上如此，解码侧尚未实现 32 位拼装——见 decodeValue 注释，属待办）。
+    const int count = (tag->dataType == int(TagDataType::Int32)) ? 2 : 1;
     QModbusDataUnit unit(QModbusDataUnit::HoldingRegisters, tag->reg, quint16(count));
     const QString tagName = tag->tagName;
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
@@ -290,8 +290,12 @@ QVariant ModbusDriverBase::decodeValue(const ModbusTag& tag, quint16 raw) const
     case int(TagDataType::Uint16):
         return int(raw);
     case int(TagDataType::Float): {
-        // 简化协议: 单寄存器 16bit 放大 100 倍整数（原 Acquisition 约定，行为不变）
-        return double(raw) / 100.0;
+        // AH（2026-10-30 用户裁决）：**去掉内置 /100**——单寄存器 float 即"设备用放大整数传小数"，
+        // 但放大倍数因设备而异（×10 / ×100 / ×1000 都常见）。固定 /100 只能对上其中一种，
+        // 且完全不可见（早期 H-8 的临时约定）。现在统一由 **Tag.scale / offset** 灵活换算：
+        //   例：寄存器 206 表示 20.6℃ ⇒ scale=0.1；表示 2.06 ⇒ scale=0.01。
+        // 双寄存器（32 位 IEEE-754）暂不支持——需要时读两个寄存器、用两个 IOField 分别显示。
+        return double(raw);
     }
     case int(TagDataType::Int32):
         return int(raw);
@@ -312,15 +316,15 @@ bool ModbusDriverBase::writeValue(const QString& tagName, const QVariant& value)
             quint16 raw = 0;
             switch (tag.dataType) {
             case int(TagDataType::Float): {
-                // Y-7：Float 编码侧防溢出（/100 放大后 quint16 域 ±327.67——越界/NaN/Inf 拒绝防静默截断写坏设备；
-                // 负值回读不对称（读端无符号 /100 解码）系既有 MAJOR-6 约定，本批不改编码语义）
+                // AH（2026-10-30）：不再 ×100——单寄存器 float 直接按整数写入（缩放已在写通道按 Tag.scale 反算过）。
+                // 仍做范围/有限性校验（quint16 域 0~65535），越界拒绝防静默截断写坏设备。
                 const double d = value.toDouble();
-                if (!std::isfinite(d) || d < -327.68 || d > 327.67) {
+                if (!std::isfinite(d) || d < 0.0 || d > 65535.0) {
                     qWarning().noquote() << logTag() << ": 写" << tagName << "Float 值越界/非法（" << d
-                                         << "，编码侧支持 ±327.67 内）——拒绝写入";
+                                         << "，单寄存器域 0~65535）——拒绝写入";
                     return false;
                 }
-                raw = quint16(qRound(d * 100.0) & 0xFFFF);
+                raw = quint16(qRound(d) & 0xFFFF);
                 break;
             }
             case int(TagDataType::Bool):
