@@ -5,6 +5,27 @@ NavigatorHMI 设备端运行时（HMI panel，RK3562 / Qt 6.4.3 / QML）。
 输入：PC 组态软件（navigator_hmi 仓库）编译的 `.navihmi` 工程（proto3 二进制，或含瓦片地图的 ZIP 工程包）。
 输出：设备屏上的 HMI 运行画面（世界地图 + 多画面 + 导航页），支持 VNC 远程镜像、触摸校准、屏上虚拟键盘。
 
+## ⚖️ 版权与使用声明（先看这里）
+
+Copyright (c) 2026 aWhiteWizard. All rights reserved.
+
+本项目是 **源码公开（source-available）**，**不是** OSI 定义的开源项目：
+
+- ✅ **欢迎**：浏览源码、**Fork** 学习、个人研究与功能评估、本地编译运行
+- ❌ **未经书面授权禁止**：修改后公开发布或分发（含在 GitHub/Gitee/GitCode 等平台公开衍生仓库、发布补丁、分发改造后的二进制/镜像/固件包）、任何商业使用（销售、出租、随硬件或整机出货、预装到整机、集成进商业产品或服务、作为 SaaS/云服务对外提供、以收费形式交付）、再许可、移除或篡改版权声明
+- ⚠️ 二次开发成果对外展示时，**不得使用 NavigatorHMI / FutureTechHMI 名称**暗示与本项目存在授权、合作或背书关系
+- 📄 完整条款见 [`LICENSE`](LICENSE)；商业授权或二次开发合作请联系 [@aWhiteWizard](https://github.com/aWhiteWizard)
+
+> 本仓库含大量第三方组件（Qt / Qt Virtual Keyboard / Buildroot 及补丁 / Rockchip 内核与 dtb / 交叉工具链），
+> 它们依**各自的原始许可证**授权，不受本声明约束；编包分发时请自行核对 GPL/LGPL 义务。
+
+## 🔗 相关仓库
+
+| 仓库 | 内容 |
+|------|------|
+| [aWhiteWizard/NavigatorHMI_FW](https://github.com/aWhiteWizard/NavigatorHMI_FW)（本仓库） | 设备端固件（RK3562 / Qt 6.4.3 / QML） |
+| [aWhiteWizard/navigator_hmi](https://github.com/aWhiteWizard/navigator_hmi) | PC 组态软件（C# / WPF），产出本仓消费的 `.navihmi` 工程 |
+
 ## 当前架构（2026-08 版）
 
 ```
